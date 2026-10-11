@@ -34,6 +34,8 @@ jobs:
           package-manager-cache: false
       - name: Audit publication and run all offline tests
         run: node scripts/verify.mjs
+      - name: Verify T1 dataset research independently
+        run: node scripts/verify-t1.mjs
       - name: Confirm source was not changed by verification
         run: |
           git diff --exit-code

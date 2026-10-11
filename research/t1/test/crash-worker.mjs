@@ -1,0 +1,11 @@
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { offlineService } from '../../../packages/native-agent/src/fixtures.mjs';
+import { createDeepSeekInternalRuntime } from '../../../packages/native-agent/src/deepseek-runtime.mjs';
+import { TrajectoryRecorder } from '../../../packages/native-agent/src/trajectory-recorder.mjs';
+import { fakeHttp, modelAuth } from '../../../packages/native-agent/test/deepseek-fixtures.mjs';
+import { buildDataset, syntheticApproval } from '../dataset.mjs';
+const saved = JSON.parse(await readFile(process.argv[2], 'utf8'));
+const runtime = createDeepSeekInternalRuntime(saved.root, { loop: true, mode: 'injected-http-test', http: fakeHttp({ loop: true }).http, service: offlineService(saved.root), authorizer: async () => modelAuth() });
+const recorder = new TrajectoryRecorder({ runtime, root: join(saved.root, 'trajectory') });
+await buildDataset({ entries: [{ ...saved, runtime, recorder }], outputRoot: saved.outputRoot, authorize: syntheticApproval, afterStaged: async () => { process.send({ phase: 'staged' }); await new Promise(() => {}); } });

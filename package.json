@@ -16,7 +16,9 @@
     "test:legacy": "node scripts/verify.mjs legacy",
     "test:finance": "node scripts/verify.mjs finance",
     "test:deepseek": "node scripts/verify.mjs deepseek",
-    "test:trajectory": "node scripts/verify.mjs trajectory"
+    "test:trajectory": "node scripts/verify.mjs trajectory",
+    "test:t1": "node scripts/verify-t1.mjs",
+    "test:all": "node scripts/verify-t1.mjs all"
   },
   "description": "Evidence-native durable research harness with offline provider and trajectory contracts",
   "license": "UNLICENSED",

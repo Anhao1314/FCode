@@ -1,0 +1,11 @@
+{
+  "version": "flowcredit.t1-public-example/v1",
+  "sha256": "27e11975570603978c0eca93eef852ca3d7bd77dcefc2f7e6b85342ae9aedd1f",
+  "rows": 2,
+  "source": "locally executed injected-HTTP synthetic fixtures; no real Teacher",
+  "scope": "two-state next-tool policy only",
+  "financialGold": false,
+  "readiness": "BLOCKED",
+  "privateProvenance": "retained in protected local experiment; not published",
+  "privacy": "fixed enum whitelist; no raw task, receipt, objective, source text or identity"
+}
