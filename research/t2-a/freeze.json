@@ -1,0 +1,14 @@
+{
+  "version": "flowcredit.t2-freeze/v1",
+  "frozenAt": "2026-10-11T05:07:34.808137+00:00",
+  "baseline": "508d0f1c42f14573426539b891f5a3ed64710b7d",
+  "sha256": {
+    "corpus.json": "903d373a319d4c224a21840bd3c3b17cedcedc12bdd60c3ea6e5c3ba1ba0cc66",
+    "gold.json": "2b0afb84c6bae0c9846849d390f21afd53f6edcb9db14ee7cb9dee58239b634c",
+    "PREREGISTRATION.md": "77f522fb5ca727c6c51707f18bbed920f7ee79695b4e706c8b2a0cf06e57c706"
+  },
+  "freezeBeforeStrategyImplementation": true,
+  "designerAwareOfScenarioFamilies": true,
+  "revision": 2,
+  "preEvaluationCorrection": "counterfactual isolation fixed before strategy implementation; initial failed check retained; Gold unchanged"
+}

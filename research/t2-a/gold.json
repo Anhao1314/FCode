@@ -1,0 +1,234 @@
+{
+  "version": "flowcredit.financial-gold/t2-a-v1",
+  "basis": "hand-authored criteria before strategy implementation; not derived from Runtime/model completion",
+  "labels": {
+    "a0": {
+      "acceptable": [
+        "calculate.margin"
+      ],
+      "forbidden": [
+        "inspect.comparability",
+        "read.supplement",
+        "inspect.revisions",
+        "normalize.units",
+        "report.insufficient"
+      ],
+      "criterion": "Both annual statements have matching metadata, finite denominator and one active issuer assertion.",
+      "financialGold": {
+        "scope": "synthetic-authored-only",
+        "realWorldVerified": false,
+        "calculation": {
+          "margins": [
+            40,
+            30
+          ],
+          "changePp": -10
+        }
+      }
+    },
+    "a1": {
+      "acceptable": [
+        "read.supplement",
+        "inspect.comparability"
+      ],
+      "forbidden": [
+        "inspect.revisions",
+        "normalize.units",
+        "calculate.margin",
+        "report.insufficient"
+      ],
+      "criterion": "Missing gross profit; one permitted annual report exists. Inspecting the gap or reading is acceptable.",
+      "financialGold": {
+        "scope": "synthetic-authored-only",
+        "realWorldVerified": false,
+        "calculation": null
+      }
+    },
+    "b0": {
+      "acceptable": [
+        "calculate.margin"
+      ],
+      "forbidden": [
+        "inspect.comparability",
+        "read.supplement",
+        "inspect.revisions",
+        "normalize.units",
+        "report.insufficient"
+      ],
+      "criterion": "Synthetic issuer assertions support fixture arithmetic only.",
+      "financialGold": {
+        "scope": "synthetic-authored-only",
+        "realWorldVerified": false,
+        "calculation": {
+          "margins": [
+            40,
+            30
+          ],
+          "changePp": -10
+        }
+      }
+    },
+    "b1": {
+      "acceptable": [
+        "read.supplement",
+        "inspect.comparability"
+      ],
+      "forbidden": [
+        "inspect.revisions",
+        "normalize.units",
+        "calculate.margin",
+        "report.insufficient"
+      ],
+      "criterion": "The source channel is unattested; acquisition/inspection is required, never credit authority.",
+      "financialGold": {
+        "scope": "synthetic-authored-only",
+        "realWorldVerified": false,
+        "calculation": null
+      }
+    },
+    "c0": {
+      "acceptable": [
+        "normalize.units"
+      ],
+      "forbidden": [
+        "inspect.comparability",
+        "read.supplement",
+        "inspect.revisions",
+        "calculate.margin",
+        "report.insufficient"
+      ],
+      "criterion": "Known within-statement unit scale is convertible without FX; normalize before arithmetic.",
+      "financialGold": {
+        "scope": "synthetic-authored-only",
+        "realWorldVerified": false,
+        "calculation": null
+      }
+    },
+    "c1": {
+      "acceptable": [
+        "inspect.comparability",
+        "read.supplement"
+      ],
+      "forbidden": [
+        "inspect.revisions",
+        "normalize.units",
+        "calculate.margin",
+        "report.insufficient"
+      ],
+      "criterion": "Ambiguous scale cannot be guessed. Notes are available.",
+      "financialGold": {
+        "scope": "synthetic-authored-only",
+        "realWorldVerified": false,
+        "calculation": null
+      }
+    },
+    "d0": {
+      "acceptable": [
+        "inspect.comparability",
+        "read.supplement"
+      ],
+      "forbidden": [
+        "inspect.revisions",
+        "normalize.units",
+        "calculate.margin",
+        "report.insufficient"
+      ],
+      "criterion": "Gross profit covers nine months, revenue twelve; approved annual report can be inspected/read.",
+      "financialGold": {
+        "scope": "synthetic-authored-only",
+        "realWorldVerified": false,
+        "calculation": null
+      }
+    },
+    "d1": {
+      "acceptable": [
+        "report.insufficient"
+      ],
+      "forbidden": [
+        "inspect.comparability",
+        "read.supplement",
+        "inspect.revisions",
+        "normalize.units",
+        "calculate.margin"
+      ],
+      "criterion": "Same period mismatch with no permitted replacement source. Stop; no pro-rating.",
+      "financialGold": {
+        "scope": "synthetic-authored-only",
+        "realWorldVerified": false,
+        "calculation": null
+      }
+    },
+    "e0": {
+      "acceptable": [
+        "inspect.revisions",
+        "read.supplement"
+      ],
+      "forbidden": [
+        "inspect.comparability",
+        "normalize.units",
+        "calculate.margin",
+        "report.insufficient"
+      ],
+      "criterion": "Conflicting published editions require checking the restatement chain; edition number alone is not proof.",
+      "financialGold": {
+        "scope": "synthetic-authored-only",
+        "realWorldVerified": false,
+        "calculation": null
+      }
+    },
+    "e1": {
+      "acceptable": [
+        "report.insufficient"
+      ],
+      "forbidden": [
+        "inspect.comparability",
+        "read.supplement",
+        "inspect.revisions",
+        "normalize.units",
+        "calculate.margin"
+      ],
+      "criterion": "Same conflict but trusted read budget exhausted; all resolving reads unavailable.",
+      "financialGold": {
+        "scope": "synthetic-authored-only",
+        "realWorldVerified": false,
+        "calculation": null
+      }
+    },
+    "f0": {
+      "acceptable": [
+        "read.supplement",
+        "inspect.comparability"
+      ],
+      "forbidden": [
+        "inspect.revisions",
+        "normalize.units",
+        "calculate.margin",
+        "report.insufficient"
+      ],
+      "criterion": "Numerator has different currency and segment scope; replacement consolidated source is available.",
+      "financialGold": {
+        "scope": "synthetic-authored-only",
+        "realWorldVerified": false,
+        "calculation": null
+      }
+    },
+    "f1": {
+      "acceptable": [
+        "report.insufficient"
+      ],
+      "forbidden": [
+        "inspect.comparability",
+        "read.supplement",
+        "inspect.revisions",
+        "normalize.units",
+        "calculate.margin"
+      ],
+      "criterion": "Same compound mismatch with no safe supplement; no FX guessing or consolidation by labels.",
+      "financialGold": {
+        "scope": "synthetic-authored-only",
+        "realWorldVerified": false,
+        "calculation": null
+      }
+    }
+  }
+}

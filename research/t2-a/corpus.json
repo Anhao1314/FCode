@@ -1,0 +1,1732 @@
+{
+  "version": "flowcredit.financial-corpus/t2-a-v1",
+  "rights": "closed-authored-synthetic-offline-only",
+  "actions": [
+    "inspect.comparability",
+    "read.supplement",
+    "inspect.revisions",
+    "normalize.units",
+    "calculate.margin",
+    "report.insufficient"
+  ],
+  "cases": [
+    {
+      "id": "a0",
+      "family": "completeness",
+      "split": "train",
+      "entity": "synthetic-completeness",
+      "sourceFamily": "authoring-completeness",
+      "templateFamily": "completeness",
+      "semanticFamily": "completeness",
+      "observation": {
+        "version": "flowcredit.financial-observation/t2-a-v1",
+        "goal": {
+          "metric": "annual-gross-margin-change",
+          "periods": [
+            {
+              "start": "2022-01-01",
+              "end": "2022-12-31"
+            },
+            {
+              "start": "2023-01-01",
+              "end": "2023-12-31"
+            }
+          ],
+          "scope": "consolidated",
+          "basis": "IFRS-gross-profit"
+        },
+        "statements": [
+          {
+            "period": {
+              "start": "2022-01-01",
+              "end": "2022-12-31"
+            },
+            "profitPeriod": {
+              "start": "2022-01-01",
+              "end": "2022-12-31"
+            },
+            "scope": "consolidated",
+            "profitScope": "consolidated",
+            "basis": "IFRS-gross-profit",
+            "profitBasis": "IFRS-gross-profit",
+            "currency": "USD",
+            "profitCurrency": "USD",
+            "unit": "ones",
+            "profitUnit": "ones",
+            "revenue": 100,
+            "grossProfit": 40,
+            "sourceType": "synthetic-issuer",
+            "edition": 1,
+            "restates": null
+          },
+          {
+            "period": {
+              "start": "2023-01-01",
+              "end": "2023-12-31"
+            },
+            "profitPeriod": {
+              "start": "2023-01-01",
+              "end": "2023-12-31"
+            },
+            "scope": "consolidated",
+            "profitScope": "consolidated",
+            "basis": "IFRS-gross-profit",
+            "profitBasis": "IFRS-gross-profit",
+            "currency": "USD",
+            "profitCurrency": "USD",
+            "unit": "ones",
+            "profitUnit": "ones",
+            "revenue": 100,
+            "grossProfit": 30,
+            "sourceType": "synthetic-issuer",
+            "edition": 1,
+            "restates": null
+          }
+        ],
+        "availableDocuments": [
+          {
+            "kind": "annual-report",
+            "periods": [
+              {
+                "start": "2023-01-01",
+                "end": "2023-12-31"
+              }
+            ],
+            "scope": "consolidated"
+          }
+        ],
+        "permissions": {
+          "allowedActions": [
+            "inspect.comparability",
+            "read.supplement",
+            "inspect.revisions",
+            "normalize.units",
+            "calculate.margin",
+            "report.insufficient"
+          ],
+          "remainingReads": 1
+        }
+      },
+      "documents": [
+        {
+          "kind": "annual-report",
+          "periods": [
+            {
+              "start": "2023-01-01",
+              "end": "2023-12-31"
+            }
+          ],
+          "scope": "consolidated",
+          "statements": [
+            {
+              "period": {
+                "start": "2023-01-01",
+                "end": "2023-12-31"
+              },
+              "profitPeriod": {
+                "start": "2023-01-01",
+                "end": "2023-12-31"
+              },
+              "scope": "consolidated",
+              "profitScope": "consolidated",
+              "basis": "IFRS-gross-profit",
+              "profitBasis": "IFRS-gross-profit",
+              "currency": "USD",
+              "profitCurrency": "USD",
+              "unit": "ones",
+              "profitUnit": "ones",
+              "revenue": 100,
+              "grossProfit": 30,
+              "sourceType": "synthetic-issuer",
+              "edition": 1,
+              "restates": null
+            }
+          ]
+        }
+      ],
+      "truth": {
+        "scope": "synthetic-authored-only",
+        "realWorldVerified": false
+      }
+    },
+    {
+      "id": "a1",
+      "family": "completeness",
+      "split": "train",
+      "entity": "synthetic-completeness",
+      "sourceFamily": "authoring-completeness",
+      "templateFamily": "completeness",
+      "semanticFamily": "completeness",
+      "observation": {
+        "version": "flowcredit.financial-observation/t2-a-v1",
+        "goal": {
+          "metric": "annual-gross-margin-change",
+          "periods": [
+            {
+              "start": "2022-01-01",
+              "end": "2022-12-31"
+            },
+            {
+              "start": "2023-01-01",
+              "end": "2023-12-31"
+            }
+          ],
+          "scope": "consolidated",
+          "basis": "IFRS-gross-profit"
+        },
+        "statements": [
+          {
+            "period": {
+              "start": "2022-01-01",
+              "end": "2022-12-31"
+            },
+            "profitPeriod": {
+              "start": "2022-01-01",
+              "end": "2022-12-31"
+            },
+            "scope": "consolidated",
+            "profitScope": "consolidated",
+            "basis": "IFRS-gross-profit",
+            "profitBasis": "IFRS-gross-profit",
+            "currency": "USD",
+            "profitCurrency": "USD",
+            "unit": "ones",
+            "profitUnit": "ones",
+            "revenue": 100,
+            "grossProfit": 40,
+            "sourceType": "synthetic-issuer",
+            "edition": 1,
+            "restates": null
+          },
+          {
+            "period": {
+              "start": "2023-01-01",
+              "end": "2023-12-31"
+            },
+            "profitPeriod": {
+              "start": "2023-01-01",
+              "end": "2023-12-31"
+            },
+            "scope": "consolidated",
+            "profitScope": "consolidated",
+            "basis": "IFRS-gross-profit",
+            "profitBasis": "IFRS-gross-profit",
+            "currency": "USD",
+            "profitCurrency": "USD",
+            "unit": "ones",
+            "profitUnit": "ones",
+            "revenue": 100,
+            "grossProfit": null,
+            "sourceType": "synthetic-issuer",
+            "edition": 1,
+            "restates": null
+          }
+        ],
+        "availableDocuments": [
+          {
+            "kind": "annual-report",
+            "periods": [
+              {
+                "start": "2023-01-01",
+                "end": "2023-12-31"
+              }
+            ],
+            "scope": "consolidated"
+          }
+        ],
+        "permissions": {
+          "allowedActions": [
+            "inspect.comparability",
+            "read.supplement",
+            "inspect.revisions",
+            "normalize.units",
+            "calculate.margin",
+            "report.insufficient"
+          ],
+          "remainingReads": 1
+        }
+      },
+      "documents": [
+        {
+          "kind": "annual-report",
+          "periods": [
+            {
+              "start": "2023-01-01",
+              "end": "2023-12-31"
+            }
+          ],
+          "scope": "consolidated",
+          "statements": [
+            {
+              "period": {
+                "start": "2023-01-01",
+                "end": "2023-12-31"
+              },
+              "profitPeriod": {
+                "start": "2023-01-01",
+                "end": "2023-12-31"
+              },
+              "scope": "consolidated",
+              "profitScope": "consolidated",
+              "basis": "IFRS-gross-profit",
+              "profitBasis": "IFRS-gross-profit",
+              "currency": "USD",
+              "profitCurrency": "USD",
+              "unit": "ones",
+              "profitUnit": "ones",
+              "revenue": 100,
+              "grossProfit": 30,
+              "sourceType": "synthetic-issuer",
+              "edition": 1,
+              "restates": null
+            }
+          ]
+        }
+      ],
+      "truth": {
+        "scope": "synthetic-authored-only",
+        "realWorldVerified": false
+      }
+    },
+    {
+      "id": "b0",
+      "family": "source-proof",
+      "split": "train",
+      "entity": "synthetic-source-proof",
+      "sourceFamily": "authoring-source-proof",
+      "templateFamily": "source-proof",
+      "semanticFamily": "source-proof",
+      "observation": {
+        "version": "flowcredit.financial-observation/t2-a-v1",
+        "goal": {
+          "metric": "annual-gross-margin-change",
+          "periods": [
+            {
+              "start": "2018-01-01",
+              "end": "2018-12-31"
+            },
+            {
+              "start": "2019-01-01",
+              "end": "2019-12-31"
+            }
+          ],
+          "scope": "consolidated",
+          "basis": "IFRS-gross-profit"
+        },
+        "statements": [
+          {
+            "period": {
+              "start": "2018-01-01",
+              "end": "2018-12-31"
+            },
+            "profitPeriod": {
+              "start": "2018-01-01",
+              "end": "2018-12-31"
+            },
+            "scope": "consolidated",
+            "profitScope": "consolidated",
+            "basis": "IFRS-gross-profit",
+            "profitBasis": "IFRS-gross-profit",
+            "currency": "USD",
+            "profitCurrency": "USD",
+            "unit": "ones",
+            "profitUnit": "ones",
+            "revenue": 200,
+            "grossProfit": 80,
+            "sourceType": "synthetic-issuer",
+            "edition": 1,
+            "restates": null
+          },
+          {
+            "period": {
+              "start": "2019-01-01",
+              "end": "2019-12-31"
+            },
+            "profitPeriod": {
+              "start": "2019-01-01",
+              "end": "2019-12-31"
+            },
+            "scope": "consolidated",
+            "profitScope": "consolidated",
+            "basis": "IFRS-gross-profit",
+            "profitBasis": "IFRS-gross-profit",
+            "currency": "USD",
+            "profitCurrency": "USD",
+            "unit": "ones",
+            "profitUnit": "ones",
+            "revenue": 200,
+            "grossProfit": 60,
+            "sourceType": "synthetic-issuer",
+            "edition": 1,
+            "restates": null
+          }
+        ],
+        "availableDocuments": [
+          {
+            "kind": "annual-report",
+            "periods": [
+              {
+                "start": "2019-01-01",
+                "end": "2019-12-31"
+              }
+            ],
+            "scope": "consolidated"
+          }
+        ],
+        "permissions": {
+          "allowedActions": [
+            "inspect.comparability",
+            "read.supplement",
+            "inspect.revisions",
+            "normalize.units",
+            "calculate.margin",
+            "report.insufficient"
+          ],
+          "remainingReads": 1
+        }
+      },
+      "documents": [
+        {
+          "kind": "annual-report",
+          "periods": [
+            {
+              "start": "2019-01-01",
+              "end": "2019-12-31"
+            }
+          ],
+          "scope": "consolidated",
+          "statements": [
+            {
+              "period": {
+                "start": "2019-01-01",
+                "end": "2019-12-31"
+              },
+              "profitPeriod": {
+                "start": "2019-01-01",
+                "end": "2019-12-31"
+              },
+              "scope": "consolidated",
+              "profitScope": "consolidated",
+              "basis": "IFRS-gross-profit",
+              "profitBasis": "IFRS-gross-profit",
+              "currency": "USD",
+              "profitCurrency": "USD",
+              "unit": "ones",
+              "profitUnit": "ones",
+              "revenue": 200,
+              "grossProfit": 60,
+              "sourceType": "synthetic-issuer",
+              "edition": 1,
+              "restates": null
+            }
+          ]
+        }
+      ],
+      "truth": {
+        "scope": "synthetic-authored-only",
+        "realWorldVerified": false
+      }
+    },
+    {
+      "id": "b1",
+      "family": "source-proof",
+      "split": "train",
+      "entity": "synthetic-source-proof",
+      "sourceFamily": "authoring-source-proof",
+      "templateFamily": "source-proof",
+      "semanticFamily": "source-proof",
+      "observation": {
+        "version": "flowcredit.financial-observation/t2-a-v1",
+        "goal": {
+          "metric": "annual-gross-margin-change",
+          "periods": [
+            {
+              "start": "2018-01-01",
+              "end": "2018-12-31"
+            },
+            {
+              "start": "2019-01-01",
+              "end": "2019-12-31"
+            }
+          ],
+          "scope": "consolidated",
+          "basis": "IFRS-gross-profit"
+        },
+        "statements": [
+          {
+            "period": {
+              "start": "2018-01-01",
+              "end": "2018-12-31"
+            },
+            "profitPeriod": {
+              "start": "2018-01-01",
+              "end": "2018-12-31"
+            },
+            "scope": "consolidated",
+            "profitScope": "consolidated",
+            "basis": "IFRS-gross-profit",
+            "profitBasis": "IFRS-gross-profit",
+            "currency": "USD",
+            "profitCurrency": "USD",
+            "unit": "ones",
+            "profitUnit": "ones",
+            "revenue": 200,
+            "grossProfit": 80,
+            "sourceType": "synthetic-issuer",
+            "edition": 1,
+            "restates": null
+          },
+          {
+            "period": {
+              "start": "2019-01-01",
+              "end": "2019-12-31"
+            },
+            "profitPeriod": {
+              "start": "2019-01-01",
+              "end": "2019-12-31"
+            },
+            "scope": "consolidated",
+            "profitScope": "consolidated",
+            "basis": "IFRS-gross-profit",
+            "profitBasis": "IFRS-gross-profit",
+            "currency": "USD",
+            "profitCurrency": "USD",
+            "unit": "ones",
+            "profitUnit": "ones",
+            "revenue": 200,
+            "grossProfit": 60,
+            "sourceType": "unattested",
+            "edition": 1,
+            "restates": null
+          }
+        ],
+        "availableDocuments": [
+          {
+            "kind": "annual-report",
+            "periods": [
+              {
+                "start": "2019-01-01",
+                "end": "2019-12-31"
+              }
+            ],
+            "scope": "consolidated"
+          }
+        ],
+        "permissions": {
+          "allowedActions": [
+            "inspect.comparability",
+            "read.supplement",
+            "inspect.revisions",
+            "normalize.units",
+            "calculate.margin",
+            "report.insufficient"
+          ],
+          "remainingReads": 1
+        }
+      },
+      "documents": [
+        {
+          "kind": "annual-report",
+          "periods": [
+            {
+              "start": "2019-01-01",
+              "end": "2019-12-31"
+            }
+          ],
+          "scope": "consolidated",
+          "statements": [
+            {
+              "period": {
+                "start": "2019-01-01",
+                "end": "2019-12-31"
+              },
+              "profitPeriod": {
+                "start": "2019-01-01",
+                "end": "2019-12-31"
+              },
+              "scope": "consolidated",
+              "profitScope": "consolidated",
+              "basis": "IFRS-gross-profit",
+              "profitBasis": "IFRS-gross-profit",
+              "currency": "USD",
+              "profitCurrency": "USD",
+              "unit": "ones",
+              "profitUnit": "ones",
+              "revenue": 200,
+              "grossProfit": 60,
+              "sourceType": "synthetic-issuer",
+              "edition": 1,
+              "restates": null
+            }
+          ]
+        }
+      ],
+      "truth": {
+        "scope": "synthetic-authored-only",
+        "realWorldVerified": false
+      }
+    },
+    {
+      "id": "c0",
+      "family": "scale-conversion",
+      "split": "dev",
+      "entity": "synthetic-scale-conversion",
+      "sourceFamily": "authoring-scale-conversion",
+      "templateFamily": "scale-conversion",
+      "semanticFamily": "scale-conversion",
+      "observation": {
+        "version": "flowcredit.financial-observation/t2-a-v1",
+        "goal": {
+          "metric": "annual-gross-margin-change",
+          "periods": [
+            {
+              "start": "2024-01-01",
+              "end": "2024-12-31"
+            },
+            {
+              "start": "2025-01-01",
+              "end": "2025-12-31"
+            }
+          ],
+          "scope": "consolidated",
+          "basis": "IFRS-gross-profit"
+        },
+        "statements": [
+          {
+            "period": {
+              "start": "2024-01-01",
+              "end": "2024-12-31"
+            },
+            "profitPeriod": {
+              "start": "2024-01-01",
+              "end": "2024-12-31"
+            },
+            "scope": "consolidated",
+            "profitScope": "consolidated",
+            "basis": "IFRS-gross-profit",
+            "profitBasis": "IFRS-gross-profit",
+            "currency": "USD",
+            "profitCurrency": "USD",
+            "unit": "ones",
+            "profitUnit": "ones",
+            "revenue": 100000000,
+            "grossProfit": 40000000,
+            "sourceType": "synthetic-issuer",
+            "edition": 1,
+            "restates": null
+          },
+          {
+            "period": {
+              "start": "2025-01-01",
+              "end": "2025-12-31"
+            },
+            "profitPeriod": {
+              "start": "2025-01-01",
+              "end": "2025-12-31"
+            },
+            "scope": "consolidated",
+            "profitScope": "consolidated",
+            "basis": "IFRS-gross-profit",
+            "profitBasis": "IFRS-gross-profit",
+            "currency": "USD",
+            "profitCurrency": "USD",
+            "unit": "ones",
+            "profitUnit": "millions",
+            "revenue": 100000000,
+            "grossProfit": 20,
+            "sourceType": "synthetic-issuer",
+            "edition": 1,
+            "restates": null
+          }
+        ],
+        "availableDocuments": [
+          {
+            "kind": "notes",
+            "periods": [
+              {
+                "start": "2025-01-01",
+                "end": "2025-12-31"
+              }
+            ],
+            "scope": "consolidated"
+          }
+        ],
+        "permissions": {
+          "allowedActions": [
+            "inspect.comparability",
+            "read.supplement",
+            "inspect.revisions",
+            "normalize.units",
+            "calculate.margin",
+            "report.insufficient"
+          ],
+          "remainingReads": 1
+        }
+      },
+      "documents": [
+        {
+          "kind": "notes",
+          "periods": [
+            {
+              "start": "2025-01-01",
+              "end": "2025-12-31"
+            }
+          ],
+          "scope": "consolidated",
+          "statements": [
+            {
+              "period": {
+                "start": "2025-01-01",
+                "end": "2025-12-31"
+              },
+              "profitPeriod": {
+                "start": "2025-01-01",
+                "end": "2025-12-31"
+              },
+              "scope": "consolidated",
+              "profitScope": "consolidated",
+              "basis": "IFRS-gross-profit",
+              "profitBasis": "IFRS-gross-profit",
+              "currency": "USD",
+              "profitCurrency": "USD",
+              "unit": "ones",
+              "profitUnit": "ones",
+              "revenue": 100000000,
+              "grossProfit": 20000000,
+              "sourceType": "synthetic-issuer",
+              "edition": 1,
+              "restates": null
+            }
+          ]
+        }
+      ],
+      "truth": {
+        "scope": "synthetic-authored-only",
+        "realWorldVerified": false
+      }
+    },
+    {
+      "id": "c1",
+      "family": "scale-conversion",
+      "split": "dev",
+      "entity": "synthetic-scale-conversion",
+      "sourceFamily": "authoring-scale-conversion",
+      "templateFamily": "scale-conversion",
+      "semanticFamily": "scale-conversion",
+      "observation": {
+        "version": "flowcredit.financial-observation/t2-a-v1",
+        "goal": {
+          "metric": "annual-gross-margin-change",
+          "periods": [
+            {
+              "start": "2024-01-01",
+              "end": "2024-12-31"
+            },
+            {
+              "start": "2025-01-01",
+              "end": "2025-12-31"
+            }
+          ],
+          "scope": "consolidated",
+          "basis": "IFRS-gross-profit"
+        },
+        "statements": [
+          {
+            "period": {
+              "start": "2024-01-01",
+              "end": "2024-12-31"
+            },
+            "profitPeriod": {
+              "start": "2024-01-01",
+              "end": "2024-12-31"
+            },
+            "scope": "consolidated",
+            "profitScope": "consolidated",
+            "basis": "IFRS-gross-profit",
+            "profitBasis": "IFRS-gross-profit",
+            "currency": "USD",
+            "profitCurrency": "USD",
+            "unit": "ones",
+            "profitUnit": "ones",
+            "revenue": 100000000,
+            "grossProfit": 40000000,
+            "sourceType": "synthetic-issuer",
+            "edition": 1,
+            "restates": null
+          },
+          {
+            "period": {
+              "start": "2025-01-01",
+              "end": "2025-12-31"
+            },
+            "profitPeriod": {
+              "start": "2025-01-01",
+              "end": "2025-12-31"
+            },
+            "scope": "consolidated",
+            "profitScope": "consolidated",
+            "basis": "IFRS-gross-profit",
+            "profitBasis": "IFRS-gross-profit",
+            "currency": "USD",
+            "profitCurrency": "USD",
+            "unit": "ones",
+            "profitUnit": "ambiguous",
+            "revenue": 100000000,
+            "grossProfit": 20,
+            "sourceType": "synthetic-issuer",
+            "edition": 1,
+            "restates": null
+          }
+        ],
+        "availableDocuments": [
+          {
+            "kind": "notes",
+            "periods": [
+              {
+                "start": "2025-01-01",
+                "end": "2025-12-31"
+              }
+            ],
+            "scope": "consolidated"
+          }
+        ],
+        "permissions": {
+          "allowedActions": [
+            "inspect.comparability",
+            "read.supplement",
+            "inspect.revisions",
+            "normalize.units",
+            "calculate.margin",
+            "report.insufficient"
+          ],
+          "remainingReads": 1
+        }
+      },
+      "documents": [
+        {
+          "kind": "notes",
+          "periods": [
+            {
+              "start": "2025-01-01",
+              "end": "2025-12-31"
+            }
+          ],
+          "scope": "consolidated",
+          "statements": [
+            {
+              "period": {
+                "start": "2025-01-01",
+                "end": "2025-12-31"
+              },
+              "profitPeriod": {
+                "start": "2025-01-01",
+                "end": "2025-12-31"
+              },
+              "scope": "consolidated",
+              "profitScope": "consolidated",
+              "basis": "IFRS-gross-profit",
+              "profitBasis": "IFRS-gross-profit",
+              "currency": "USD",
+              "profitCurrency": "USD",
+              "unit": "ones",
+              "profitUnit": "ones",
+              "revenue": 100000000,
+              "grossProfit": 20000000,
+              "sourceType": "synthetic-issuer",
+              "edition": 1,
+              "restates": null
+            }
+          ]
+        }
+      ],
+      "truth": {
+        "scope": "synthetic-authored-only",
+        "realWorldVerified": false
+      }
+    },
+    {
+      "id": "d0",
+      "family": "period-window",
+      "split": "dev",
+      "entity": "synthetic-period-window",
+      "sourceFamily": "authoring-period-window",
+      "templateFamily": "period-window",
+      "semanticFamily": "period-window",
+      "observation": {
+        "version": "flowcredit.financial-observation/t2-a-v1",
+        "goal": {
+          "metric": "annual-gross-margin-change",
+          "periods": [
+            {
+              "start": "2016-01-01",
+              "end": "2016-12-31"
+            },
+            {
+              "start": "2017-01-01",
+              "end": "2017-12-31"
+            }
+          ],
+          "scope": "consolidated",
+          "basis": "IFRS-gross-profit"
+        },
+        "statements": [
+          {
+            "period": {
+              "start": "2016-01-01",
+              "end": "2016-12-31"
+            },
+            "profitPeriod": {
+              "start": "2016-01-01",
+              "end": "2016-12-31"
+            },
+            "scope": "consolidated",
+            "profitScope": "consolidated",
+            "basis": "IFRS-gross-profit",
+            "profitBasis": "IFRS-gross-profit",
+            "currency": "USD",
+            "profitCurrency": "USD",
+            "unit": "ones",
+            "profitUnit": "ones",
+            "revenue": 100,
+            "grossProfit": 30,
+            "sourceType": "synthetic-issuer",
+            "edition": 1,
+            "restates": null
+          },
+          {
+            "period": {
+              "start": "2017-01-01",
+              "end": "2017-12-31"
+            },
+            "profitPeriod": {
+              "start": "2017-04-01",
+              "end": "2017-12-31"
+            },
+            "scope": "consolidated",
+            "profitScope": "consolidated",
+            "basis": "IFRS-gross-profit",
+            "profitBasis": "IFRS-gross-profit",
+            "currency": "USD",
+            "profitCurrency": "USD",
+            "unit": "ones",
+            "profitUnit": "ones",
+            "revenue": 100,
+            "grossProfit": 20,
+            "sourceType": "synthetic-issuer",
+            "edition": 1,
+            "restates": null
+          }
+        ],
+        "availableDocuments": [
+          {
+            "kind": "annual-report",
+            "periods": [
+              {
+                "start": "2017-01-01",
+                "end": "2017-12-31"
+              }
+            ],
+            "scope": "consolidated"
+          }
+        ],
+        "permissions": {
+          "allowedActions": [
+            "inspect.comparability",
+            "read.supplement",
+            "inspect.revisions",
+            "normalize.units",
+            "calculate.margin",
+            "report.insufficient"
+          ],
+          "remainingReads": 1
+        }
+      },
+      "documents": [
+        {
+          "kind": "annual-report",
+          "periods": [
+            {
+              "start": "2017-01-01",
+              "end": "2017-12-31"
+            }
+          ],
+          "scope": "consolidated",
+          "statements": [
+            {
+              "period": {
+                "start": "2017-01-01",
+                "end": "2017-12-31"
+              },
+              "profitPeriod": {
+                "start": "2017-01-01",
+                "end": "2017-12-31"
+              },
+              "scope": "consolidated",
+              "profitScope": "consolidated",
+              "basis": "IFRS-gross-profit",
+              "profitBasis": "IFRS-gross-profit",
+              "currency": "USD",
+              "profitCurrency": "USD",
+              "unit": "ones",
+              "profitUnit": "ones",
+              "revenue": 100,
+              "grossProfit": 20,
+              "sourceType": "synthetic-issuer",
+              "edition": 1,
+              "restates": null
+            }
+          ]
+        }
+      ],
+      "truth": {
+        "scope": "synthetic-authored-only",
+        "realWorldVerified": false
+      }
+    },
+    {
+      "id": "d1",
+      "family": "period-window",
+      "split": "dev",
+      "entity": "synthetic-period-window",
+      "sourceFamily": "authoring-period-window",
+      "templateFamily": "period-window",
+      "semanticFamily": "period-window",
+      "observation": {
+        "version": "flowcredit.financial-observation/t2-a-v1",
+        "goal": {
+          "metric": "annual-gross-margin-change",
+          "periods": [
+            {
+              "start": "2016-01-01",
+              "end": "2016-12-31"
+            },
+            {
+              "start": "2017-01-01",
+              "end": "2017-12-31"
+            }
+          ],
+          "scope": "consolidated",
+          "basis": "IFRS-gross-profit"
+        },
+        "statements": [
+          {
+            "period": {
+              "start": "2016-01-01",
+              "end": "2016-12-31"
+            },
+            "profitPeriod": {
+              "start": "2016-01-01",
+              "end": "2016-12-31"
+            },
+            "scope": "consolidated",
+            "profitScope": "consolidated",
+            "basis": "IFRS-gross-profit",
+            "profitBasis": "IFRS-gross-profit",
+            "currency": "USD",
+            "profitCurrency": "USD",
+            "unit": "ones",
+            "profitUnit": "ones",
+            "revenue": 100,
+            "grossProfit": 30,
+            "sourceType": "synthetic-issuer",
+            "edition": 1,
+            "restates": null
+          },
+          {
+            "period": {
+              "start": "2017-01-01",
+              "end": "2017-12-31"
+            },
+            "profitPeriod": {
+              "start": "2017-04-01",
+              "end": "2017-12-31"
+            },
+            "scope": "consolidated",
+            "profitScope": "consolidated",
+            "basis": "IFRS-gross-profit",
+            "profitBasis": "IFRS-gross-profit",
+            "currency": "USD",
+            "profitCurrency": "USD",
+            "unit": "ones",
+            "profitUnit": "ones",
+            "revenue": 100,
+            "grossProfit": 20,
+            "sourceType": "synthetic-issuer",
+            "edition": 1,
+            "restates": null
+          }
+        ],
+        "availableDocuments": [],
+        "permissions": {
+          "allowedActions": [
+            "inspect.comparability",
+            "read.supplement",
+            "inspect.revisions",
+            "normalize.units",
+            "calculate.margin",
+            "report.insufficient"
+          ],
+          "remainingReads": 1
+        }
+      },
+      "documents": [
+        {
+          "kind": "annual-report",
+          "periods": [
+            {
+              "start": "2017-01-01",
+              "end": "2017-12-31"
+            }
+          ],
+          "scope": "consolidated",
+          "statements": [
+            {
+              "period": {
+                "start": "2017-01-01",
+                "end": "2017-12-31"
+              },
+              "profitPeriod": {
+                "start": "2017-01-01",
+                "end": "2017-12-31"
+              },
+              "scope": "consolidated",
+              "profitScope": "consolidated",
+              "basis": "IFRS-gross-profit",
+              "profitBasis": "IFRS-gross-profit",
+              "currency": "USD",
+              "profitCurrency": "USD",
+              "unit": "ones",
+              "profitUnit": "ones",
+              "revenue": 100,
+              "grossProfit": 20,
+              "sourceType": "synthetic-issuer",
+              "edition": 1,
+              "restates": null
+            }
+          ]
+        }
+      ],
+      "truth": {
+        "scope": "synthetic-authored-only",
+        "realWorldVerified": false
+      }
+    },
+    {
+      "id": "e0",
+      "family": "revision-conflict",
+      "split": "eval",
+      "entity": "synthetic-revision-conflict",
+      "sourceFamily": "authoring-revision-conflict",
+      "templateFamily": "revision-conflict",
+      "semanticFamily": "revision-conflict",
+      "observation": {
+        "version": "flowcredit.financial-observation/t2-a-v1",
+        "goal": {
+          "metric": "annual-gross-margin-change",
+          "periods": [
+            {
+              "start": "2020-01-01",
+              "end": "2020-12-31"
+            },
+            {
+              "start": "2021-01-01",
+              "end": "2021-12-31"
+            }
+          ],
+          "scope": "consolidated",
+          "basis": "IFRS-gross-profit"
+        },
+        "statements": [
+          {
+            "period": {
+              "start": "2020-01-01",
+              "end": "2020-12-31"
+            },
+            "profitPeriod": {
+              "start": "2020-01-01",
+              "end": "2020-12-31"
+            },
+            "scope": "consolidated",
+            "profitScope": "consolidated",
+            "basis": "IFRS-gross-profit",
+            "profitBasis": "IFRS-gross-profit",
+            "currency": "USD",
+            "profitCurrency": "USD",
+            "unit": "ones",
+            "profitUnit": "ones",
+            "revenue": 100,
+            "grossProfit": 50,
+            "sourceType": "synthetic-issuer",
+            "edition": 1,
+            "restates": null
+          },
+          {
+            "period": {
+              "start": "2021-01-01",
+              "end": "2021-12-31"
+            },
+            "profitPeriod": {
+              "start": "2021-01-01",
+              "end": "2021-12-31"
+            },
+            "scope": "consolidated",
+            "profitScope": "consolidated",
+            "basis": "IFRS-gross-profit",
+            "profitBasis": "IFRS-gross-profit",
+            "currency": "USD",
+            "profitCurrency": "USD",
+            "unit": "ones",
+            "profitUnit": "ones",
+            "revenue": 100,
+            "grossProfit": 20,
+            "sourceType": "synthetic-issuer",
+            "edition": 1,
+            "restates": null
+          },
+          {
+            "period": {
+              "start": "2021-01-01",
+              "end": "2021-12-31"
+            },
+            "profitPeriod": {
+              "start": "2021-01-01",
+              "end": "2021-12-31"
+            },
+            "scope": "consolidated",
+            "profitScope": "consolidated",
+            "basis": "IFRS-gross-profit",
+            "profitBasis": "IFRS-gross-profit",
+            "currency": "USD",
+            "profitCurrency": "USD",
+            "unit": "ones",
+            "profitUnit": "ones",
+            "revenue": 100,
+            "grossProfit": 35,
+            "sourceType": "synthetic-issuer",
+            "edition": 2,
+            "restates": 1
+          }
+        ],
+        "availableDocuments": [
+          {
+            "kind": "restatement-note",
+            "periods": [
+              {
+                "start": "2021-01-01",
+                "end": "2021-12-31"
+              }
+            ],
+            "scope": "consolidated"
+          }
+        ],
+        "permissions": {
+          "allowedActions": [
+            "inspect.comparability",
+            "read.supplement",
+            "inspect.revisions",
+            "normalize.units",
+            "calculate.margin",
+            "report.insufficient"
+          ],
+          "remainingReads": 1
+        }
+      },
+      "documents": [
+        {
+          "kind": "restatement-note",
+          "periods": [
+            {
+              "start": "2021-01-01",
+              "end": "2021-12-31"
+            }
+          ],
+          "scope": "consolidated",
+          "statements": [
+            {
+              "period": {
+                "start": "2021-01-01",
+                "end": "2021-12-31"
+              },
+              "profitPeriod": {
+                "start": "2021-01-01",
+                "end": "2021-12-31"
+              },
+              "scope": "consolidated",
+              "profitScope": "consolidated",
+              "basis": "IFRS-gross-profit",
+              "profitBasis": "IFRS-gross-profit",
+              "currency": "USD",
+              "profitCurrency": "USD",
+              "unit": "ones",
+              "profitUnit": "ones",
+              "revenue": 100,
+              "grossProfit": 35,
+              "sourceType": "synthetic-issuer",
+              "edition": 2,
+              "restates": 1
+            }
+          ]
+        }
+      ],
+      "truth": {
+        "scope": "synthetic-authored-only",
+        "realWorldVerified": false
+      }
+    },
+    {
+      "id": "e1",
+      "family": "revision-conflict",
+      "split": "eval",
+      "entity": "synthetic-revision-conflict",
+      "sourceFamily": "authoring-revision-conflict",
+      "templateFamily": "revision-conflict",
+      "semanticFamily": "revision-conflict",
+      "observation": {
+        "version": "flowcredit.financial-observation/t2-a-v1",
+        "goal": {
+          "metric": "annual-gross-margin-change",
+          "periods": [
+            {
+              "start": "2020-01-01",
+              "end": "2020-12-31"
+            },
+            {
+              "start": "2021-01-01",
+              "end": "2021-12-31"
+            }
+          ],
+          "scope": "consolidated",
+          "basis": "IFRS-gross-profit"
+        },
+        "statements": [
+          {
+            "period": {
+              "start": "2020-01-01",
+              "end": "2020-12-31"
+            },
+            "profitPeriod": {
+              "start": "2020-01-01",
+              "end": "2020-12-31"
+            },
+            "scope": "consolidated",
+            "profitScope": "consolidated",
+            "basis": "IFRS-gross-profit",
+            "profitBasis": "IFRS-gross-profit",
+            "currency": "USD",
+            "profitCurrency": "USD",
+            "unit": "ones",
+            "profitUnit": "ones",
+            "revenue": 100,
+            "grossProfit": 50,
+            "sourceType": "synthetic-issuer",
+            "edition": 1,
+            "restates": null
+          },
+          {
+            "period": {
+              "start": "2021-01-01",
+              "end": "2021-12-31"
+            },
+            "profitPeriod": {
+              "start": "2021-01-01",
+              "end": "2021-12-31"
+            },
+            "scope": "consolidated",
+            "profitScope": "consolidated",
+            "basis": "IFRS-gross-profit",
+            "profitBasis": "IFRS-gross-profit",
+            "currency": "USD",
+            "profitCurrency": "USD",
+            "unit": "ones",
+            "profitUnit": "ones",
+            "revenue": 100,
+            "grossProfit": 20,
+            "sourceType": "synthetic-issuer",
+            "edition": 1,
+            "restates": null
+          },
+          {
+            "period": {
+              "start": "2021-01-01",
+              "end": "2021-12-31"
+            },
+            "profitPeriod": {
+              "start": "2021-01-01",
+              "end": "2021-12-31"
+            },
+            "scope": "consolidated",
+            "profitScope": "consolidated",
+            "basis": "IFRS-gross-profit",
+            "profitBasis": "IFRS-gross-profit",
+            "currency": "USD",
+            "profitCurrency": "USD",
+            "unit": "ones",
+            "profitUnit": "ones",
+            "revenue": 100,
+            "grossProfit": 35,
+            "sourceType": "synthetic-issuer",
+            "edition": 2,
+            "restates": 1
+          }
+        ],
+        "availableDocuments": [
+          {
+            "kind": "restatement-note",
+            "periods": [
+              {
+                "start": "2021-01-01",
+                "end": "2021-12-31"
+              }
+            ],
+            "scope": "consolidated"
+          }
+        ],
+        "permissions": {
+          "allowedActions": [
+            "inspect.comparability",
+            "read.supplement",
+            "inspect.revisions",
+            "normalize.units",
+            "calculate.margin",
+            "report.insufficient"
+          ],
+          "remainingReads": 0
+        }
+      },
+      "documents": [
+        {
+          "kind": "restatement-note",
+          "periods": [
+            {
+              "start": "2021-01-01",
+              "end": "2021-12-31"
+            }
+          ],
+          "scope": "consolidated",
+          "statements": [
+            {
+              "period": {
+                "start": "2021-01-01",
+                "end": "2021-12-31"
+              },
+              "profitPeriod": {
+                "start": "2021-01-01",
+                "end": "2021-12-31"
+              },
+              "scope": "consolidated",
+              "profitScope": "consolidated",
+              "basis": "IFRS-gross-profit",
+              "profitBasis": "IFRS-gross-profit",
+              "currency": "USD",
+              "profitCurrency": "USD",
+              "unit": "ones",
+              "profitUnit": "ones",
+              "revenue": 100,
+              "grossProfit": 35,
+              "sourceType": "synthetic-issuer",
+              "edition": 2,
+              "restates": 1
+            }
+          ]
+        }
+      ],
+      "truth": {
+        "scope": "synthetic-authored-only",
+        "realWorldVerified": false
+      }
+    },
+    {
+      "id": "f0",
+      "family": "compound-scope-currency",
+      "split": "eval",
+      "entity": "synthetic-compound-scope-currency",
+      "sourceFamily": "authoring-compound-scope-currency",
+      "templateFamily": "compound-scope-currency",
+      "semanticFamily": "compound-scope-currency",
+      "observation": {
+        "version": "flowcredit.financial-observation/t2-a-v1",
+        "goal": {
+          "metric": "annual-gross-margin-change",
+          "periods": [
+            {
+              "start": "2014-01-01",
+              "end": "2014-12-31"
+            },
+            {
+              "start": "2015-01-01",
+              "end": "2015-12-31"
+            }
+          ],
+          "scope": "consolidated",
+          "basis": "IFRS-gross-profit"
+        },
+        "statements": [
+          {
+            "period": {
+              "start": "2014-01-01",
+              "end": "2014-12-31"
+            },
+            "profitPeriod": {
+              "start": "2014-01-01",
+              "end": "2014-12-31"
+            },
+            "scope": "consolidated",
+            "profitScope": "consolidated",
+            "basis": "IFRS-gross-profit",
+            "profitBasis": "IFRS-gross-profit",
+            "currency": "USD",
+            "profitCurrency": "USD",
+            "unit": "ones",
+            "profitUnit": "ones",
+            "revenue": 100,
+            "grossProfit": 40,
+            "sourceType": "synthetic-issuer",
+            "edition": 1,
+            "restates": null
+          },
+          {
+            "period": {
+              "start": "2015-01-01",
+              "end": "2015-12-31"
+            },
+            "profitPeriod": {
+              "start": "2015-01-01",
+              "end": "2015-12-31"
+            },
+            "scope": "consolidated",
+            "profitScope": "segment",
+            "basis": "IFRS-gross-profit",
+            "profitBasis": "IFRS-gross-profit",
+            "currency": "USD",
+            "profitCurrency": "EUR",
+            "unit": "ones",
+            "profitUnit": "ones",
+            "revenue": 100,
+            "grossProfit": 20,
+            "sourceType": "synthetic-issuer",
+            "edition": 1,
+            "restates": null
+          }
+        ],
+        "availableDocuments": [
+          {
+            "kind": "annual-report",
+            "periods": [
+              {
+                "start": "2015-01-01",
+                "end": "2015-12-31"
+              }
+            ],
+            "scope": "consolidated"
+          }
+        ],
+        "permissions": {
+          "allowedActions": [
+            "inspect.comparability",
+            "read.supplement",
+            "inspect.revisions",
+            "normalize.units",
+            "calculate.margin",
+            "report.insufficient"
+          ],
+          "remainingReads": 1
+        }
+      },
+      "documents": [
+        {
+          "kind": "annual-report",
+          "periods": [
+            {
+              "start": "2015-01-01",
+              "end": "2015-12-31"
+            }
+          ],
+          "scope": "consolidated",
+          "statements": [
+            {
+              "period": {
+                "start": "2015-01-01",
+                "end": "2015-12-31"
+              },
+              "profitPeriod": {
+                "start": "2015-01-01",
+                "end": "2015-12-31"
+              },
+              "scope": "consolidated",
+              "profitScope": "consolidated",
+              "basis": "IFRS-gross-profit",
+              "profitBasis": "IFRS-gross-profit",
+              "currency": "USD",
+              "profitCurrency": "USD",
+              "unit": "ones",
+              "profitUnit": "ones",
+              "revenue": 100,
+              "grossProfit": 20,
+              "sourceType": "synthetic-issuer",
+              "edition": 1,
+              "restates": null
+            }
+          ]
+        }
+      ],
+      "truth": {
+        "scope": "synthetic-authored-only",
+        "realWorldVerified": false
+      }
+    },
+    {
+      "id": "f1",
+      "family": "compound-scope-currency",
+      "split": "eval",
+      "entity": "synthetic-compound-scope-currency",
+      "sourceFamily": "authoring-compound-scope-currency",
+      "templateFamily": "compound-scope-currency",
+      "semanticFamily": "compound-scope-currency",
+      "observation": {
+        "version": "flowcredit.financial-observation/t2-a-v1",
+        "goal": {
+          "metric": "annual-gross-margin-change",
+          "periods": [
+            {
+              "start": "2014-01-01",
+              "end": "2014-12-31"
+            },
+            {
+              "start": "2015-01-01",
+              "end": "2015-12-31"
+            }
+          ],
+          "scope": "consolidated",
+          "basis": "IFRS-gross-profit"
+        },
+        "statements": [
+          {
+            "period": {
+              "start": "2014-01-01",
+              "end": "2014-12-31"
+            },
+            "profitPeriod": {
+              "start": "2014-01-01",
+              "end": "2014-12-31"
+            },
+            "scope": "consolidated",
+            "profitScope": "consolidated",
+            "basis": "IFRS-gross-profit",
+            "profitBasis": "IFRS-gross-profit",
+            "currency": "USD",
+            "profitCurrency": "USD",
+            "unit": "ones",
+            "profitUnit": "ones",
+            "revenue": 100,
+            "grossProfit": 40,
+            "sourceType": "synthetic-issuer",
+            "edition": 1,
+            "restates": null
+          },
+          {
+            "period": {
+              "start": "2015-01-01",
+              "end": "2015-12-31"
+            },
+            "profitPeriod": {
+              "start": "2015-01-01",
+              "end": "2015-12-31"
+            },
+            "scope": "consolidated",
+            "profitScope": "segment",
+            "basis": "IFRS-gross-profit",
+            "profitBasis": "IFRS-gross-profit",
+            "currency": "USD",
+            "profitCurrency": "EUR",
+            "unit": "ones",
+            "profitUnit": "ones",
+            "revenue": 100,
+            "grossProfit": 20,
+            "sourceType": "synthetic-issuer",
+            "edition": 1,
+            "restates": null
+          }
+        ],
+        "availableDocuments": [],
+        "permissions": {
+          "allowedActions": [
+            "inspect.comparability",
+            "read.supplement",
+            "inspect.revisions",
+            "normalize.units",
+            "calculate.margin",
+            "report.insufficient"
+          ],
+          "remainingReads": 1
+        }
+      },
+      "documents": [
+        {
+          "kind": "annual-report",
+          "periods": [
+            {
+              "start": "2015-01-01",
+              "end": "2015-12-31"
+            }
+          ],
+          "scope": "consolidated",
+          "statements": [
+            {
+              "period": {
+                "start": "2015-01-01",
+                "end": "2015-12-31"
+              },
+              "profitPeriod": {
+                "start": "2015-01-01",
+                "end": "2015-12-31"
+              },
+              "scope": "consolidated",
+              "profitScope": "consolidated",
+              "basis": "IFRS-gross-profit",
+              "profitBasis": "IFRS-gross-profit",
+              "currency": "USD",
+              "profitCurrency": "USD",
+              "unit": "ones",
+              "profitUnit": "ones",
+              "revenue": 100,
+              "grossProfit": 20,
+              "sourceType": "synthetic-issuer",
+              "edition": 1,
+              "restates": null
+            }
+          ]
+        }
+      ],
+      "truth": {
+        "scope": "synthetic-authored-only",
+        "realWorldVerified": false
+      }
+    }
+  ],
+  "counterfactualPairs": [
+    [
+      "a0",
+      "a1"
+    ],
+    [
+      "b0",
+      "b1"
+    ],
+    [
+      "c0",
+      "c1"
+    ],
+    [
+      "d0",
+      "d1"
+    ],
+    [
+      "e0",
+      "e1"
+    ],
+    [
+      "f0",
+      "f1"
+    ]
+  ]
+}
