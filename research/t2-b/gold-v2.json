@@ -1,0 +1,57 @@
+{
+  "version": "flowcredit.gold/t2-b-v2",
+  "authors": [
+    "Root contract author",
+    "read-only Gold Methodology Auditor (same model family, not human consensus)"
+  ],
+  "basis": "predeclared financial comparability predicates and independently authored synthetic arithmetic, never strategy/Runtime success",
+  "dimensions": [
+    "legality",
+    "relevance",
+    "acceptability",
+    "preference",
+    "costRisk",
+    "completion",
+    "factualCorrectness"
+  ],
+  "knownRepair": {
+    "case": "T2-A c0",
+    "oldGoldUnchanged": true,
+    "acceptable": [
+      "normalize.units",
+      "read.supplement"
+    ],
+    "preferred": "normalize.units only when known same-currency scale and no other blocker",
+    "reason": "permitted notes supply consistent units; acquisition is reasonable but costs one reading unit"
+  },
+  "acceptance": {
+    "calculate": "Exactly one supported statement per target period, positive revenue and nonnegative gross profit, safe integers, matching metadata and units; finite alone is insufficient in this contract.",
+    "normalize": "only known same-currency scale mismatch and otherwise comparable",
+    "read": "published authorized relevant period/scope catalog and a visible unresolved issue, including convertible scale",
+    "inspect": "one independent comparability inspection for unresolved state and relevant catalog",
+    "revisions": "visible multiple editions and published restatement-note",
+    "stop": "unresolved issues with no available safe resolving read or normalization"
+  },
+  "preference": {
+    "order": [
+      "fewerReads",
+      "fewerActions"
+    ],
+    "scope": "same task, same initial policy and budget, independently successful same terminal class and same fact answer; otherwise INCONCLUSIVE",
+    "other": "INCONCLUSIVE"
+  },
+  "disputes": [
+    {
+      "issue": "complete evidence assurance-only inspection",
+      "decision": "legal but redundant in this narrow task, not unacceptable financial assertion",
+      "status": "scope-dependent"
+    },
+    {
+      "issue": "external optimality and semantic overlap",
+      "status": "INCONCLUSIVE"
+    }
+  ],
+  "facts": "hand-authored task margins/change only; unavailable source bodies never support assertions",
+  "rights": "closed-authored-synthetic-offline-only",
+  "completion": "localJustifiedStop is separate from task-level correct stop; authored terminalGold must support insufficiency under the fixed experiment budget; self-induced exhaustion on a solvable task is not independent success"
+}
