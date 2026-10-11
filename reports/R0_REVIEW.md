@@ -9,3 +9,5 @@ The targeted review found one P2 defect: a staged deletion could be hidden by th
 Other reviewed controls: immutable Actions revisions, read-only workflow permissions, no model secrets or raw artifact uploads, unchanged execution contracts, environment allowlist, private unique test roots, source/usage documentation and bounded static import/secret checks. No further concrete Runtime change was requested.
 
 Scope: local static review plus Root's real negative tests. GitHub-hosted CI has not run, OS-level network isolation is not provided, scanners do not prove arbitrary sensitive prose absent, and provenance manifests are not independent external attestations. Local candidate release and repository-wide licensing remain owner decisions.
+
+Root full-regression follow-up: the new runner umask caused one inherited permission-negative fixture to become safe (289/290). Root retained the failure, restored child umask 022 while preserving private outer roots, and passed T0 24/24 plus independent full 291/291. No original assertions changed. This is executed Root evidence after the single targeted reviewer pass, not an additional reviewer approval.
