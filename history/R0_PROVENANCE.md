@@ -1,0 +1,11 @@
+# R0 provenance and retained failures
+
+The sole implementation input is the accepted local T0 candidate. Its 98 reviewed files were checked against T0's final verification manifest before copying. No old remote HEAD, re-created Mock finance implementation or frozen working-tree edit was used. The official remote advertised no refs during R0's read-only inspection; the new local Git history begins with this reviewed candidate, not reconstructed historical commits.
+
+`t0-source-hashes.json` records those 98 files. R0 changes only README, package metadata and ignore rules among them, preserving their exact originals in `t0-documents/`. The other inherited code, tests, contracts, sample files and summaries remain byte-identical. T0's relative links in archived documents refer to their original repository root. The existing M3-A origin/accepted-artifact manifests remain intact and describe the earlier portable migration.
+
+`t0-evidence-hashes.json` records hashes of 25 protected T0 validation files without copying private payloads. `failure-catalog.json` preserves the identities and counts of the failed T0 runs and the known Finch failure. Earlier M0–M4 and M3-A success/failure evidence remains linked by the inherited manifests. The protected originals, including raw execution state, remain local and read-only; they are not public data assets. Digests let authorized local reviewers compare bytes, but cannot retrieve the records and are not third-party attestations.
+
+Finch's concurrent run had 286/287 passes; the unchanged serial rerun had 287/287. The missing expected revision-conflict rejection and the 100ms model fixture are documented in the T0 report. Load/timing causality remains an inference. R0 neither reruns this external full-application suite nor repairs it. Its 93-test genuine finance dependency closure remains part of every full Harness run.
+
+New R0 runs receive fresh protected directories. A rerun cannot overwrite the prior runner's TAP, stderr or frozen tests' generated artifacts. Local source and evidence digests are compared again at handoff. These safeguards do not establish arbitrary power-loss durability, immutable external evidence retention, or resistance to an attacker who controls both all local files and review manifests.

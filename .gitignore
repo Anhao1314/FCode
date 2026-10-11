@@ -1,0 +1,17 @@
+node_modules/
+.env
+.env.*
+work/
+validation/
+packages/native-agent/validation/
+*.key
+*.pem
+*.p12
+*.pfx
+*.log
+**/receipts/
+**/checkpoints/
+**/blobs/
+**/witness/
+**/history-identity.json
+.DS_Store

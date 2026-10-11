@@ -1,0 +1,15 @@
+{
+  "version": "flowcredit.t0-sanitized-examples/v1",
+  "dataKind": "synthetic-offline-fixture",
+  "modelRequests": "injected-http-only",
+  "teacherSampling": false,
+  "labelScope": "offline-runtime-execution-only",
+  "use": "structural action/outcome demonstration; not chat SFT",
+  "rows": 2,
+  "sha256": "a01a4a420d47c830f79d0a53f0da69f5714686f47a57bcbd1c69e9b209a1322a",
+  "rawSourceBodiesIncluded": false,
+  "rawModelTextIncluded": false,
+  "credentialsIncluded": false,
+  "rights": "Test fixtures constructed locally; per-source synthetic consent attestations are in protected local approval records",
+  "warning": "References are pseudonymous and linkable, not proof of anonymization"
+}

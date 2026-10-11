@@ -1,0 +1,41 @@
+{
+  "version": "flowcredit.t0-review/v1",
+  "nativeCodexSubagents": true,
+  "rootOnlyImplementation": true,
+  "firstFindingsWithin5Minutes": true,
+  "targetedReviewPassesPerReviewer": 1,
+  "reviewers": [
+    {
+      "name": "trajectory-architect",
+      "model": "gpt-6-sol",
+      "reasoning": "high",
+      "readOnly": true,
+      "ranTests": false,
+      "findings": [
+        "Separate signed execution projection",
+        "Per-source clearance required",
+        "Stable references are linkable, not anonymous",
+        "Structural rows are not chat SFT and execution labels are not financial Gold"
+      ],
+      "resolution": "Added exact per-source clearance and documented limits; no blocking data-contract defect found"
+    },
+    {
+      "name": "integrity-auditor",
+      "model": "gpt-6-sol",
+      "reasoning": "xhigh",
+      "readOnly": true,
+      "ranTests": false,
+      "findings": [
+        "Capture can commit after revocation during blob publication",
+        "Dataset may publish after approval expires during write"
+      ],
+      "resolution": "Current auth/state reprojected before capture append; staged file plus synchronous final expiry check before atomic publication. Same review inspected corrections; no remaining concrete label bypass found within trusted host boundary"
+    }
+  ],
+  "reviewDoesNotProve": [
+    "Legal data rights",
+    "Anonymization",
+    "Real model research gain",
+    "Power loss or total rollback"
+  ]
+}

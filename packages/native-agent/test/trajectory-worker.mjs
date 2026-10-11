@@ -1,0 +1,13 @@
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { offlineService } from '../src/fixtures.mjs';
+import { createDeepSeekInternalRuntime } from '../src/deepseek-runtime.mjs';
+import { TrajectoryRecorder } from '../src/trajectory-recorder.mjs';
+import { fakeHttp } from './deepseek-fixtures.mjs';
+const config = JSON.parse(await readFile(process.argv[2], 'utf8'));
+globalThis.fetch = () => { throw Error('External HTTP forbidden in T0 worker'); };
+const stop = async phase => { if (phase === config.phase) { process.stdout.write('T0_MARKER\n'); await new Promise(() => {}); } };
+const runtime = createDeepSeekInternalRuntime(config.root, { loop: true, mode: 'injected-http-test', http: fakeHttp({ loop: true }).http, service: offlineService(config.root), authorizer: async () => config.authorization, afterApiPhase: config.operation === 'run' ? stop : undefined });
+const recorder = new TrajectoryRecorder({ runtime, root: join(config.root, 'trajectory'), afterPhase: stop, afterStorePhase: async (phase, detail) => { if (detail.sequence === 1) await stop(phase); } });
+if (config.operation === 'run') await runtime.harness.run(config.loopId, config.context);
+else await recorder.capture(config.loopId, config.context);

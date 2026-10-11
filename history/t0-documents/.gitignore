@@ -1,0 +1,12 @@
+node_modules/
+.env
+.env.*
+!.env.example
+work/
+validation/
+packages/native-agent/validation/
+*.key
+**/receipts/
+**/checkpoints/
+**/history-identity.json
+.DS_Store

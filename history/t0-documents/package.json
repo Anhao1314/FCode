@@ -1,0 +1,20 @@
+{
+  "name": "flowcredit-harness",
+  "version": "0.1.0-t0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "exports": {
+    ".": "./packages/native-agent/src/public-api.mjs",
+    "./trajectory": "./packages/native-agent/src/trajectory-runtime.mjs"
+  },
+  "scripts": {
+    "test": "node --import ./test/t0-setup.mjs --test packages/native-agent/test/*.test.mjs vendor/flowcredit-finance/test/*.test.js",
+    "test:legacy": "node --import ./test/t0-setup.mjs --test packages/native-agent/test/authority.test.mjs packages/native-agent/test/harness.test.mjs packages/native-agent/test/model-api.test.mjs packages/native-agent/test/task-store.test.mjs packages/native-agent/test/m1.test.mjs packages/native-agent/test/m2.test.mjs packages/native-agent/test/provider-adapters.test.mjs packages/native-agent/test/loop.test.mjs",
+    "test:finance": "node --import ./test/t0-setup.mjs --test vendor/flowcredit-finance/test/*.test.js",
+    "test:deepseek": "node --import ./test/t0-setup.mjs --test packages/native-agent/test/deepseek.test.mjs",
+    "test:trajectory": "node --import ./test/t0-setup.mjs --test packages/native-agent/test/trajectory.test.mjs"
+  }
+}

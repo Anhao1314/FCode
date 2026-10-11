@@ -1,0 +1,33 @@
+{
+  "version": "flowcredit.local-evidence-index/r0-v1",
+  "origin": "T0 protected local validation directory",
+  "rawFilesIncluded": false,
+  "evidenceFiles": {
+    "protection-verification.json": "8a5230bd2a01bf35ed1b45077256a9611ece6bee30da657f4f68ae2089986e28",
+    "trajectory.recovery.log": "feef99ef0a92960a55e66b8da96263862fb8d10e7a3e6879615b7d7f726914c8",
+    "deepseek-cases.json": "8b81b90cf8a606535e52ffda172bf40a286fe6cf6187aa1a85ed8e976a3a78c1",
+    "candidate-tests.log": "ba561f6d2b57d692097adf960d47f857a45691d5ca585f4a1615fb37672e4fb1",
+    "finch-protection.concurrent-failure.log": "f6360fa83ca56a0862f5326ec42642a1c4dffc68c18967ced85a9cbdecd4140e",
+    "timing.json": "c9c96f82a797ab5d8a644576f27e64fbcbf00a1e1540a08a47aaded04d53139c",
+    "finch-protection.log": "22eac07076a2e51d91571e6e0f4f3e3cfcfbaecbbab13d32a86947d81089a0c8",
+    "trajectory-cases.initial-failure.json": "d576bcfb99677444a9587977f3b305fcec03bf7a79312dab4d6423bc46774dcb",
+    "verification-run.log": "7de0ed7f854392e3c24e782fe423f02164fd0e9ff95c485b4291b107b4cf3a16",
+    "independent-tests.log": "91988ca19249cba2524c747f406e52034e9c1cd42146c4256af983b34e58aefe",
+    "samples-privacy-review.json": "512536c876e35d8492fadb5206f35841e936bf2acf9a7198831b94f6e3020407",
+    "trajectory-cases.json": "c71f3f5a1b383dfc26820660eaa4261919ede4f21589b7fddce93370faa02929",
+    "independent-trajectory-cases.json": "5ab2a4bf4ea6907c4d1541f77ceeb30d15b9d81ca6c127343e37d6405c065c69",
+    "trajectory.review-fixes.log": "7f23809746b4b6a92176e375381b93cc12afa276929c70208635e74bfa5b984c",
+    "candidate-source-hashes.tested.json": "68cea00cbe5322ecbdc9d330cb924325481fff8fb5e96ce8c093cff990138212",
+    "trajectory.invalid-output-focused.log": "a3134f2baa9bdf6caaf144f4e88ba03778413815f9c8141a0eba39f6d975cff7",
+    "trajectory-cases.lock-recovery-pass.json": "75040b25208eed93e73dd219ad9e19a39697d94be9d95f8d21c7ae734a0d0b61",
+    "verification-run.initial.log": "e577be073498c79d88ba1684cb0bbc4ca200a7b635fe4c5179d7d7b17f49e28d",
+    "protection.before.json": "740c87c6728a4cdb6fd76e1cbf34d0f3b79a691d6c537e8ad4e09366f88cca76",
+    "trajectory-cases.recovery-failure.json": "03c4d8f7a5ce01622d92b83634106911bdd54950e4e58221a07d09eaddca0d5d",
+    "verification.json": "915de4f8bc5a42d27ed6bfe8d47e840e9f173ea548ce92013aace3d92685b9a6",
+    "trajectory-cases.invalid-output-focused.json": "c015d8ea70f2e33fc9c89829df08c11b2b9523cc80b2f75ce1d21f9c6ff805b1",
+    "trajectory.initial.log": "2839aa4853ef5b35c3a7d79ed6156483934dde92bd51697472ca1104d074537c",
+    "trajectory.lock-recovery.log": "f2e0309d47b0edd9c04109e11ce2423b22155d94917ef13217022527e5b93c4a",
+    "independent-checkout.json": "c72281aae1fe99f5dbf031c57ec03d14339d46d8c7e0f18db36b49d8b65309bb"
+  },
+  "note": "Digests are provenance commitments, not signatures or public copies of private evidence. Original files remain local and read-only."
+}

@@ -1,0 +1,72 @@
+{
+  "version": "flowcredit.failure-catalog/r0-v1",
+  "historicalFailures": [
+    {
+      "origin": "T0 protected local validation",
+      "file": "trajectory.initial.log",
+      "sha256": "2839aa4853ef5b35c3a7d79ed6156483934dde92bd51697472ca1104d074537c",
+      "tests": 8,
+      "pass": 6,
+      "fail": 2,
+      "rawIncluded": false
+    },
+    {
+      "origin": "T0 protected local validation",
+      "file": "trajectory.recovery.log",
+      "sha256": "feef99ef0a92960a55e66b8da96263862fb8d10e7a3e6879615b7d7f726914c8",
+      "tests": 16,
+      "pass": 12,
+      "fail": 4,
+      "rawIncluded": false
+    },
+    {
+      "origin": "T0 protected local validation",
+      "file": "finch-protection.concurrent-failure.log",
+      "sha256": "f6360fa83ca56a0862f5326ec42642a1c4dffc68c18967ced85a9cbdecd4140e",
+      "tests": 287,
+      "pass": 286,
+      "fail": 1,
+      "rawIncluded": false
+    }
+  ],
+  "knownFinchFailure": {
+    "file": "finch-protection.concurrent-failure.log",
+    "tests": 287,
+    "pass": 286,
+    "fail": 1,
+    "testName": "evidence changed during eligible model explanation cannot publish a receipt against the later revision",
+    "serialRerun": {
+      "tests": 287,
+      "pass": 287,
+      "fail": 0
+    },
+    "codeAndAssertionsChanged": false,
+    "interpretation": "100ms model timeout versus delayed Evidence refresh under concurrent fsync is an inference; high-load stability not proven or fixed"
+  },
+  "note": "No failure overwritten or reclassified. T0 initial and recovery failures and fixes are documented in TRAJECTORY_AUDIT.md; earlier M0-M4/M3-A evidence identities remain in the inherited history manifests. Finch high-load cause is an inference and NOT_PROVEN. R0 does not rerun or repair Finch.",
+  "r0PreparationFailures": [
+    {
+      "file": "bootstrap-tool-output.txt",
+      "sha256": "1d073cfaed225a68f5f44f631a8eaabba5a51c9b0cdfc08cd736c322921770a9",
+      "rawIncluded": false,
+      "testsRun": 0
+    },
+    {
+      "file": "repository-first.log",
+      "sha256": "fd6995f086f77360c68cfa1de69638e8d3c72999b62219532d3f959f6870d0f7",
+      "rawIncluded": false,
+      "testsRun": 0
+    }
+  ],
+  "r0ReviewFinding": {
+    "id": "R0-INDEX-SET",
+    "severity": "P2",
+    "description": "Staged deletion hidden by untracked working copy",
+    "repair": "Audit complete index tree; new negative test",
+    "repositoryTests": {
+      "tests": 11,
+      "pass": 11,
+      "fail": 0
+    }
+  }
+}
