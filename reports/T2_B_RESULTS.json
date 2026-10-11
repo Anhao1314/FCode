@@ -1,0 +1,2349 @@
+{
+  "version": "flowcredit.t2-b-results/v1",
+  "startedWithFrozenPolicies": true,
+  "realModels": 0,
+  "learnedPolicies": 0,
+  "aggregate": {
+    "fixed": {
+      "tasks": 8,
+      "numericalGoals": 0,
+      "justifiedStops": 0,
+      "independentlySuccessful": 0,
+      "acceptableActions": 0,
+      "actions": 8,
+      "reads": 0,
+      "prematureCalculations": 8,
+      "heldOutSuccess": 0
+    },
+    "t1Presence": {
+      "tasks": 8,
+      "numericalGoals": 0,
+      "justifiedStops": 0,
+      "independentlySuccessful": 0,
+      "acceptableActions": 0,
+      "actions": 8,
+      "reads": 0,
+      "prematureCalculations": 8,
+      "heldOutSuccess": 0
+    },
+    "t2aHeuristic": {
+      "tasks": 8,
+      "numericalGoals": 3,
+      "justifiedStops": 3,
+      "independentlySuccessful": 6,
+      "acceptableActions": 29,
+      "actions": 29,
+      "reads": 20,
+      "prematureCalculations": 0,
+      "heldOutSuccess": 2
+    },
+    "candidate": {
+      "tasks": 8,
+      "numericalGoals": 5,
+      "justifiedStops": 3,
+      "independentlySuccessful": 8,
+      "acceptableActions": 22,
+      "actions": 22,
+      "reads": 13,
+      "prematureCalculations": 0,
+      "heldOutSuccess": 4
+    }
+  },
+  "results": [
+    {
+      "case": "u0",
+      "split": "development",
+      "family": "units-clarification",
+      "policy": "fixed",
+      "initialPolicyHash": "327a89847462c07a815badaac0b8f8a9b69993afca6a4ab17dcc175be8fbfebd",
+      "terminal": "denied",
+      "numericalGoalComplete": false,
+      "localJustifiedStop": false,
+      "justifiedStop": false,
+      "uncompletedInitiallySolvable": false,
+      "independentlySuccessful": false,
+      "facts": "UNVERIFIED",
+      "factAnswer": null,
+      "actions": 1,
+      "reads": 0,
+      "unknown": false,
+      "unconfirmedReadingReservations": 0,
+      "prematureCalculations": 1,
+      "acceptableActions": 0,
+      "rawFinancialTruth": "NOT_PROVEN",
+      "path": [
+        "calculate.margin"
+      ],
+      "actionGrades": [
+        {
+          "legality": true,
+          "relevance": false,
+          "acceptability": false,
+          "preference": "INCONCLUSIVE_UNTIL_COMPARABLE_FINAL_PATH",
+          "costRisk": {
+            "readingUnits": 0,
+            "syntheticMoney": 0,
+            "realMoney": "NOT_PROVEN"
+          },
+          "completion": "not-executed",
+          "factualCorrectness": "UNVERIFIED",
+          "realWorldFacts": "NOT_PROVEN"
+        }
+      ],
+      "errors": [
+        "T2_CALCULATION_BLOCKED"
+      ]
+    },
+    {
+      "case": "u1",
+      "split": "development",
+      "family": "units-clarification",
+      "policy": "fixed",
+      "initialPolicyHash": "327a89847462c07a815badaac0b8f8a9b69993afca6a4ab17dcc175be8fbfebd",
+      "terminal": "denied",
+      "numericalGoalComplete": false,
+      "localJustifiedStop": false,
+      "justifiedStop": false,
+      "uncompletedInitiallySolvable": false,
+      "independentlySuccessful": false,
+      "facts": "UNVERIFIED",
+      "factAnswer": null,
+      "actions": 1,
+      "reads": 0,
+      "unknown": false,
+      "unconfirmedReadingReservations": 0,
+      "prematureCalculations": 1,
+      "acceptableActions": 0,
+      "rawFinancialTruth": "NOT_PROVEN",
+      "path": [
+        "calculate.margin"
+      ],
+      "actionGrades": [
+        {
+          "legality": true,
+          "relevance": false,
+          "acceptability": false,
+          "preference": "INCONCLUSIVE_UNTIL_COMPARABLE_FINAL_PATH",
+          "costRisk": {
+            "readingUnits": 0,
+            "syntheticMoney": 0,
+            "realMoney": "NOT_PROVEN"
+          },
+          "completion": "not-executed",
+          "factualCorrectness": "UNVERIFIED",
+          "realWorldFacts": "NOT_PROVEN"
+        }
+      ],
+      "errors": [
+        "T2_CALCULATION_BLOCKED"
+      ]
+    },
+    {
+      "case": "r0",
+      "split": "validation",
+      "family": "delayed-supersession",
+      "policy": "fixed",
+      "initialPolicyHash": "327a89847462c07a815badaac0b8f8a9b69993afca6a4ab17dcc175be8fbfebd",
+      "terminal": "denied",
+      "numericalGoalComplete": false,
+      "localJustifiedStop": false,
+      "justifiedStop": false,
+      "uncompletedInitiallySolvable": false,
+      "independentlySuccessful": false,
+      "facts": "UNVERIFIED",
+      "factAnswer": null,
+      "actions": 1,
+      "reads": 0,
+      "unknown": false,
+      "unconfirmedReadingReservations": 0,
+      "prematureCalculations": 1,
+      "acceptableActions": 0,
+      "rawFinancialTruth": "NOT_PROVEN",
+      "path": [
+        "calculate.margin"
+      ],
+      "actionGrades": [
+        {
+          "legality": true,
+          "relevance": false,
+          "acceptability": false,
+          "preference": "INCONCLUSIVE_UNTIL_COMPARABLE_FINAL_PATH",
+          "costRisk": {
+            "readingUnits": 0,
+            "syntheticMoney": 0,
+            "realMoney": "NOT_PROVEN"
+          },
+          "completion": "not-executed",
+          "factualCorrectness": "UNVERIFIED",
+          "realWorldFacts": "NOT_PROVEN"
+        }
+      ],
+      "errors": [
+        "T2_CALCULATION_BLOCKED"
+      ]
+    },
+    {
+      "case": "r1",
+      "split": "validation",
+      "family": "delayed-supersession",
+      "policy": "fixed",
+      "initialPolicyHash": "327a89847462c07a815badaac0b8f8a9b69993afca6a4ab17dcc175be8fbfebd",
+      "terminal": "denied",
+      "numericalGoalComplete": false,
+      "localJustifiedStop": false,
+      "justifiedStop": false,
+      "uncompletedInitiallySolvable": false,
+      "independentlySuccessful": false,
+      "facts": "UNVERIFIED",
+      "factAnswer": null,
+      "actions": 1,
+      "reads": 0,
+      "unknown": false,
+      "unconfirmedReadingReservations": 0,
+      "prematureCalculations": 1,
+      "acceptableActions": 0,
+      "rawFinancialTruth": "NOT_PROVEN",
+      "path": [
+        "calculate.margin"
+      ],
+      "actionGrades": [
+        {
+          "legality": true,
+          "relevance": false,
+          "acceptability": false,
+          "preference": "INCONCLUSIVE_UNTIL_COMPARABLE_FINAL_PATH",
+          "costRisk": {
+            "readingUnits": 0,
+            "syntheticMoney": 0,
+            "realMoney": "NOT_PROVEN"
+          },
+          "completion": "not-executed",
+          "factualCorrectness": "UNVERIFIED",
+          "realWorldFacts": "NOT_PROVEN"
+        }
+      ],
+      "errors": [
+        "T2_CALCULATION_BLOCKED"
+      ]
+    },
+    {
+      "case": "h0",
+      "split": "held-out",
+      "family": "scope-numerator-alignment",
+      "policy": "fixed",
+      "initialPolicyHash": "327a89847462c07a815badaac0b8f8a9b69993afca6a4ab17dcc175be8fbfebd",
+      "terminal": "denied",
+      "numericalGoalComplete": false,
+      "localJustifiedStop": false,
+      "justifiedStop": false,
+      "uncompletedInitiallySolvable": false,
+      "independentlySuccessful": false,
+      "facts": "UNVERIFIED",
+      "factAnswer": null,
+      "actions": 1,
+      "reads": 0,
+      "unknown": false,
+      "unconfirmedReadingReservations": 0,
+      "prematureCalculations": 1,
+      "acceptableActions": 0,
+      "rawFinancialTruth": "NOT_PROVEN",
+      "path": [
+        "calculate.margin"
+      ],
+      "actionGrades": [
+        {
+          "legality": true,
+          "relevance": false,
+          "acceptability": false,
+          "preference": "INCONCLUSIVE_UNTIL_COMPARABLE_FINAL_PATH",
+          "costRisk": {
+            "readingUnits": 0,
+            "syntheticMoney": 0,
+            "realMoney": "NOT_PROVEN"
+          },
+          "completion": "not-executed",
+          "factualCorrectness": "UNVERIFIED",
+          "realWorldFacts": "NOT_PROVEN"
+        }
+      ],
+      "errors": [
+        "T2_CALCULATION_BLOCKED"
+      ]
+    },
+    {
+      "case": "h1",
+      "split": "held-out",
+      "family": "scope-numerator-alignment",
+      "policy": "fixed",
+      "initialPolicyHash": "327a89847462c07a815badaac0b8f8a9b69993afca6a4ab17dcc175be8fbfebd",
+      "terminal": "denied",
+      "numericalGoalComplete": false,
+      "localJustifiedStop": false,
+      "justifiedStop": false,
+      "uncompletedInitiallySolvable": false,
+      "independentlySuccessful": false,
+      "facts": "UNVERIFIED",
+      "factAnswer": null,
+      "actions": 1,
+      "reads": 0,
+      "unknown": false,
+      "unconfirmedReadingReservations": 0,
+      "prematureCalculations": 1,
+      "acceptableActions": 0,
+      "rawFinancialTruth": "NOT_PROVEN",
+      "path": [
+        "calculate.margin"
+      ],
+      "actionGrades": [
+        {
+          "legality": true,
+          "relevance": false,
+          "acceptability": false,
+          "preference": "INCONCLUSIVE_UNTIL_COMPARABLE_FINAL_PATH",
+          "costRisk": {
+            "readingUnits": 0,
+            "syntheticMoney": 0,
+            "realMoney": "NOT_PROVEN"
+          },
+          "completion": "not-executed",
+          "factualCorrectness": "UNVERIFIED",
+          "realWorldFacts": "NOT_PROVEN"
+        }
+      ],
+      "errors": [
+        "T2_CALCULATION_BLOCKED"
+      ]
+    },
+    {
+      "case": "h2",
+      "split": "held-out",
+      "family": "statutory-cost-basis-bridge",
+      "policy": "fixed",
+      "initialPolicyHash": "327a89847462c07a815badaac0b8f8a9b69993afca6a4ab17dcc175be8fbfebd",
+      "terminal": "denied",
+      "numericalGoalComplete": false,
+      "localJustifiedStop": false,
+      "justifiedStop": false,
+      "uncompletedInitiallySolvable": false,
+      "independentlySuccessful": false,
+      "facts": "UNVERIFIED",
+      "factAnswer": null,
+      "actions": 1,
+      "reads": 0,
+      "unknown": false,
+      "unconfirmedReadingReservations": 0,
+      "prematureCalculations": 1,
+      "acceptableActions": 0,
+      "rawFinancialTruth": "NOT_PROVEN",
+      "path": [
+        "calculate.margin"
+      ],
+      "actionGrades": [
+        {
+          "legality": true,
+          "relevance": false,
+          "acceptability": false,
+          "preference": "INCONCLUSIVE_UNTIL_COMPARABLE_FINAL_PATH",
+          "costRisk": {
+            "readingUnits": 0,
+            "syntheticMoney": 0,
+            "realMoney": "NOT_PROVEN"
+          },
+          "completion": "not-executed",
+          "factualCorrectness": "UNVERIFIED",
+          "realWorldFacts": "NOT_PROVEN"
+        }
+      ],
+      "errors": [
+        "T2_CALCULATION_BLOCKED"
+      ]
+    },
+    {
+      "case": "h3",
+      "split": "held-out",
+      "family": "statutory-cost-basis-bridge",
+      "policy": "fixed",
+      "initialPolicyHash": "327a89847462c07a815badaac0b8f8a9b69993afca6a4ab17dcc175be8fbfebd",
+      "terminal": "denied",
+      "numericalGoalComplete": false,
+      "localJustifiedStop": false,
+      "justifiedStop": false,
+      "uncompletedInitiallySolvable": false,
+      "independentlySuccessful": false,
+      "facts": "UNVERIFIED",
+      "factAnswer": null,
+      "actions": 1,
+      "reads": 0,
+      "unknown": false,
+      "unconfirmedReadingReservations": 0,
+      "prematureCalculations": 1,
+      "acceptableActions": 0,
+      "rawFinancialTruth": "NOT_PROVEN",
+      "path": [
+        "calculate.margin"
+      ],
+      "actionGrades": [
+        {
+          "legality": true,
+          "relevance": false,
+          "acceptability": false,
+          "preference": "INCONCLUSIVE_UNTIL_COMPARABLE_FINAL_PATH",
+          "costRisk": {
+            "readingUnits": 0,
+            "syntheticMoney": 0,
+            "realMoney": "NOT_PROVEN"
+          },
+          "completion": "not-executed",
+          "factualCorrectness": "UNVERIFIED",
+          "realWorldFacts": "NOT_PROVEN"
+        }
+      ],
+      "errors": [
+        "T2_CALCULATION_BLOCKED"
+      ]
+    },
+    {
+      "case": "u0",
+      "split": "development",
+      "family": "units-clarification",
+      "policy": "t1Presence",
+      "initialPolicyHash": "327a89847462c07a815badaac0b8f8a9b69993afca6a4ab17dcc175be8fbfebd",
+      "terminal": "denied",
+      "numericalGoalComplete": false,
+      "localJustifiedStop": false,
+      "justifiedStop": false,
+      "uncompletedInitiallySolvable": false,
+      "independentlySuccessful": false,
+      "facts": "UNVERIFIED",
+      "factAnswer": null,
+      "actions": 1,
+      "reads": 0,
+      "unknown": false,
+      "unconfirmedReadingReservations": 0,
+      "prematureCalculations": 1,
+      "acceptableActions": 0,
+      "rawFinancialTruth": "NOT_PROVEN",
+      "path": [
+        "calculate.margin"
+      ],
+      "actionGrades": [
+        {
+          "legality": true,
+          "relevance": false,
+          "acceptability": false,
+          "preference": "INCONCLUSIVE_UNTIL_COMPARABLE_FINAL_PATH",
+          "costRisk": {
+            "readingUnits": 0,
+            "syntheticMoney": 0,
+            "realMoney": "NOT_PROVEN"
+          },
+          "completion": "not-executed",
+          "factualCorrectness": "UNVERIFIED",
+          "realWorldFacts": "NOT_PROVEN"
+        }
+      ],
+      "errors": [
+        "T2_CALCULATION_BLOCKED"
+      ]
+    },
+    {
+      "case": "u1",
+      "split": "development",
+      "family": "units-clarification",
+      "policy": "t1Presence",
+      "initialPolicyHash": "327a89847462c07a815badaac0b8f8a9b69993afca6a4ab17dcc175be8fbfebd",
+      "terminal": "denied",
+      "numericalGoalComplete": false,
+      "localJustifiedStop": false,
+      "justifiedStop": false,
+      "uncompletedInitiallySolvable": false,
+      "independentlySuccessful": false,
+      "facts": "UNVERIFIED",
+      "factAnswer": null,
+      "actions": 1,
+      "reads": 0,
+      "unknown": false,
+      "unconfirmedReadingReservations": 0,
+      "prematureCalculations": 1,
+      "acceptableActions": 0,
+      "rawFinancialTruth": "NOT_PROVEN",
+      "path": [
+        "calculate.margin"
+      ],
+      "actionGrades": [
+        {
+          "legality": true,
+          "relevance": false,
+          "acceptability": false,
+          "preference": "INCONCLUSIVE_UNTIL_COMPARABLE_FINAL_PATH",
+          "costRisk": {
+            "readingUnits": 0,
+            "syntheticMoney": 0,
+            "realMoney": "NOT_PROVEN"
+          },
+          "completion": "not-executed",
+          "factualCorrectness": "UNVERIFIED",
+          "realWorldFacts": "NOT_PROVEN"
+        }
+      ],
+      "errors": [
+        "T2_CALCULATION_BLOCKED"
+      ]
+    },
+    {
+      "case": "r0",
+      "split": "validation",
+      "family": "delayed-supersession",
+      "policy": "t1Presence",
+      "initialPolicyHash": "327a89847462c07a815badaac0b8f8a9b69993afca6a4ab17dcc175be8fbfebd",
+      "terminal": "denied",
+      "numericalGoalComplete": false,
+      "localJustifiedStop": false,
+      "justifiedStop": false,
+      "uncompletedInitiallySolvable": false,
+      "independentlySuccessful": false,
+      "facts": "UNVERIFIED",
+      "factAnswer": null,
+      "actions": 1,
+      "reads": 0,
+      "unknown": false,
+      "unconfirmedReadingReservations": 0,
+      "prematureCalculations": 1,
+      "acceptableActions": 0,
+      "rawFinancialTruth": "NOT_PROVEN",
+      "path": [
+        "calculate.margin"
+      ],
+      "actionGrades": [
+        {
+          "legality": true,
+          "relevance": false,
+          "acceptability": false,
+          "preference": "INCONCLUSIVE_UNTIL_COMPARABLE_FINAL_PATH",
+          "costRisk": {
+            "readingUnits": 0,
+            "syntheticMoney": 0,
+            "realMoney": "NOT_PROVEN"
+          },
+          "completion": "not-executed",
+          "factualCorrectness": "UNVERIFIED",
+          "realWorldFacts": "NOT_PROVEN"
+        }
+      ],
+      "errors": [
+        "T2_CALCULATION_BLOCKED"
+      ]
+    },
+    {
+      "case": "r1",
+      "split": "validation",
+      "family": "delayed-supersession",
+      "policy": "t1Presence",
+      "initialPolicyHash": "327a89847462c07a815badaac0b8f8a9b69993afca6a4ab17dcc175be8fbfebd",
+      "terminal": "denied",
+      "numericalGoalComplete": false,
+      "localJustifiedStop": false,
+      "justifiedStop": false,
+      "uncompletedInitiallySolvable": false,
+      "independentlySuccessful": false,
+      "facts": "UNVERIFIED",
+      "factAnswer": null,
+      "actions": 1,
+      "reads": 0,
+      "unknown": false,
+      "unconfirmedReadingReservations": 0,
+      "prematureCalculations": 1,
+      "acceptableActions": 0,
+      "rawFinancialTruth": "NOT_PROVEN",
+      "path": [
+        "calculate.margin"
+      ],
+      "actionGrades": [
+        {
+          "legality": true,
+          "relevance": false,
+          "acceptability": false,
+          "preference": "INCONCLUSIVE_UNTIL_COMPARABLE_FINAL_PATH",
+          "costRisk": {
+            "readingUnits": 0,
+            "syntheticMoney": 0,
+            "realMoney": "NOT_PROVEN"
+          },
+          "completion": "not-executed",
+          "factualCorrectness": "UNVERIFIED",
+          "realWorldFacts": "NOT_PROVEN"
+        }
+      ],
+      "errors": [
+        "T2_CALCULATION_BLOCKED"
+      ]
+    },
+    {
+      "case": "h0",
+      "split": "held-out",
+      "family": "scope-numerator-alignment",
+      "policy": "t1Presence",
+      "initialPolicyHash": "327a89847462c07a815badaac0b8f8a9b69993afca6a4ab17dcc175be8fbfebd",
+      "terminal": "denied",
+      "numericalGoalComplete": false,
+      "localJustifiedStop": false,
+      "justifiedStop": false,
+      "uncompletedInitiallySolvable": false,
+      "independentlySuccessful": false,
+      "facts": "UNVERIFIED",
+      "factAnswer": null,
+      "actions": 1,
+      "reads": 0,
+      "unknown": false,
+      "unconfirmedReadingReservations": 0,
+      "prematureCalculations": 1,
+      "acceptableActions": 0,
+      "rawFinancialTruth": "NOT_PROVEN",
+      "path": [
+        "calculate.margin"
+      ],
+      "actionGrades": [
+        {
+          "legality": true,
+          "relevance": false,
+          "acceptability": false,
+          "preference": "INCONCLUSIVE_UNTIL_COMPARABLE_FINAL_PATH",
+          "costRisk": {
+            "readingUnits": 0,
+            "syntheticMoney": 0,
+            "realMoney": "NOT_PROVEN"
+          },
+          "completion": "not-executed",
+          "factualCorrectness": "UNVERIFIED",
+          "realWorldFacts": "NOT_PROVEN"
+        }
+      ],
+      "errors": [
+        "T2_CALCULATION_BLOCKED"
+      ]
+    },
+    {
+      "case": "h1",
+      "split": "held-out",
+      "family": "scope-numerator-alignment",
+      "policy": "t1Presence",
+      "initialPolicyHash": "327a89847462c07a815badaac0b8f8a9b69993afca6a4ab17dcc175be8fbfebd",
+      "terminal": "denied",
+      "numericalGoalComplete": false,
+      "localJustifiedStop": false,
+      "justifiedStop": false,
+      "uncompletedInitiallySolvable": false,
+      "independentlySuccessful": false,
+      "facts": "UNVERIFIED",
+      "factAnswer": null,
+      "actions": 1,
+      "reads": 0,
+      "unknown": false,
+      "unconfirmedReadingReservations": 0,
+      "prematureCalculations": 1,
+      "acceptableActions": 0,
+      "rawFinancialTruth": "NOT_PROVEN",
+      "path": [
+        "calculate.margin"
+      ],
+      "actionGrades": [
+        {
+          "legality": true,
+          "relevance": false,
+          "acceptability": false,
+          "preference": "INCONCLUSIVE_UNTIL_COMPARABLE_FINAL_PATH",
+          "costRisk": {
+            "readingUnits": 0,
+            "syntheticMoney": 0,
+            "realMoney": "NOT_PROVEN"
+          },
+          "completion": "not-executed",
+          "factualCorrectness": "UNVERIFIED",
+          "realWorldFacts": "NOT_PROVEN"
+        }
+      ],
+      "errors": [
+        "T2_CALCULATION_BLOCKED"
+      ]
+    },
+    {
+      "case": "h2",
+      "split": "held-out",
+      "family": "statutory-cost-basis-bridge",
+      "policy": "t1Presence",
+      "initialPolicyHash": "327a89847462c07a815badaac0b8f8a9b69993afca6a4ab17dcc175be8fbfebd",
+      "terminal": "denied",
+      "numericalGoalComplete": false,
+      "localJustifiedStop": false,
+      "justifiedStop": false,
+      "uncompletedInitiallySolvable": false,
+      "independentlySuccessful": false,
+      "facts": "UNVERIFIED",
+      "factAnswer": null,
+      "actions": 1,
+      "reads": 0,
+      "unknown": false,
+      "unconfirmedReadingReservations": 0,
+      "prematureCalculations": 1,
+      "acceptableActions": 0,
+      "rawFinancialTruth": "NOT_PROVEN",
+      "path": [
+        "calculate.margin"
+      ],
+      "actionGrades": [
+        {
+          "legality": true,
+          "relevance": false,
+          "acceptability": false,
+          "preference": "INCONCLUSIVE_UNTIL_COMPARABLE_FINAL_PATH",
+          "costRisk": {
+            "readingUnits": 0,
+            "syntheticMoney": 0,
+            "realMoney": "NOT_PROVEN"
+          },
+          "completion": "not-executed",
+          "factualCorrectness": "UNVERIFIED",
+          "realWorldFacts": "NOT_PROVEN"
+        }
+      ],
+      "errors": [
+        "T2_CALCULATION_BLOCKED"
+      ]
+    },
+    {
+      "case": "h3",
+      "split": "held-out",
+      "family": "statutory-cost-basis-bridge",
+      "policy": "t1Presence",
+      "initialPolicyHash": "327a89847462c07a815badaac0b8f8a9b69993afca6a4ab17dcc175be8fbfebd",
+      "terminal": "denied",
+      "numericalGoalComplete": false,
+      "localJustifiedStop": false,
+      "justifiedStop": false,
+      "uncompletedInitiallySolvable": false,
+      "independentlySuccessful": false,
+      "facts": "UNVERIFIED",
+      "factAnswer": null,
+      "actions": 1,
+      "reads": 0,
+      "unknown": false,
+      "unconfirmedReadingReservations": 0,
+      "prematureCalculations": 1,
+      "acceptableActions": 0,
+      "rawFinancialTruth": "NOT_PROVEN",
+      "path": [
+        "calculate.margin"
+      ],
+      "actionGrades": [
+        {
+          "legality": true,
+          "relevance": false,
+          "acceptability": false,
+          "preference": "INCONCLUSIVE_UNTIL_COMPARABLE_FINAL_PATH",
+          "costRisk": {
+            "readingUnits": 0,
+            "syntheticMoney": 0,
+            "realMoney": "NOT_PROVEN"
+          },
+          "completion": "not-executed",
+          "factualCorrectness": "UNVERIFIED",
+          "realWorldFacts": "NOT_PROVEN"
+        }
+      ],
+      "errors": [
+        "T2_CALCULATION_BLOCKED"
+      ]
+    },
+    {
+      "case": "u0",
+      "split": "development",
+      "family": "units-clarification",
+      "policy": "t2aHeuristic",
+      "initialPolicyHash": "327a89847462c07a815badaac0b8f8a9b69993afca6a4ab17dcc175be8fbfebd",
+      "terminal": "calculated",
+      "numericalGoalComplete": true,
+      "localJustifiedStop": false,
+      "justifiedStop": false,
+      "uncompletedInitiallySolvable": false,
+      "independentlySuccessful": true,
+      "facts": "SYNTHETIC_GOLD_MATCH",
+      "factAnswer": {
+        "margins": [
+          40,
+          0.02
+        ],
+        "changePp": -39.98
+      },
+      "actions": 2,
+      "reads": 0,
+      "unknown": false,
+      "unconfirmedReadingReservations": 0,
+      "prematureCalculations": 0,
+      "acceptableActions": 2,
+      "rawFinancialTruth": "NOT_PROVEN",
+      "path": [
+        "normalize.units",
+        "calculate.margin"
+      ],
+      "actionGrades": [
+        {
+          "legality": true,
+          "relevance": true,
+          "acceptability": true,
+          "preference": "INCONCLUSIVE_UNTIL_COMPARABLE_FINAL_PATH",
+          "costRisk": {
+            "readingUnits": 0,
+            "syntheticMoney": 0,
+            "realMoney": "NOT_PROVEN"
+          },
+          "completion": "not-completed",
+          "factualCorrectness": "NOT_APPLICABLE",
+          "realWorldFacts": "NOT_PROVEN"
+        },
+        {
+          "legality": true,
+          "relevance": true,
+          "acceptability": true,
+          "preference": "INCONCLUSIVE_UNTIL_COMPARABLE_FINAL_PATH",
+          "costRisk": {
+            "readingUnits": 0,
+            "syntheticMoney": 0,
+            "realMoney": "NOT_PROVEN"
+          },
+          "completion": "calculated",
+          "factualCorrectness": "SYNTHETIC_GOLD_MATCH",
+          "realWorldFacts": "NOT_PROVEN"
+        }
+      ],
+      "errors": []
+    },
+    {
+      "case": "u1",
+      "split": "development",
+      "family": "units-clarification",
+      "policy": "t2aHeuristic",
+      "initialPolicyHash": "327a89847462c07a815badaac0b8f8a9b69993afca6a4ab17dcc175be8fbfebd",
+      "terminal": "calculated",
+      "numericalGoalComplete": true,
+      "localJustifiedStop": false,
+      "justifiedStop": false,
+      "uncompletedInitiallySolvable": false,
+      "independentlySuccessful": true,
+      "facts": "SYNTHETIC_GOLD_MATCH",
+      "factAnswer": {
+        "margins": [
+          40,
+          0.02
+        ],
+        "changePp": -39.98
+      },
+      "actions": 3,
+      "reads": 2,
+      "unknown": false,
+      "unconfirmedReadingReservations": 0,
+      "prematureCalculations": 0,
+      "acceptableActions": 3,
+      "rawFinancialTruth": "NOT_PROVEN",
+      "path": [
+        "inspect.comparability",
+        "read.supplement",
+        "calculate.margin"
+      ],
+      "actionGrades": [
+        {
+          "legality": true,
+          "relevance": true,
+          "acceptability": true,
+          "preference": "INCONCLUSIVE_UNTIL_COMPARABLE_FINAL_PATH",
+          "costRisk": {
+            "readingUnits": 1,
+            "syntheticMoney": 0,
+            "realMoney": "NOT_PROVEN"
+          },
+          "completion": "not-completed",
+          "factualCorrectness": "NOT_APPLICABLE",
+          "realWorldFacts": "NOT_PROVEN"
+        },
+        {
+          "legality": true,
+          "relevance": true,
+          "acceptability": true,
+          "preference": "INCONCLUSIVE_UNTIL_COMPARABLE_FINAL_PATH",
+          "costRisk": {
+            "readingUnits": 1,
+            "syntheticMoney": 0,
+            "realMoney": "NOT_PROVEN"
+          },
+          "completion": "not-completed",
+          "factualCorrectness": "NOT_APPLICABLE",
+          "realWorldFacts": "NOT_PROVEN"
+        },
+        {
+          "legality": true,
+          "relevance": true,
+          "acceptability": true,
+          "preference": "INCONCLUSIVE_UNTIL_COMPARABLE_FINAL_PATH",
+          "costRisk": {
+            "readingUnits": 0,
+            "syntheticMoney": 0,
+            "realMoney": "NOT_PROVEN"
+          },
+          "completion": "calculated",
+          "factualCorrectness": "SYNTHETIC_GOLD_MATCH",
+          "realWorldFacts": "NOT_PROVEN"
+        }
+      ],
+      "errors": []
+    },
+    {
+      "case": "r0",
+      "split": "validation",
+      "family": "delayed-supersession",
+      "policy": "t2aHeuristic",
+      "initialPolicyHash": "327a89847462c07a815badaac0b8f8a9b69993afca6a4ab17dcc175be8fbfebd",
+      "terminal": "calculated",
+      "numericalGoalComplete": true,
+      "localJustifiedStop": false,
+      "justifiedStop": false,
+      "uncompletedInitiallySolvable": false,
+      "independentlySuccessful": true,
+      "facts": "SYNTHETIC_GOLD_MATCH",
+      "factAnswer": {
+        "margins": [
+          50,
+          35
+        ],
+        "changePp": -15
+      },
+      "actions": 4,
+      "reads": 3,
+      "unknown": false,
+      "unconfirmedReadingReservations": 0,
+      "prematureCalculations": 0,
+      "acceptableActions": 4,
+      "rawFinancialTruth": "NOT_PROVEN",
+      "path": [
+        "inspect.comparability",
+        "read.supplement",
+        "inspect.revisions",
+        "calculate.margin"
+      ],
+      "actionGrades": [
+        {
+          "legality": true,
+          "relevance": true,
+          "acceptability": true,
+          "preference": "INCONCLUSIVE_UNTIL_COMPARABLE_FINAL_PATH",
+          "costRisk": {
+            "readingUnits": 1,
+            "syntheticMoney": 0,
+            "realMoney": "NOT_PROVEN"
+          },
+          "completion": "not-completed",
+          "factualCorrectness": "NOT_APPLICABLE",
+          "realWorldFacts": "NOT_PROVEN"
+        },
+        {
+          "legality": true,
+          "relevance": true,
+          "acceptability": true,
+          "preference": "INCONCLUSIVE_UNTIL_COMPARABLE_FINAL_PATH",
+          "costRisk": {
+            "readingUnits": 1,
+            "syntheticMoney": 0,
+            "realMoney": "NOT_PROVEN"
+          },
+          "completion": "not-completed",
+          "factualCorrectness": "NOT_APPLICABLE",
+          "realWorldFacts": "NOT_PROVEN"
+        },
+        {
+          "legality": true,
+          "relevance": true,
+          "acceptability": true,
+          "preference": "INCONCLUSIVE_UNTIL_COMPARABLE_FINAL_PATH",
+          "costRisk": {
+            "readingUnits": 1,
+            "syntheticMoney": 0,
+            "realMoney": "NOT_PROVEN"
+          },
+          "completion": "not-completed",
+          "factualCorrectness": "NOT_APPLICABLE",
+          "realWorldFacts": "NOT_PROVEN"
+        },
+        {
+          "legality": true,
+          "relevance": true,
+          "acceptability": true,
+          "preference": "INCONCLUSIVE_UNTIL_COMPARABLE_FINAL_PATH",
+          "costRisk": {
+            "readingUnits": 0,
+            "syntheticMoney": 0,
+            "realMoney": "NOT_PROVEN"
+          },
+          "completion": "calculated",
+          "factualCorrectness": "SYNTHETIC_GOLD_MATCH",
+          "realWorldFacts": "NOT_PROVEN"
+        }
+      ],
+      "errors": []
+    },
+    {
+      "case": "r1",
+      "split": "validation",
+      "family": "delayed-supersession",
+      "policy": "t2aHeuristic",
+      "initialPolicyHash": "327a89847462c07a815badaac0b8f8a9b69993afca6a4ab17dcc175be8fbfebd",
+      "terminal": "insufficient",
+      "numericalGoalComplete": false,
+      "localJustifiedStop": true,
+      "justifiedStop": true,
+      "uncompletedInitiallySolvable": false,
+      "independentlySuccessful": true,
+      "facts": "NOT_APPLICABLE",
+      "factAnswer": null,
+      "actions": 4,
+      "reads": 3,
+      "unknown": false,
+      "unconfirmedReadingReservations": 0,
+      "prematureCalculations": 0,
+      "acceptableActions": 4,
+      "rawFinancialTruth": "NOT_PROVEN",
+      "path": [
+        "inspect.comparability",
+        "read.supplement",
+        "inspect.revisions",
+        "report.insufficient"
+      ],
+      "actionGrades": [
+        {
+          "legality": true,
+          "relevance": true,
+          "acceptability": true,
+          "preference": "INCONCLUSIVE_UNTIL_COMPARABLE_FINAL_PATH",
+          "costRisk": {
+            "readingUnits": 1,
+            "syntheticMoney": 0,
+            "realMoney": "NOT_PROVEN"
+          },
+          "completion": "not-completed",
+          "factualCorrectness": "NOT_APPLICABLE",
+          "realWorldFacts": "NOT_PROVEN"
+        },
+        {
+          "legality": true,
+          "relevance": true,
+          "acceptability": true,
+          "preference": "INCONCLUSIVE_UNTIL_COMPARABLE_FINAL_PATH",
+          "costRisk": {
+            "readingUnits": 1,
+            "syntheticMoney": 0,
+            "realMoney": "NOT_PROVEN"
+          },
+          "completion": "not-completed",
+          "factualCorrectness": "NOT_APPLICABLE",
+          "realWorldFacts": "NOT_PROVEN"
+        },
+        {
+          "legality": true,
+          "relevance": true,
+          "acceptability": true,
+          "preference": "INCONCLUSIVE_UNTIL_COMPARABLE_FINAL_PATH",
+          "costRisk": {
+            "readingUnits": 1,
+            "syntheticMoney": 0,
+            "realMoney": "NOT_PROVEN"
+          },
+          "completion": "not-completed",
+          "factualCorrectness": "NOT_APPLICABLE",
+          "realWorldFacts": "NOT_PROVEN"
+        },
+        {
+          "legality": true,
+          "relevance": true,
+          "acceptability": true,
+          "preference": "INCONCLUSIVE_UNTIL_COMPARABLE_FINAL_PATH",
+          "costRisk": {
+            "readingUnits": 0,
+            "syntheticMoney": 0,
+            "realMoney": "NOT_PROVEN"
+          },
+          "completion": "justified-insufficient",
+          "factualCorrectness": "NOT_APPLICABLE",
+          "realWorldFacts": "NOT_PROVEN"
+        }
+      ],
+      "errors": []
+    },
+    {
+      "case": "h0",
+      "split": "held-out",
+      "family": "scope-numerator-alignment",
+      "policy": "t2aHeuristic",
+      "initialPolicyHash": "327a89847462c07a815badaac0b8f8a9b69993afca6a4ab17dcc175be8fbfebd",
+      "terminal": "insufficient",
+      "numericalGoalComplete": false,
+      "localJustifiedStop": true,
+      "justifiedStop": false,
+      "uncompletedInitiallySolvable": true,
+      "independentlySuccessful": false,
+      "facts": "NOT_APPLICABLE",
+      "factAnswer": null,
+      "actions": 4,
+      "reads": 3,
+      "unknown": false,
+      "unconfirmedReadingReservations": 0,
+      "prematureCalculations": 0,
+      "acceptableActions": 4,
+      "rawFinancialTruth": "NOT_PROVEN",
+      "path": [
+        "inspect.comparability",
+        "read.supplement",
+        "inspect.comparability",
+        "report.insufficient"
+      ],
+      "actionGrades": [
+        {
+          "legality": true,
+          "relevance": true,
+          "acceptability": true,
+          "preference": "INCONCLUSIVE_UNTIL_COMPARABLE_FINAL_PATH",
+          "costRisk": {
+            "readingUnits": 1,
+            "syntheticMoney": 0,
+            "realMoney": "NOT_PROVEN"
+          },
+          "completion": "not-completed",
+          "factualCorrectness": "NOT_APPLICABLE",
+          "realWorldFacts": "NOT_PROVEN"
+        },
+        {
+          "legality": true,
+          "relevance": true,
+          "acceptability": true,
+          "preference": "INCONCLUSIVE_UNTIL_COMPARABLE_FINAL_PATH",
+          "costRisk": {
+            "readingUnits": 1,
+            "syntheticMoney": 0,
+            "realMoney": "NOT_PROVEN"
+          },
+          "completion": "not-completed",
+          "factualCorrectness": "NOT_APPLICABLE",
+          "realWorldFacts": "NOT_PROVEN"
+        },
+        {
+          "legality": true,
+          "relevance": true,
+          "acceptability": true,
+          "preference": "INCONCLUSIVE_UNTIL_COMPARABLE_FINAL_PATH",
+          "costRisk": {
+            "readingUnits": 1,
+            "syntheticMoney": 0,
+            "realMoney": "NOT_PROVEN"
+          },
+          "completion": "not-completed",
+          "factualCorrectness": "NOT_APPLICABLE",
+          "realWorldFacts": "NOT_PROVEN"
+        },
+        {
+          "legality": true,
+          "relevance": true,
+          "acceptability": true,
+          "preference": "INCONCLUSIVE_UNTIL_COMPARABLE_FINAL_PATH",
+          "costRisk": {
+            "readingUnits": 0,
+            "syntheticMoney": 0,
+            "realMoney": "NOT_PROVEN"
+          },
+          "completion": "justified-insufficient",
+          "factualCorrectness": "NOT_APPLICABLE",
+          "realWorldFacts": "NOT_PROVEN"
+        }
+      ],
+      "errors": []
+    },
+    {
+      "case": "h1",
+      "split": "held-out",
+      "family": "scope-numerator-alignment",
+      "policy": "t2aHeuristic",
+      "initialPolicyHash": "327a89847462c07a815badaac0b8f8a9b69993afca6a4ab17dcc175be8fbfebd",
+      "terminal": "insufficient",
+      "numericalGoalComplete": false,
+      "localJustifiedStop": true,
+      "justifiedStop": true,
+      "uncompletedInitiallySolvable": false,
+      "independentlySuccessful": true,
+      "facts": "NOT_APPLICABLE",
+      "factAnswer": null,
+      "actions": 4,
+      "reads": 3,
+      "unknown": false,
+      "unconfirmedReadingReservations": 0,
+      "prematureCalculations": 0,
+      "acceptableActions": 4,
+      "rawFinancialTruth": "NOT_PROVEN",
+      "path": [
+        "inspect.comparability",
+        "read.supplement",
+        "inspect.comparability",
+        "report.insufficient"
+      ],
+      "actionGrades": [
+        {
+          "legality": true,
+          "relevance": true,
+          "acceptability": true,
+          "preference": "INCONCLUSIVE_UNTIL_COMPARABLE_FINAL_PATH",
+          "costRisk": {
+            "readingUnits": 1,
+            "syntheticMoney": 0,
+            "realMoney": "NOT_PROVEN"
+          },
+          "completion": "not-completed",
+          "factualCorrectness": "NOT_APPLICABLE",
+          "realWorldFacts": "NOT_PROVEN"
+        },
+        {
+          "legality": true,
+          "relevance": true,
+          "acceptability": true,
+          "preference": "INCONCLUSIVE_UNTIL_COMPARABLE_FINAL_PATH",
+          "costRisk": {
+            "readingUnits": 1,
+            "syntheticMoney": 0,
+            "realMoney": "NOT_PROVEN"
+          },
+          "completion": "not-completed",
+          "factualCorrectness": "NOT_APPLICABLE",
+          "realWorldFacts": "NOT_PROVEN"
+        },
+        {
+          "legality": true,
+          "relevance": true,
+          "acceptability": true,
+          "preference": "INCONCLUSIVE_UNTIL_COMPARABLE_FINAL_PATH",
+          "costRisk": {
+            "readingUnits": 1,
+            "syntheticMoney": 0,
+            "realMoney": "NOT_PROVEN"
+          },
+          "completion": "not-completed",
+          "factualCorrectness": "NOT_APPLICABLE",
+          "realWorldFacts": "NOT_PROVEN"
+        },
+        {
+          "legality": true,
+          "relevance": true,
+          "acceptability": true,
+          "preference": "INCONCLUSIVE_UNTIL_COMPARABLE_FINAL_PATH",
+          "costRisk": {
+            "readingUnits": 0,
+            "syntheticMoney": 0,
+            "realMoney": "NOT_PROVEN"
+          },
+          "completion": "justified-insufficient",
+          "factualCorrectness": "NOT_APPLICABLE",
+          "realWorldFacts": "NOT_PROVEN"
+        }
+      ],
+      "errors": []
+    },
+    {
+      "case": "h2",
+      "split": "held-out",
+      "family": "statutory-cost-basis-bridge",
+      "policy": "t2aHeuristic",
+      "initialPolicyHash": "327a89847462c07a815badaac0b8f8a9b69993afca6a4ab17dcc175be8fbfebd",
+      "terminal": "insufficient",
+      "numericalGoalComplete": false,
+      "localJustifiedStop": true,
+      "justifiedStop": false,
+      "uncompletedInitiallySolvable": true,
+      "independentlySuccessful": false,
+      "facts": "NOT_APPLICABLE",
+      "factAnswer": null,
+      "actions": 4,
+      "reads": 3,
+      "unknown": false,
+      "unconfirmedReadingReservations": 0,
+      "prematureCalculations": 0,
+      "acceptableActions": 4,
+      "rawFinancialTruth": "NOT_PROVEN",
+      "path": [
+        "inspect.comparability",
+        "read.supplement",
+        "inspect.comparability",
+        "report.insufficient"
+      ],
+      "actionGrades": [
+        {
+          "legality": true,
+          "relevance": true,
+          "acceptability": true,
+          "preference": "INCONCLUSIVE_UNTIL_COMPARABLE_FINAL_PATH",
+          "costRisk": {
+            "readingUnits": 1,
+            "syntheticMoney": 0,
+            "realMoney": "NOT_PROVEN"
+          },
+          "completion": "not-completed",
+          "factualCorrectness": "NOT_APPLICABLE",
+          "realWorldFacts": "NOT_PROVEN"
+        },
+        {
+          "legality": true,
+          "relevance": true,
+          "acceptability": true,
+          "preference": "INCONCLUSIVE_UNTIL_COMPARABLE_FINAL_PATH",
+          "costRisk": {
+            "readingUnits": 1,
+            "syntheticMoney": 0,
+            "realMoney": "NOT_PROVEN"
+          },
+          "completion": "not-completed",
+          "factualCorrectness": "NOT_APPLICABLE",
+          "realWorldFacts": "NOT_PROVEN"
+        },
+        {
+          "legality": true,
+          "relevance": true,
+          "acceptability": true,
+          "preference": "INCONCLUSIVE_UNTIL_COMPARABLE_FINAL_PATH",
+          "costRisk": {
+            "readingUnits": 1,
+            "syntheticMoney": 0,
+            "realMoney": "NOT_PROVEN"
+          },
+          "completion": "not-completed",
+          "factualCorrectness": "NOT_APPLICABLE",
+          "realWorldFacts": "NOT_PROVEN"
+        },
+        {
+          "legality": true,
+          "relevance": true,
+          "acceptability": true,
+          "preference": "INCONCLUSIVE_UNTIL_COMPARABLE_FINAL_PATH",
+          "costRisk": {
+            "readingUnits": 0,
+            "syntheticMoney": 0,
+            "realMoney": "NOT_PROVEN"
+          },
+          "completion": "justified-insufficient",
+          "factualCorrectness": "NOT_APPLICABLE",
+          "realWorldFacts": "NOT_PROVEN"
+        }
+      ],
+      "errors": []
+    },
+    {
+      "case": "h3",
+      "split": "held-out",
+      "family": "statutory-cost-basis-bridge",
+      "policy": "t2aHeuristic",
+      "initialPolicyHash": "327a89847462c07a815badaac0b8f8a9b69993afca6a4ab17dcc175be8fbfebd",
+      "terminal": "insufficient",
+      "numericalGoalComplete": false,
+      "localJustifiedStop": true,
+      "justifiedStop": true,
+      "uncompletedInitiallySolvable": false,
+      "independentlySuccessful": true,
+      "facts": "NOT_APPLICABLE",
+      "factAnswer": null,
+      "actions": 4,
+      "reads": 3,
+      "unknown": false,
+      "unconfirmedReadingReservations": 0,
+      "prematureCalculations": 0,
+      "acceptableActions": 4,
+      "rawFinancialTruth": "NOT_PROVEN",
+      "path": [
+        "inspect.comparability",
+        "read.supplement",
+        "inspect.comparability",
+        "report.insufficient"
+      ],
+      "actionGrades": [
+        {
+          "legality": true,
+          "relevance": true,
+          "acceptability": true,
+          "preference": "INCONCLUSIVE_UNTIL_COMPARABLE_FINAL_PATH",
+          "costRisk": {
+            "readingUnits": 1,
+            "syntheticMoney": 0,
+            "realMoney": "NOT_PROVEN"
+          },
+          "completion": "not-completed",
+          "factualCorrectness": "NOT_APPLICABLE",
+          "realWorldFacts": "NOT_PROVEN"
+        },
+        {
+          "legality": true,
+          "relevance": true,
+          "acceptability": true,
+          "preference": "INCONCLUSIVE_UNTIL_COMPARABLE_FINAL_PATH",
+          "costRisk": {
+            "readingUnits": 1,
+            "syntheticMoney": 0,
+            "realMoney": "NOT_PROVEN"
+          },
+          "completion": "not-completed",
+          "factualCorrectness": "NOT_APPLICABLE",
+          "realWorldFacts": "NOT_PROVEN"
+        },
+        {
+          "legality": true,
+          "relevance": true,
+          "acceptability": true,
+          "preference": "INCONCLUSIVE_UNTIL_COMPARABLE_FINAL_PATH",
+          "costRisk": {
+            "readingUnits": 1,
+            "syntheticMoney": 0,
+            "realMoney": "NOT_PROVEN"
+          },
+          "completion": "not-completed",
+          "factualCorrectness": "NOT_APPLICABLE",
+          "realWorldFacts": "NOT_PROVEN"
+        },
+        {
+          "legality": true,
+          "relevance": true,
+          "acceptability": true,
+          "preference": "INCONCLUSIVE_UNTIL_COMPARABLE_FINAL_PATH",
+          "costRisk": {
+            "readingUnits": 0,
+            "syntheticMoney": 0,
+            "realMoney": "NOT_PROVEN"
+          },
+          "completion": "justified-insufficient",
+          "factualCorrectness": "NOT_APPLICABLE",
+          "realWorldFacts": "NOT_PROVEN"
+        }
+      ],
+      "errors": []
+    },
+    {
+      "case": "u0",
+      "split": "development",
+      "family": "units-clarification",
+      "policy": "candidate",
+      "initialPolicyHash": "327a89847462c07a815badaac0b8f8a9b69993afca6a4ab17dcc175be8fbfebd",
+      "terminal": "calculated",
+      "numericalGoalComplete": true,
+      "localJustifiedStop": false,
+      "justifiedStop": false,
+      "uncompletedInitiallySolvable": false,
+      "independentlySuccessful": true,
+      "facts": "SYNTHETIC_GOLD_MATCH",
+      "factAnswer": {
+        "margins": [
+          40,
+          0.02
+        ],
+        "changePp": -39.98
+      },
+      "actions": 2,
+      "reads": 0,
+      "unknown": false,
+      "unconfirmedReadingReservations": 0,
+      "prematureCalculations": 0,
+      "acceptableActions": 2,
+      "rawFinancialTruth": "NOT_PROVEN",
+      "path": [
+        "normalize.units",
+        "calculate.margin"
+      ],
+      "actionGrades": [
+        {
+          "legality": true,
+          "relevance": true,
+          "acceptability": true,
+          "preference": "INCONCLUSIVE_UNTIL_COMPARABLE_FINAL_PATH",
+          "costRisk": {
+            "readingUnits": 0,
+            "syntheticMoney": 0,
+            "realMoney": "NOT_PROVEN"
+          },
+          "completion": "not-completed",
+          "factualCorrectness": "NOT_APPLICABLE",
+          "realWorldFacts": "NOT_PROVEN"
+        },
+        {
+          "legality": true,
+          "relevance": true,
+          "acceptability": true,
+          "preference": "INCONCLUSIVE_UNTIL_COMPARABLE_FINAL_PATH",
+          "costRisk": {
+            "readingUnits": 0,
+            "syntheticMoney": 0,
+            "realMoney": "NOT_PROVEN"
+          },
+          "completion": "calculated",
+          "factualCorrectness": "SYNTHETIC_GOLD_MATCH",
+          "realWorldFacts": "NOT_PROVEN"
+        }
+      ],
+      "errors": []
+    },
+    {
+      "case": "u1",
+      "split": "development",
+      "family": "units-clarification",
+      "policy": "candidate",
+      "initialPolicyHash": "327a89847462c07a815badaac0b8f8a9b69993afca6a4ab17dcc175be8fbfebd",
+      "terminal": "calculated",
+      "numericalGoalComplete": true,
+      "localJustifiedStop": false,
+      "justifiedStop": false,
+      "uncompletedInitiallySolvable": false,
+      "independentlySuccessful": true,
+      "facts": "SYNTHETIC_GOLD_MATCH",
+      "factAnswer": {
+        "margins": [
+          40,
+          0.02
+        ],
+        "changePp": -39.98
+      },
+      "actions": 2,
+      "reads": 1,
+      "unknown": false,
+      "unconfirmedReadingReservations": 0,
+      "prematureCalculations": 0,
+      "acceptableActions": 2,
+      "rawFinancialTruth": "NOT_PROVEN",
+      "path": [
+        "read.supplement",
+        "calculate.margin"
+      ],
+      "actionGrades": [
+        {
+          "legality": true,
+          "relevance": true,
+          "acceptability": true,
+          "preference": "INCONCLUSIVE_UNTIL_COMPARABLE_FINAL_PATH",
+          "costRisk": {
+            "readingUnits": 1,
+            "syntheticMoney": 0,
+            "realMoney": "NOT_PROVEN"
+          },
+          "completion": "not-completed",
+          "factualCorrectness": "NOT_APPLICABLE",
+          "realWorldFacts": "NOT_PROVEN"
+        },
+        {
+          "legality": true,
+          "relevance": true,
+          "acceptability": true,
+          "preference": "INCONCLUSIVE_UNTIL_COMPARABLE_FINAL_PATH",
+          "costRisk": {
+            "readingUnits": 0,
+            "syntheticMoney": 0,
+            "realMoney": "NOT_PROVEN"
+          },
+          "completion": "calculated",
+          "factualCorrectness": "SYNTHETIC_GOLD_MATCH",
+          "realWorldFacts": "NOT_PROVEN"
+        }
+      ],
+      "errors": []
+    },
+    {
+      "case": "r0",
+      "split": "validation",
+      "family": "delayed-supersession",
+      "policy": "candidate",
+      "initialPolicyHash": "327a89847462c07a815badaac0b8f8a9b69993afca6a4ab17dcc175be8fbfebd",
+      "terminal": "calculated",
+      "numericalGoalComplete": true,
+      "localJustifiedStop": false,
+      "justifiedStop": false,
+      "uncompletedInitiallySolvable": false,
+      "independentlySuccessful": true,
+      "facts": "SYNTHETIC_GOLD_MATCH",
+      "factAnswer": {
+        "margins": [
+          50,
+          35
+        ],
+        "changePp": -15
+      },
+      "actions": 3,
+      "reads": 2,
+      "unknown": false,
+      "unconfirmedReadingReservations": 0,
+      "prematureCalculations": 0,
+      "acceptableActions": 3,
+      "rawFinancialTruth": "NOT_PROVEN",
+      "path": [
+        "read.supplement",
+        "inspect.revisions",
+        "calculate.margin"
+      ],
+      "actionGrades": [
+        {
+          "legality": true,
+          "relevance": true,
+          "acceptability": true,
+          "preference": "INCONCLUSIVE_UNTIL_COMPARABLE_FINAL_PATH",
+          "costRisk": {
+            "readingUnits": 1,
+            "syntheticMoney": 0,
+            "realMoney": "NOT_PROVEN"
+          },
+          "completion": "not-completed",
+          "factualCorrectness": "NOT_APPLICABLE",
+          "realWorldFacts": "NOT_PROVEN"
+        },
+        {
+          "legality": true,
+          "relevance": true,
+          "acceptability": true,
+          "preference": "INCONCLUSIVE_UNTIL_COMPARABLE_FINAL_PATH",
+          "costRisk": {
+            "readingUnits": 1,
+            "syntheticMoney": 0,
+            "realMoney": "NOT_PROVEN"
+          },
+          "completion": "not-completed",
+          "factualCorrectness": "NOT_APPLICABLE",
+          "realWorldFacts": "NOT_PROVEN"
+        },
+        {
+          "legality": true,
+          "relevance": true,
+          "acceptability": true,
+          "preference": "INCONCLUSIVE_UNTIL_COMPARABLE_FINAL_PATH",
+          "costRisk": {
+            "readingUnits": 0,
+            "syntheticMoney": 0,
+            "realMoney": "NOT_PROVEN"
+          },
+          "completion": "calculated",
+          "factualCorrectness": "SYNTHETIC_GOLD_MATCH",
+          "realWorldFacts": "NOT_PROVEN"
+        }
+      ],
+      "errors": []
+    },
+    {
+      "case": "r1",
+      "split": "validation",
+      "family": "delayed-supersession",
+      "policy": "candidate",
+      "initialPolicyHash": "327a89847462c07a815badaac0b8f8a9b69993afca6a4ab17dcc175be8fbfebd",
+      "terminal": "insufficient",
+      "numericalGoalComplete": false,
+      "localJustifiedStop": true,
+      "justifiedStop": true,
+      "uncompletedInitiallySolvable": false,
+      "independentlySuccessful": true,
+      "facts": "NOT_APPLICABLE",
+      "factAnswer": null,
+      "actions": 3,
+      "reads": 2,
+      "unknown": false,
+      "unconfirmedReadingReservations": 0,
+      "prematureCalculations": 0,
+      "acceptableActions": 3,
+      "rawFinancialTruth": "NOT_PROVEN",
+      "path": [
+        "read.supplement",
+        "inspect.revisions",
+        "report.insufficient"
+      ],
+      "actionGrades": [
+        {
+          "legality": true,
+          "relevance": true,
+          "acceptability": true,
+          "preference": "INCONCLUSIVE_UNTIL_COMPARABLE_FINAL_PATH",
+          "costRisk": {
+            "readingUnits": 1,
+            "syntheticMoney": 0,
+            "realMoney": "NOT_PROVEN"
+          },
+          "completion": "not-completed",
+          "factualCorrectness": "NOT_APPLICABLE",
+          "realWorldFacts": "NOT_PROVEN"
+        },
+        {
+          "legality": true,
+          "relevance": true,
+          "acceptability": true,
+          "preference": "INCONCLUSIVE_UNTIL_COMPARABLE_FINAL_PATH",
+          "costRisk": {
+            "readingUnits": 1,
+            "syntheticMoney": 0,
+            "realMoney": "NOT_PROVEN"
+          },
+          "completion": "not-completed",
+          "factualCorrectness": "NOT_APPLICABLE",
+          "realWorldFacts": "NOT_PROVEN"
+        },
+        {
+          "legality": true,
+          "relevance": true,
+          "acceptability": true,
+          "preference": "INCONCLUSIVE_UNTIL_COMPARABLE_FINAL_PATH",
+          "costRisk": {
+            "readingUnits": 0,
+            "syntheticMoney": 0,
+            "realMoney": "NOT_PROVEN"
+          },
+          "completion": "justified-insufficient",
+          "factualCorrectness": "NOT_APPLICABLE",
+          "realWorldFacts": "NOT_PROVEN"
+        }
+      ],
+      "errors": []
+    },
+    {
+      "case": "h0",
+      "split": "held-out",
+      "family": "scope-numerator-alignment",
+      "policy": "candidate",
+      "initialPolicyHash": "327a89847462c07a815badaac0b8f8a9b69993afca6a4ab17dcc175be8fbfebd",
+      "terminal": "calculated",
+      "numericalGoalComplete": true,
+      "localJustifiedStop": false,
+      "justifiedStop": false,
+      "uncompletedInitiallySolvable": false,
+      "independentlySuccessful": true,
+      "facts": "SYNTHETIC_GOLD_MATCH",
+      "factAnswer": {
+        "margins": [
+          45,
+          35
+        ],
+        "changePp": -10
+      },
+      "actions": 3,
+      "reads": 2,
+      "unknown": false,
+      "unconfirmedReadingReservations": 0,
+      "prematureCalculations": 0,
+      "acceptableActions": 3,
+      "rawFinancialTruth": "NOT_PROVEN",
+      "path": [
+        "read.supplement",
+        "read.supplement",
+        "calculate.margin"
+      ],
+      "actionGrades": [
+        {
+          "legality": true,
+          "relevance": true,
+          "acceptability": true,
+          "preference": "INCONCLUSIVE_UNTIL_COMPARABLE_FINAL_PATH",
+          "costRisk": {
+            "readingUnits": 1,
+            "syntheticMoney": 0,
+            "realMoney": "NOT_PROVEN"
+          },
+          "completion": "not-completed",
+          "factualCorrectness": "NOT_APPLICABLE",
+          "realWorldFacts": "NOT_PROVEN"
+        },
+        {
+          "legality": true,
+          "relevance": true,
+          "acceptability": true,
+          "preference": "INCONCLUSIVE_UNTIL_COMPARABLE_FINAL_PATH",
+          "costRisk": {
+            "readingUnits": 1,
+            "syntheticMoney": 0,
+            "realMoney": "NOT_PROVEN"
+          },
+          "completion": "not-completed",
+          "factualCorrectness": "NOT_APPLICABLE",
+          "realWorldFacts": "NOT_PROVEN"
+        },
+        {
+          "legality": true,
+          "relevance": true,
+          "acceptability": true,
+          "preference": "INCONCLUSIVE_UNTIL_COMPARABLE_FINAL_PATH",
+          "costRisk": {
+            "readingUnits": 0,
+            "syntheticMoney": 0,
+            "realMoney": "NOT_PROVEN"
+          },
+          "completion": "calculated",
+          "factualCorrectness": "SYNTHETIC_GOLD_MATCH",
+          "realWorldFacts": "NOT_PROVEN"
+        }
+      ],
+      "errors": []
+    },
+    {
+      "case": "h1",
+      "split": "held-out",
+      "family": "scope-numerator-alignment",
+      "policy": "candidate",
+      "initialPolicyHash": "327a89847462c07a815badaac0b8f8a9b69993afca6a4ab17dcc175be8fbfebd",
+      "terminal": "insufficient",
+      "numericalGoalComplete": false,
+      "localJustifiedStop": true,
+      "justifiedStop": true,
+      "uncompletedInitiallySolvable": false,
+      "independentlySuccessful": true,
+      "facts": "NOT_APPLICABLE",
+      "factAnswer": null,
+      "actions": 3,
+      "reads": 2,
+      "unknown": false,
+      "unconfirmedReadingReservations": 0,
+      "prematureCalculations": 0,
+      "acceptableActions": 3,
+      "rawFinancialTruth": "NOT_PROVEN",
+      "path": [
+        "read.supplement",
+        "read.supplement",
+        "report.insufficient"
+      ],
+      "actionGrades": [
+        {
+          "legality": true,
+          "relevance": true,
+          "acceptability": true,
+          "preference": "INCONCLUSIVE_UNTIL_COMPARABLE_FINAL_PATH",
+          "costRisk": {
+            "readingUnits": 1,
+            "syntheticMoney": 0,
+            "realMoney": "NOT_PROVEN"
+          },
+          "completion": "not-completed",
+          "factualCorrectness": "NOT_APPLICABLE",
+          "realWorldFacts": "NOT_PROVEN"
+        },
+        {
+          "legality": true,
+          "relevance": true,
+          "acceptability": true,
+          "preference": "INCONCLUSIVE_UNTIL_COMPARABLE_FINAL_PATH",
+          "costRisk": {
+            "readingUnits": 1,
+            "syntheticMoney": 0,
+            "realMoney": "NOT_PROVEN"
+          },
+          "completion": "not-completed",
+          "factualCorrectness": "NOT_APPLICABLE",
+          "realWorldFacts": "NOT_PROVEN"
+        },
+        {
+          "legality": true,
+          "relevance": true,
+          "acceptability": true,
+          "preference": "INCONCLUSIVE_UNTIL_COMPARABLE_FINAL_PATH",
+          "costRisk": {
+            "readingUnits": 0,
+            "syntheticMoney": 0,
+            "realMoney": "NOT_PROVEN"
+          },
+          "completion": "justified-insufficient",
+          "factualCorrectness": "NOT_APPLICABLE",
+          "realWorldFacts": "NOT_PROVEN"
+        }
+      ],
+      "errors": []
+    },
+    {
+      "case": "h2",
+      "split": "held-out",
+      "family": "statutory-cost-basis-bridge",
+      "policy": "candidate",
+      "initialPolicyHash": "327a89847462c07a815badaac0b8f8a9b69993afca6a4ab17dcc175be8fbfebd",
+      "terminal": "calculated",
+      "numericalGoalComplete": true,
+      "localJustifiedStop": false,
+      "justifiedStop": false,
+      "uncompletedInitiallySolvable": false,
+      "independentlySuccessful": true,
+      "facts": "SYNTHETIC_GOLD_MATCH",
+      "factAnswer": {
+        "margins": [
+          40,
+          42
+        ],
+        "changePp": 2
+      },
+      "actions": 3,
+      "reads": 2,
+      "unknown": false,
+      "unconfirmedReadingReservations": 0,
+      "prematureCalculations": 0,
+      "acceptableActions": 3,
+      "rawFinancialTruth": "NOT_PROVEN",
+      "path": [
+        "read.supplement",
+        "read.supplement",
+        "calculate.margin"
+      ],
+      "actionGrades": [
+        {
+          "legality": true,
+          "relevance": true,
+          "acceptability": true,
+          "preference": "INCONCLUSIVE_UNTIL_COMPARABLE_FINAL_PATH",
+          "costRisk": {
+            "readingUnits": 1,
+            "syntheticMoney": 0,
+            "realMoney": "NOT_PROVEN"
+          },
+          "completion": "not-completed",
+          "factualCorrectness": "NOT_APPLICABLE",
+          "realWorldFacts": "NOT_PROVEN"
+        },
+        {
+          "legality": true,
+          "relevance": true,
+          "acceptability": true,
+          "preference": "INCONCLUSIVE_UNTIL_COMPARABLE_FINAL_PATH",
+          "costRisk": {
+            "readingUnits": 1,
+            "syntheticMoney": 0,
+            "realMoney": "NOT_PROVEN"
+          },
+          "completion": "not-completed",
+          "factualCorrectness": "NOT_APPLICABLE",
+          "realWorldFacts": "NOT_PROVEN"
+        },
+        {
+          "legality": true,
+          "relevance": true,
+          "acceptability": true,
+          "preference": "INCONCLUSIVE_UNTIL_COMPARABLE_FINAL_PATH",
+          "costRisk": {
+            "readingUnits": 0,
+            "syntheticMoney": 0,
+            "realMoney": "NOT_PROVEN"
+          },
+          "completion": "calculated",
+          "factualCorrectness": "SYNTHETIC_GOLD_MATCH",
+          "realWorldFacts": "NOT_PROVEN"
+        }
+      ],
+      "errors": []
+    },
+    {
+      "case": "h3",
+      "split": "held-out",
+      "family": "statutory-cost-basis-bridge",
+      "policy": "candidate",
+      "initialPolicyHash": "327a89847462c07a815badaac0b8f8a9b69993afca6a4ab17dcc175be8fbfebd",
+      "terminal": "insufficient",
+      "numericalGoalComplete": false,
+      "localJustifiedStop": true,
+      "justifiedStop": true,
+      "uncompletedInitiallySolvable": false,
+      "independentlySuccessful": true,
+      "facts": "NOT_APPLICABLE",
+      "factAnswer": null,
+      "actions": 3,
+      "reads": 2,
+      "unknown": false,
+      "unconfirmedReadingReservations": 0,
+      "prematureCalculations": 0,
+      "acceptableActions": 3,
+      "rawFinancialTruth": "NOT_PROVEN",
+      "path": [
+        "read.supplement",
+        "read.supplement",
+        "report.insufficient"
+      ],
+      "actionGrades": [
+        {
+          "legality": true,
+          "relevance": true,
+          "acceptability": true,
+          "preference": "INCONCLUSIVE_UNTIL_COMPARABLE_FINAL_PATH",
+          "costRisk": {
+            "readingUnits": 1,
+            "syntheticMoney": 0,
+            "realMoney": "NOT_PROVEN"
+          },
+          "completion": "not-completed",
+          "factualCorrectness": "NOT_APPLICABLE",
+          "realWorldFacts": "NOT_PROVEN"
+        },
+        {
+          "legality": true,
+          "relevance": true,
+          "acceptability": true,
+          "preference": "INCONCLUSIVE_UNTIL_COMPARABLE_FINAL_PATH",
+          "costRisk": {
+            "readingUnits": 1,
+            "syntheticMoney": 0,
+            "realMoney": "NOT_PROVEN"
+          },
+          "completion": "not-completed",
+          "factualCorrectness": "NOT_APPLICABLE",
+          "realWorldFacts": "NOT_PROVEN"
+        },
+        {
+          "legality": true,
+          "relevance": true,
+          "acceptability": true,
+          "preference": "INCONCLUSIVE_UNTIL_COMPARABLE_FINAL_PATH",
+          "costRisk": {
+            "readingUnits": 0,
+            "syntheticMoney": 0,
+            "realMoney": "NOT_PROVEN"
+          },
+          "completion": "justified-insufficient",
+          "factualCorrectness": "NOT_APPLICABLE",
+          "realWorldFacts": "NOT_PROVEN"
+        }
+      ],
+      "errors": []
+    }
+  ],
+  "pairs": [
+    {
+      "family": "units-clarification",
+      "policy": "fixed",
+      "pairCases": [
+        "u0",
+        "u1"
+      ],
+      "pathsDifferent": false,
+      "outcomes": [
+        "denied",
+        "denied"
+      ],
+      "bothIndependentSuccess": false
+    },
+    {
+      "family": "units-clarification",
+      "policy": "t1Presence",
+      "pairCases": [
+        "u0",
+        "u1"
+      ],
+      "pathsDifferent": false,
+      "outcomes": [
+        "denied",
+        "denied"
+      ],
+      "bothIndependentSuccess": false
+    },
+    {
+      "family": "units-clarification",
+      "policy": "t2aHeuristic",
+      "pairCases": [
+        "u0",
+        "u1"
+      ],
+      "pathsDifferent": true,
+      "outcomes": [
+        "calculated",
+        "calculated"
+      ],
+      "bothIndependentSuccess": true
+    },
+    {
+      "family": "units-clarification",
+      "policy": "candidate",
+      "pairCases": [
+        "u0",
+        "u1"
+      ],
+      "pathsDifferent": true,
+      "outcomes": [
+        "calculated",
+        "calculated"
+      ],
+      "bothIndependentSuccess": true
+    },
+    {
+      "family": "delayed-supersession",
+      "policy": "fixed",
+      "pairCases": [
+        "r0",
+        "r1"
+      ],
+      "pathsDifferent": false,
+      "outcomes": [
+        "denied",
+        "denied"
+      ],
+      "bothIndependentSuccess": false
+    },
+    {
+      "family": "delayed-supersession",
+      "policy": "t1Presence",
+      "pairCases": [
+        "r0",
+        "r1"
+      ],
+      "pathsDifferent": false,
+      "outcomes": [
+        "denied",
+        "denied"
+      ],
+      "bothIndependentSuccess": false
+    },
+    {
+      "family": "delayed-supersession",
+      "policy": "t2aHeuristic",
+      "pairCases": [
+        "r0",
+        "r1"
+      ],
+      "pathsDifferent": true,
+      "outcomes": [
+        "calculated",
+        "insufficient"
+      ],
+      "bothIndependentSuccess": true
+    },
+    {
+      "family": "delayed-supersession",
+      "policy": "candidate",
+      "pairCases": [
+        "r0",
+        "r1"
+      ],
+      "pathsDifferent": true,
+      "outcomes": [
+        "calculated",
+        "insufficient"
+      ],
+      "bothIndependentSuccess": true
+    },
+    {
+      "family": "scope-numerator-alignment",
+      "policy": "fixed",
+      "pairCases": [
+        "h0",
+        "h1"
+      ],
+      "pathsDifferent": false,
+      "outcomes": [
+        "denied",
+        "denied"
+      ],
+      "bothIndependentSuccess": false
+    },
+    {
+      "family": "scope-numerator-alignment",
+      "policy": "t1Presence",
+      "pairCases": [
+        "h0",
+        "h1"
+      ],
+      "pathsDifferent": false,
+      "outcomes": [
+        "denied",
+        "denied"
+      ],
+      "bothIndependentSuccess": false
+    },
+    {
+      "family": "scope-numerator-alignment",
+      "policy": "t2aHeuristic",
+      "pairCases": [
+        "h0",
+        "h1"
+      ],
+      "pathsDifferent": false,
+      "outcomes": [
+        "insufficient",
+        "insufficient"
+      ],
+      "bothIndependentSuccess": false
+    },
+    {
+      "family": "scope-numerator-alignment",
+      "policy": "candidate",
+      "pairCases": [
+        "h0",
+        "h1"
+      ],
+      "pathsDifferent": true,
+      "outcomes": [
+        "calculated",
+        "insufficient"
+      ],
+      "bothIndependentSuccess": true
+    },
+    {
+      "family": "statutory-cost-basis-bridge",
+      "policy": "fixed",
+      "pairCases": [
+        "h2",
+        "h3"
+      ],
+      "pathsDifferent": false,
+      "outcomes": [
+        "denied",
+        "denied"
+      ],
+      "bothIndependentSuccess": false
+    },
+    {
+      "family": "statutory-cost-basis-bridge",
+      "policy": "t1Presence",
+      "pairCases": [
+        "h2",
+        "h3"
+      ],
+      "pathsDifferent": false,
+      "outcomes": [
+        "denied",
+        "denied"
+      ],
+      "bothIndependentSuccess": false
+    },
+    {
+      "family": "statutory-cost-basis-bridge",
+      "policy": "t2aHeuristic",
+      "pairCases": [
+        "h2",
+        "h3"
+      ],
+      "pathsDifferent": false,
+      "outcomes": [
+        "insufficient",
+        "insufficient"
+      ],
+      "bothIndependentSuccess": false
+    },
+    {
+      "family": "statutory-cost-basis-bridge",
+      "policy": "candidate",
+      "pairCases": [
+        "h2",
+        "h3"
+      ],
+      "pathsDifferent": true,
+      "outcomes": [
+        "calculated",
+        "insufficient"
+      ],
+      "bothIndependentSuccess": true
+    }
+  ],
+  "preferences": [
+    {
+      "case": "u0",
+      "left": "t2aHeuristic",
+      "right": "candidate",
+      "preference": "Tie"
+    },
+    {
+      "case": "u1",
+      "left": "t2aHeuristic",
+      "right": "candidate",
+      "preference": "right-preferred"
+    },
+    {
+      "case": "r0",
+      "left": "t2aHeuristic",
+      "right": "candidate",
+      "preference": "right-preferred"
+    },
+    {
+      "case": "r1",
+      "left": "t2aHeuristic",
+      "right": "candidate",
+      "preference": "right-preferred"
+    },
+    {
+      "case": "h0",
+      "left": "t2aHeuristic",
+      "right": "candidate",
+      "preference": "INCONCLUSIVE"
+    },
+    {
+      "case": "h1",
+      "left": "t2aHeuristic",
+      "right": "candidate",
+      "preference": "right-preferred"
+    },
+    {
+      "case": "h2",
+      "left": "t2aHeuristic",
+      "right": "candidate",
+      "preference": "INCONCLUSIVE"
+    },
+    {
+      "case": "h3",
+      "left": "t2aHeuristic",
+      "right": "candidate",
+      "preference": "right-preferred"
+    }
+  ],
+  "isolation": {
+    "conflicts": [],
+    "checks": [
+      "entity",
+      "source-family",
+      "period",
+      "declared-template-family",
+      "declared-semantic-family",
+      "counterfactual-pair",
+      "body-digest",
+      "initial-relation-fingerprint"
+    ],
+    "sharedObservationSchema": true,
+    "sharedPrimitiveSkills": true,
+    "semanticCompleteness": "NOT_PROVEN",
+    "blindEvaluation": "BLIND_EVALUATION_NOT_PROVEN",
+    "authorSeparation": "fork_turns=none curator after policy freeze; Root integration after freeze; shared filesystem/model family not external double-blind"
+  },
+  "teacherDecision": "NO_GO",
+  "trainingReady": "BLOCKED",
+  "blindEvaluation": "BLIND_EVALUATION_NOT_PROVEN",
+  "postEvaluationAudit": {
+    "frozenScoresUnchanged": true,
+    "gaps": [
+      {
+        "case": "h1",
+        "policy": "t2aHeuristic",
+        "terminal": "insufficient",
+        "frozenTaskLevelSuccess": true,
+        "releasedSourcesRetained": 1,
+        "authoredReleaseStages": 2,
+        "sourceCoverageComplete": false,
+        "stoppingEvidenceAudit": "INCONCLUSIVE_INCOMPLETE_COVERAGE",
+        "policyPath": [
+          "inspect.comparability",
+          "read.supplement",
+          "inspect.comparability",
+          "report.insufficient"
+        ]
+      },
+      {
+        "case": "h3",
+        "policy": "t2aHeuristic",
+        "terminal": "insufficient",
+        "frozenTaskLevelSuccess": true,
+        "releasedSourcesRetained": 1,
+        "authoredReleaseStages": 2,
+        "sourceCoverageComplete": false,
+        "stoppingEvidenceAudit": "INCONCLUSIVE_INCOMPLETE_COVERAGE",
+        "policyPath": [
+          "inspect.comparability",
+          "read.supplement",
+          "inspect.comparability",
+          "report.insufficient"
+        ]
+      }
+    ],
+    "trainingCandidateUse": "BLOCKED",
+    "goldCoverage": "INCONCLUSIVE"
+  },
+  "evidenceProvenance": {
+    "baseline": "1f14d1a8bcaef2d5ea94b9c38ce6f202048197fa",
+    "policyFreezeCommit": "cf32509203452c5578be3cfd9907c50e4a71946d",
+    "evaluatedSourceCommit": "63312ffdcd8f733748b2cae62f00af5d1ad347b3",
+    "firstRun": "run-dxbNIU",
+    "cloneRun": "run-DKZC5X",
+    "exactResultsReproduced": true,
+    "heldOutUses": 2,
+    "note": "Second use is reproducibility, not a new blind test; NO_GO is conservative default metadata, report decision is based on actual outcomes"
+  }
+}
