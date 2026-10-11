@@ -33,7 +33,11 @@ export async function verify(root = repositoryRoot, group = 'all') {
   const log = await open(join(logRoot, 'tests.tap'), 'wx', 0o600), errorLog = await open(join(logRoot, 'stderr.log'), 'wx', 0o600);
   const tests = selectTests(entries.map(e => e.path), group), startedAt = new Date().toISOString();
   console.log(JSON.stringify({ event: 'R0_TEST_START', runId, group, files: tests.length, inheritedModules: audit.inheritedModules }));
-  const child = spawn(process.execPath, ['--import', './test/t0-setup.mjs', '--test', '--test-concurrency=1', '--test-reporter=tap', ...tests], { cwd: copyRoot, env: testEnvironment(tmp), stdio: ['ignore', log.fd, errorLog.fd] });
+  // Keep inherited POSIX permission-negative tests meaningful: they deliberately
+  // create mode-0755 directories. Privacy is enforced by the enclosing 0700 roots.
+  const parentMask = process.umask(0o022); let child;
+  try { child = spawn(process.execPath, ['--import', './test/t0-setup.mjs', '--test', '--test-concurrency=1', '--test-reporter=tap', ...tests], { cwd: copyRoot, env: testEnvironment(tmp), stdio: ['ignore', log.fd, errorLog.fd] }); }
+  finally { process.umask(parentMask); }
   const result = await new Promise((accept, reject) => { child.once('error', reject); child.once('exit', (code, signal) => accept({ code, signal })); });
   await log.close(); await errorLog.close();
   const { readFile } = await import('node:fs/promises');

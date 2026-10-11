@@ -68,5 +68,17 @@
       "pass": 11,
       "fail": 0
     }
+  },
+  "r0FullRegressionFailure": {
+    "runId": "run-ubeGvn",
+    "tests": 290,
+    "pass": 289,
+    "fail": 1,
+    "testName": "new package facade leaves run intact when a separate recorder directory is refused",
+    "rawLogSha256": "546f1c8d5208a2076ebefa0fc2e0bc160a310f923ed3eea6666a31366e2c794b",
+    "rawIncluded": false,
+    "cause": "R0 runner inherited umask 077 into child; deliberate mkdir mode 0755 became 0700, invalidating fixture setup",
+    "repair": "Restore child umask 022; preserve outer protected roots and original assertion",
+    "finchRelated": false
   }
 }
