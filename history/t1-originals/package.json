@@ -1,0 +1,29 @@
+{
+  "name": "flowcredit-harness",
+  "version": "0.1.0-r0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24.0.0 <25"
+  },
+  "exports": {
+    ".": "./packages/native-agent/src/public-api.mjs",
+    "./trajectory": "./packages/native-agent/src/trajectory-runtime.mjs"
+  },
+  "scripts": {
+    "test": "node scripts/verify.mjs",
+    "test:repository": "node scripts/verify.mjs repository",
+    "test:legacy": "node scripts/verify.mjs legacy",
+    "test:finance": "node scripts/verify.mjs finance",
+    "test:deepseek": "node scripts/verify.mjs deepseek",
+    "test:trajectory": "node scripts/verify.mjs trajectory",
+    "test:t1": "node scripts/verify-t1.mjs",
+    "test:all": "node scripts/verify-t1.mjs all"
+  },
+  "description": "Evidence-native durable research harness with offline provider and trajectory contracts",
+  "license": "UNLICENSED",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Anhao1314/FlowCredit-Harness.git"
+  }
+}

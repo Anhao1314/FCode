@@ -1,0 +1,12 @@
+{
+  "version": "flowcredit.t2-engineering-repair/v1",
+  "at": "2026-10-11T05:24:09.966048+00:00",
+  "finding": "signed result used corpus permission instead of actual host-filtered input",
+  "originalSource": "./history/environment-before-permission-fix.txt",
+  "originalHash": "24f40f883e38d663853180348bdd09b1d354071a6bcd13810b1f3722d25a3f9c",
+  "correctedHash": "61dd59a32defd07b84904f231262de9555b8d3eb100a00ae2899f302901b89bc",
+  "diagnosticAndPolicyUnchanged": true,
+  "goldAndCorpusUnchanged": true,
+  "reproducedFailure": "run-xo2j4B; signed remainingReads 1 instead of0",
+  "change": "same bound host projection for gate, execution and receipt recheck; no score/Gold/policy tuning"
+}

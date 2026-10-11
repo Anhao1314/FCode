@@ -1,0 +1,11 @@
+{
+  "version": "flowcredit.t2-strategy-freeze/v1",
+  "frozenAt": "2026-10-11T05:19:15.809447+00:00",
+  "beforeFirstEvaluation": true,
+  "noPostEvalAccuracyTuning": true,
+  "sha256": {
+    "strategies.mjs": "5525c3d3f678cffc98d5f08d40f30734e9b32b9df1ef80753493509429eda41a",
+    "environment.mjs": "24f40f883e38d663853180348bdd09b1d354071a6bcd13810b1f3722d25a3f9c",
+    "verifier.mjs": "72a97ef8da11816bf55f50c806dd1aeaddf1d7ea30d6508d4fdb69ea79b32e76"
+  }
+}

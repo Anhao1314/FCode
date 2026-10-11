@@ -1,0 +1,103 @@
+import { readFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { digest, stable } from '../../packages/native-agent/src/baseline.mjs';
+import { exactKeys, fail } from '../../packages/native-agent/src/contracts.mjs';
+import { evaluateObservationAuthority } from '../../vendor/flowcredit-finance/src/evidence-authority.js';
+
+export const VERSION = 'flowcredit.financial-benchmark/t2-a-v1';
+export const ACTIONS = Object.freeze(['inspect.comparability', 'read.supplement', 'inspect.revisions', 'normalize.units', 'calculate.margin', 'report.insufficient']);
+export const READING = Object.freeze(['inspect.comparability', 'read.supplement', 'inspect.revisions']);
+const scales = Object.freeze({ ones: 1, thousands: 1000, millions: 1000000 });
+const same = (a, b) => stable(a) === stable(b);
+export const observation = (task, host = null) => {
+  const o = structuredClone(task.observation);
+  if (host) { o.permissions.allowedActions = o.permissions.allowedActions.filter(a => host.allowedActions.includes(a)); o.permissions.remainingReads = Math.min(o.permissions.remainingReads, host.maxReads); }
+  return o;
+};
+
+export async function corpus() {
+  const base = new URL('./', import.meta.url), freeze = JSON.parse(await readFile(new URL('freeze.json', base)));
+  for (const [name, hash] of Object.entries(freeze.sha256)) if (createHash('sha256').update(await readFile(new URL(name, base))).digest('hex') !== hash) fail('T2_FREEZE_CHANGED');
+  const data = JSON.parse(await readFile(new URL('corpus.json', base)));
+  if (data.version !== 'flowcredit.financial-corpus/t2-a-v1' || data.rights !== 'closed-authored-synthetic-offline-only' || !same(data.actions, ACTIONS)) fail('T2_CORPUS_INVALID');
+  return { data, freeze, fingerprint: digest(data) };
+}
+
+// Transparent experimental diagnostics, not Gold labels. Reading another
+// document can still fail to resolve a gap; its future contents are not here.
+export function diagnose(o) {
+  const issues = [], selected = [];
+  for (const p of o.goal.periods) {
+    const rows = o.statements.filter(s => same(s.period, p));
+    if (rows.length !== 1) { issues.push(rows.length ? 'multiple-editions' : 'missing-period'); continue; }
+    const s = rows[0]; selected.push(s);
+    if (s.revenue === null || s.grossProfit === null) issues.push('missing-metric');
+    else if (!Number.isFinite(s.revenue) || !Number.isFinite(s.grossProfit) || s.revenue <= 0 || s.grossProfit < 0 || !Number.isSafeInteger(s.revenue) || !Number.isSafeInteger(s.grossProfit)) issues.push('invalid-value');
+    if (!same(s.period, s.profitPeriod)) issues.push('period-mismatch');
+    if (s.scope !== o.goal.scope || s.profitScope !== o.goal.scope) issues.push('scope-mismatch');
+    if (s.basis !== o.goal.basis || s.profitBasis !== o.goal.basis) issues.push('basis-mismatch');
+    if (s.currency !== s.profitCurrency) issues.push('currency-mismatch');
+    if (s.sourceType !== 'synthetic-issuer') issues.push('unattested-source');
+    if (!Object.hasOwn(scales, s.unit) || !Object.hasOwn(scales, s.profitUnit)) issues.push('ambiguous-unit');
+    else if (s.unit !== s.profitUnit) issues.push('convertible-scale');
+  }
+  return { issues: [...new Set(issues)].sort(), selected };
+}
+export function permitted(o, action) {
+  return o.permissions.allowedActions.includes(action) && (!READING.includes(action) || o.permissions.remainingReads > 0);
+}
+export function validateAction(action) {
+  if (!exactKeys(action, ['tool', 'arguments']) || !ACTIONS.includes(action.tool) || !exactKeys(action.arguments, [])) fail('T2_ACTION_DENIED');
+  return structuredClone(action);
+}
+export function gate(o, proposed) {
+  const a = validateAction(proposed);
+  if (!permitted(o, a.tool)) fail('T2_PERMISSION_DENIED');
+  const { issues } = diagnose(o);
+  if (a.tool === 'calculate.margin' && issues.length) fail('T2_CALCULATION_BLOCKED');
+  if (a.tool === 'normalize.units' && (issues.length !== 1 || issues[0] !== 'convertible-scale')) fail('T2_NORMALIZATION_BLOCKED');
+  if (READING.includes(a.tool) && !o.availableDocuments.length) fail('T2_SOURCE_UNAVAILABLE');
+  return a;
+}
+export function execute(task, proposed, host = null) {
+  const o = observation(task, host), a = gate(o, proposed), diagnostics = diagnose(o);
+  const base = { version: VERSION, action: a.tool, effect: 'read-only-experimental', realWorldFinancialTruth: 'NOT_PROVEN', researchGoalComplete: false };
+  const available = task.documents.filter(d => o.availableDocuments.some(s => same(s, { kind: d.kind, periods: d.periods, scope: d.scope })));
+  if (READING.includes(a.tool) && !available.length) fail('T2_SOURCE_UNAVAILABLE');
+  if (a.tool === 'read.supplement') return { ...base, documents: structuredClone(available) };
+  if (a.tool === 'inspect.comparability') return { ...base, issues: diagnostics.issues, sourceMetadata: available.map(({ statements, ...s }) => s) };
+  if (a.tool === 'inspect.revisions') return { ...base, declaredEditions: o.statements.map(s => ({ edition: s.edition, restates: s.restates, period: s.period })), retainedNotes: available.filter(s => s.kind === 'restatement-note'), resolution: available.some(s => s.kind === 'restatement-note') ? 'fixture-restatement-note-retained' : 'unresolved' };
+  if (a.tool === 'normalize.units') {
+    const statements = diagnostics.selected.map(s => ({ ...s, revenue: s.revenue * scales[s.unit], grossProfit: s.grossProfit * scales[s.profitUnit], unit: 'ones', profitUnit: 'ones' }));
+    if (statements.some(s => !Number.isSafeInteger(s.revenue) || !Number.isSafeInteger(s.grossProfit))) fail('T2_NUMERIC_BOUNDS');
+    return { ...base, statements, conversion: 'explicit-same-currency-scale-only' };
+  }
+  if (a.tool === 'report.insufficient') return { ...base, issues: diagnostics.issues, remainingReads: o.permissions.remainingReads, resolvingReadAvailable: READING.some(t => permitted(o, t)) && o.availableDocuments.length > 0, reason: 'research-not-completed' };
+  // New, explicitly synthetic arithmetic. NOT an upgrade of original Authority.
+  const margins = diagnostics.selected.map(s => 100 * s.grossProfit / s.revenue);
+  return { ...base, margins, changePp: margins[1] - margins[0], researchGoalComplete: true, calculationScope: 'synthetic-authored-arithmetic-only', riskAuthorized: false };
+}
+
+export function realAuthorityControl() {
+  const body = '{"revenue":100}', source = { id: 'synthetic-source', kind: 'issuer_disclosure', contentHash: digest(body), body, url: 'https://synthetic.example.invalid/report', retrievedAt: '2026-10-10T00:00:00.000Z', providerVersion: 'flowcredit.public-evidence/v0.1' };
+  return evaluateObservationAuthority({ id: 'synthetic-assessment', revision: 1, entity: { id: 'synthetic-enterprise' }, updatedAt: '2026-10-10T00:00:00.000Z', acquisition: [] }, { id: 'synthetic-observation', sourceId: source.id, entityId: 'synthetic-enterprise', metric: 'revenue', value: 100, unit: 'USD', period: { kind: 'duration', start: '2025-01-01', end: '2025-12-31' }, scope: 'entity-total', basis: 'issuer-disclosed-IFRS', origin: 'public_adapter', validation: 'valid', locator: '/revenue', providerVersion: 'unregistered-synthetic-profile' }, source);
+}
+
+// Semantic fingerprint drops names, dates, values and identities but keeps
+// decision-relevant relations. Shared primitive skills are disclosed separately.
+export function semanticFingerprint(task) {
+  const o = observation(task);
+  return digest({ periods: o.goal.periods.length, rows: o.statements.map(s => ({ missingRevenue: s.revenue === null, missingProfit: s.grossProfit === null, numeric: Number.isSafeInteger(s.revenue) && Number.isSafeInteger(s.grossProfit), denominatorPositive: s.revenue > 0, periodMatched: same(s.period, s.profitPeriod), scopeMatched: s.scope === o.goal.scope && s.profitScope === o.goal.scope, basisMatched: s.basis === o.goal.basis && s.profitBasis === o.goal.basis, currencyMatched: s.currency === s.profitCurrency, unit: s.unit, profitUnit: s.profitUnit, sourceType: s.sourceType, edition: s.edition, restates: s.restates })).sort((a,b) => stable(a).localeCompare(stable(b))), documents: o.availableDocuments.map(d => d.kind).sort(), actions: [...o.permissions.allowedActions].sort(), reads: o.permissions.remainingReads });
+}
+export function splitAudit(data) {
+  const conflicts = [], withinSplitDuplicates = [];
+  for (const [i, a] of data.cases.entries()) for (const b of data.cases.slice(i + 1)) {
+    const semantic = semanticFingerprint(a) === semanticFingerprint(b);
+    const periodOverlap = a.observation.goal.periods.some(p => b.observation.goal.periods.some(q => same(p, q)));
+    const linked = ['family', 'entity', 'sourceFamily', 'templateFamily', 'semanticFamily'].filter(k => a[k] === b[k]);
+    const sourceOverlap = a.documents.some(d => b.documents.some(e => digest(d) === digest(e)));
+    if (a.split !== b.split && (semantic || periodOverlap || linked.length || sourceOverlap)) conflicts.push({ a: a.id, b: b.id, semantic, periodOverlap, linked, sourceOverlap });
+    if (a.split === b.split && semantic) withinSplitDuplicates.push([a.id, b.id]);
+  }
+  return { conflicts, withinSplitDuplicates, preciseSemanticScope: 'relation-fingerprint-only; primitive skills overlap by design', sharedObservationTemplate: true, templateFamilyMeaning: 'declared authoring-mechanism groups; not disjoint prompt formats', blindEvaluation: false, reasons: ['designer-aware', 'six-authored-families-only', 'shared-JSON-observation-template', 'public-local-gold-not-permanent-secret-evaluation'] };
+}

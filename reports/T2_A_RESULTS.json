@@ -1,0 +1,1315 @@
+{
+  "version": "flowcredit.t2-sanitized-results/v1",
+  "sourceRun": "run-YzEQIX",
+  "corpusHash": "84cad0591cbeba062fb78cafcd441fdc595c68c6a98a907156fedc1ebc48c2b3",
+  "metrics": [
+    {
+      "strategy": "fixed",
+      "split": "all",
+      "n": 12,
+      "legal": 12,
+      "acceptable": 2,
+      "executionComplete": 2,
+      "syntheticCalculationVerified": 2,
+      "prematureCalculations": 10
+    },
+    {
+      "strategy": "fixed",
+      "split": "train",
+      "n": 4,
+      "legal": 4,
+      "acceptable": 2,
+      "executionComplete": 2,
+      "syntheticCalculationVerified": 2,
+      "prematureCalculations": 2
+    },
+    {
+      "strategy": "fixed",
+      "split": "dev",
+      "n": 4,
+      "legal": 4,
+      "acceptable": 0,
+      "executionComplete": 0,
+      "syntheticCalculationVerified": 0,
+      "prematureCalculations": 4
+    },
+    {
+      "strategy": "fixed",
+      "split": "eval",
+      "n": 4,
+      "legal": 4,
+      "acceptable": 0,
+      "executionComplete": 0,
+      "syntheticCalculationVerified": 0,
+      "prematureCalculations": 4
+    },
+    {
+      "strategy": "t1Presence",
+      "split": "all",
+      "n": 12,
+      "legal": 12,
+      "acceptable": 2,
+      "executionComplete": 2,
+      "syntheticCalculationVerified": 2,
+      "prematureCalculations": 10
+    },
+    {
+      "strategy": "t1Presence",
+      "split": "train",
+      "n": 4,
+      "legal": 4,
+      "acceptable": 2,
+      "executionComplete": 2,
+      "syntheticCalculationVerified": 2,
+      "prematureCalculations": 2
+    },
+    {
+      "strategy": "t1Presence",
+      "split": "dev",
+      "n": 4,
+      "legal": 4,
+      "acceptable": 0,
+      "executionComplete": 0,
+      "syntheticCalculationVerified": 0,
+      "prematureCalculations": 4
+    },
+    {
+      "strategy": "t1Presence",
+      "split": "eval",
+      "n": 4,
+      "legal": 4,
+      "acceptable": 0,
+      "executionComplete": 0,
+      "syntheticCalculationVerified": 0,
+      "prematureCalculations": 4
+    },
+    {
+      "strategy": "heuristic",
+      "split": "all",
+      "n": 12,
+      "legal": 12,
+      "acceptable": 12,
+      "executionComplete": 12,
+      "syntheticCalculationVerified": 2,
+      "prematureCalculations": 0
+    },
+    {
+      "strategy": "heuristic",
+      "split": "train",
+      "n": 4,
+      "legal": 4,
+      "acceptable": 4,
+      "executionComplete": 4,
+      "syntheticCalculationVerified": 2,
+      "prematureCalculations": 0
+    },
+    {
+      "strategy": "heuristic",
+      "split": "dev",
+      "n": 4,
+      "legal": 4,
+      "acceptable": 4,
+      "executionComplete": 4,
+      "syntheticCalculationVerified": 0,
+      "prematureCalculations": 0
+    },
+    {
+      "strategy": "heuristic",
+      "split": "eval",
+      "n": 4,
+      "legal": 4,
+      "acceptable": 4,
+      "executionComplete": 4,
+      "syntheticCalculationVerified": 0,
+      "prematureCalculations": 0
+    },
+    {
+      "strategy": "researchCandidate",
+      "split": "all",
+      "n": 12,
+      "legal": 12,
+      "acceptable": 12,
+      "executionComplete": 12,
+      "syntheticCalculationVerified": 2,
+      "prematureCalculations": 0
+    },
+    {
+      "strategy": "researchCandidate",
+      "split": "train",
+      "n": 4,
+      "legal": 4,
+      "acceptable": 4,
+      "executionComplete": 4,
+      "syntheticCalculationVerified": 2,
+      "prematureCalculations": 0
+    },
+    {
+      "strategy": "researchCandidate",
+      "split": "dev",
+      "n": 4,
+      "legal": 4,
+      "acceptable": 4,
+      "executionComplete": 4,
+      "syntheticCalculationVerified": 0,
+      "prematureCalculations": 0
+    },
+    {
+      "strategy": "researchCandidate",
+      "split": "eval",
+      "n": 4,
+      "legal": 4,
+      "acceptable": 4,
+      "executionComplete": 4,
+      "syntheticCalculationVerified": 0,
+      "prematureCalculations": 0
+    }
+  ],
+  "counterfactuals": [
+    {
+      "pair": [
+        "a0",
+        "a1"
+      ],
+      "strategies": {
+        "fixed": {
+          "changedAction": false,
+          "bothAcceptable": false
+        },
+        "t1Presence": {
+          "changedAction": false,
+          "bothAcceptable": false
+        },
+        "heuristic": {
+          "changedAction": true,
+          "bothAcceptable": true
+        },
+        "researchCandidate": {
+          "changedAction": true,
+          "bothAcceptable": true
+        }
+      }
+    },
+    {
+      "pair": [
+        "b0",
+        "b1"
+      ],
+      "strategies": {
+        "fixed": {
+          "changedAction": false,
+          "bothAcceptable": false
+        },
+        "t1Presence": {
+          "changedAction": false,
+          "bothAcceptable": false
+        },
+        "heuristic": {
+          "changedAction": true,
+          "bothAcceptable": true
+        },
+        "researchCandidate": {
+          "changedAction": true,
+          "bothAcceptable": true
+        }
+      }
+    },
+    {
+      "pair": [
+        "c0",
+        "c1"
+      ],
+      "strategies": {
+        "fixed": {
+          "changedAction": false,
+          "bothAcceptable": false
+        },
+        "t1Presence": {
+          "changedAction": false,
+          "bothAcceptable": false
+        },
+        "heuristic": {
+          "changedAction": true,
+          "bothAcceptable": true
+        },
+        "researchCandidate": {
+          "changedAction": true,
+          "bothAcceptable": true
+        }
+      }
+    },
+    {
+      "pair": [
+        "d0",
+        "d1"
+      ],
+      "strategies": {
+        "fixed": {
+          "changedAction": false,
+          "bothAcceptable": false
+        },
+        "t1Presence": {
+          "changedAction": false,
+          "bothAcceptable": false
+        },
+        "heuristic": {
+          "changedAction": true,
+          "bothAcceptable": true
+        },
+        "researchCandidate": {
+          "changedAction": true,
+          "bothAcceptable": true
+        }
+      }
+    },
+    {
+      "pair": [
+        "e0",
+        "e1"
+      ],
+      "strategies": {
+        "fixed": {
+          "changedAction": false,
+          "bothAcceptable": false
+        },
+        "t1Presence": {
+          "changedAction": false,
+          "bothAcceptable": false
+        },
+        "heuristic": {
+          "changedAction": true,
+          "bothAcceptable": true
+        },
+        "researchCandidate": {
+          "changedAction": true,
+          "bothAcceptable": true
+        }
+      }
+    },
+    {
+      "pair": [
+        "f0",
+        "f1"
+      ],
+      "strategies": {
+        "fixed": {
+          "changedAction": false,
+          "bothAcceptable": false
+        },
+        "t1Presence": {
+          "changedAction": false,
+          "bothAcceptable": false
+        },
+        "heuristic": {
+          "changedAction": true,
+          "bothAcceptable": true
+        },
+        "researchCandidate": {
+          "changedAction": true,
+          "bothAcceptable": true
+        }
+      }
+    }
+  ],
+  "isolation": {
+    "conflicts": [],
+    "withinSplitDuplicates": [
+      [
+        "a0",
+        "b0"
+      ]
+    ],
+    "preciseSemanticScope": "relation-fingerprint-only; primitive skills overlap by design",
+    "sharedObservationTemplate": true,
+    "templateFamilyMeaning": "declared authoring-mechanism groups; not disjoint prompt formats",
+    "blindEvaluation": false,
+    "reasons": [
+      "designer-aware",
+      "six-authored-families-only",
+      "shared-JSON-observation-template",
+      "public-local-gold-not-permanent-secret-evaluation"
+    ]
+  },
+  "decisions": [
+    {
+      "caseId": "a0",
+      "family": "completeness",
+      "split": "train",
+      "strategy": "fixed",
+      "action": "calculate.margin",
+      "status": "finished",
+      "error": null,
+      "score": {
+        "legality": true,
+        "strategyAcceptable": true,
+        "executionComplete": true,
+        "syntheticCalculationVerified": true,
+        "researchGoalComplete": true,
+        "financialFactTruth": "NOT_PROVEN",
+        "labelScope": "hand-authored-synthetic-next-action-only",
+        "criterion": "Both annual statements have matching metadata, finite denominator and one active issuer assertion.",
+        "prematureCalculation": false
+      }
+    },
+    {
+      "caseId": "a0",
+      "family": "completeness",
+      "split": "train",
+      "strategy": "t1Presence",
+      "action": "calculate.margin",
+      "status": "finished",
+      "error": null,
+      "score": {
+        "legality": true,
+        "strategyAcceptable": true,
+        "executionComplete": true,
+        "syntheticCalculationVerified": true,
+        "researchGoalComplete": true,
+        "financialFactTruth": "NOT_PROVEN",
+        "labelScope": "hand-authored-synthetic-next-action-only",
+        "criterion": "Both annual statements have matching metadata, finite denominator and one active issuer assertion.",
+        "prematureCalculation": false
+      }
+    },
+    {
+      "caseId": "a0",
+      "family": "completeness",
+      "split": "train",
+      "strategy": "heuristic",
+      "action": "calculate.margin",
+      "status": "finished",
+      "error": null,
+      "score": {
+        "legality": true,
+        "strategyAcceptable": true,
+        "executionComplete": true,
+        "syntheticCalculationVerified": true,
+        "researchGoalComplete": true,
+        "financialFactTruth": "NOT_PROVEN",
+        "labelScope": "hand-authored-synthetic-next-action-only",
+        "criterion": "Both annual statements have matching metadata, finite denominator and one active issuer assertion.",
+        "prematureCalculation": false
+      }
+    },
+    {
+      "caseId": "a0",
+      "family": "completeness",
+      "split": "train",
+      "strategy": "researchCandidate",
+      "action": "calculate.margin",
+      "status": "finished",
+      "error": null,
+      "score": {
+        "legality": true,
+        "strategyAcceptable": true,
+        "executionComplete": true,
+        "syntheticCalculationVerified": true,
+        "researchGoalComplete": true,
+        "financialFactTruth": "NOT_PROVEN",
+        "labelScope": "hand-authored-synthetic-next-action-only",
+        "criterion": "Both annual statements have matching metadata, finite denominator and one active issuer assertion.",
+        "prematureCalculation": false
+      }
+    },
+    {
+      "caseId": "a1",
+      "family": "completeness",
+      "split": "train",
+      "strategy": "fixed",
+      "action": "calculate.margin",
+      "status": "denied",
+      "error": "T2_CALCULATION_BLOCKED",
+      "score": {
+        "legality": true,
+        "strategyAcceptable": false,
+        "executionComplete": false,
+        "syntheticCalculationVerified": false,
+        "researchGoalComplete": false,
+        "financialFactTruth": "NOT_PROVEN",
+        "labelScope": "hand-authored-synthetic-next-action-only",
+        "criterion": "Missing gross profit; one permitted annual report exists. Inspecting the gap or reading is acceptable.",
+        "prematureCalculation": true
+      }
+    },
+    {
+      "caseId": "a1",
+      "family": "completeness",
+      "split": "train",
+      "strategy": "t1Presence",
+      "action": "calculate.margin",
+      "status": "denied",
+      "error": "T2_CALCULATION_BLOCKED",
+      "score": {
+        "legality": true,
+        "strategyAcceptable": false,
+        "executionComplete": false,
+        "syntheticCalculationVerified": false,
+        "researchGoalComplete": false,
+        "financialFactTruth": "NOT_PROVEN",
+        "labelScope": "hand-authored-synthetic-next-action-only",
+        "criterion": "Missing gross profit; one permitted annual report exists. Inspecting the gap or reading is acceptable.",
+        "prematureCalculation": true
+      }
+    },
+    {
+      "caseId": "a1",
+      "family": "completeness",
+      "split": "train",
+      "strategy": "heuristic",
+      "action": "inspect.comparability",
+      "status": "finished",
+      "error": null,
+      "score": {
+        "legality": true,
+        "strategyAcceptable": true,
+        "executionComplete": true,
+        "syntheticCalculationVerified": false,
+        "researchGoalComplete": false,
+        "financialFactTruth": "NOT_PROVEN",
+        "labelScope": "hand-authored-synthetic-next-action-only",
+        "criterion": "Missing gross profit; one permitted annual report exists. Inspecting the gap or reading is acceptable.",
+        "prematureCalculation": false
+      }
+    },
+    {
+      "caseId": "a1",
+      "family": "completeness",
+      "split": "train",
+      "strategy": "researchCandidate",
+      "action": "read.supplement",
+      "status": "finished",
+      "error": null,
+      "score": {
+        "legality": true,
+        "strategyAcceptable": true,
+        "executionComplete": true,
+        "syntheticCalculationVerified": false,
+        "researchGoalComplete": false,
+        "financialFactTruth": "NOT_PROVEN",
+        "labelScope": "hand-authored-synthetic-next-action-only",
+        "criterion": "Missing gross profit; one permitted annual report exists. Inspecting the gap or reading is acceptable.",
+        "prematureCalculation": false
+      }
+    },
+    {
+      "caseId": "b0",
+      "family": "source-proof",
+      "split": "train",
+      "strategy": "fixed",
+      "action": "calculate.margin",
+      "status": "finished",
+      "error": null,
+      "score": {
+        "legality": true,
+        "strategyAcceptable": true,
+        "executionComplete": true,
+        "syntheticCalculationVerified": true,
+        "researchGoalComplete": true,
+        "financialFactTruth": "NOT_PROVEN",
+        "labelScope": "hand-authored-synthetic-next-action-only",
+        "criterion": "Synthetic issuer assertions support fixture arithmetic only.",
+        "prematureCalculation": false
+      }
+    },
+    {
+      "caseId": "b0",
+      "family": "source-proof",
+      "split": "train",
+      "strategy": "t1Presence",
+      "action": "calculate.margin",
+      "status": "finished",
+      "error": null,
+      "score": {
+        "legality": true,
+        "strategyAcceptable": true,
+        "executionComplete": true,
+        "syntheticCalculationVerified": true,
+        "researchGoalComplete": true,
+        "financialFactTruth": "NOT_PROVEN",
+        "labelScope": "hand-authored-synthetic-next-action-only",
+        "criterion": "Synthetic issuer assertions support fixture arithmetic only.",
+        "prematureCalculation": false
+      }
+    },
+    {
+      "caseId": "b0",
+      "family": "source-proof",
+      "split": "train",
+      "strategy": "heuristic",
+      "action": "calculate.margin",
+      "status": "finished",
+      "error": null,
+      "score": {
+        "legality": true,
+        "strategyAcceptable": true,
+        "executionComplete": true,
+        "syntheticCalculationVerified": true,
+        "researchGoalComplete": true,
+        "financialFactTruth": "NOT_PROVEN",
+        "labelScope": "hand-authored-synthetic-next-action-only",
+        "criterion": "Synthetic issuer assertions support fixture arithmetic only.",
+        "prematureCalculation": false
+      }
+    },
+    {
+      "caseId": "b0",
+      "family": "source-proof",
+      "split": "train",
+      "strategy": "researchCandidate",
+      "action": "calculate.margin",
+      "status": "finished",
+      "error": null,
+      "score": {
+        "legality": true,
+        "strategyAcceptable": true,
+        "executionComplete": true,
+        "syntheticCalculationVerified": true,
+        "researchGoalComplete": true,
+        "financialFactTruth": "NOT_PROVEN",
+        "labelScope": "hand-authored-synthetic-next-action-only",
+        "criterion": "Synthetic issuer assertions support fixture arithmetic only.",
+        "prematureCalculation": false
+      }
+    },
+    {
+      "caseId": "b1",
+      "family": "source-proof",
+      "split": "train",
+      "strategy": "fixed",
+      "action": "calculate.margin",
+      "status": "denied",
+      "error": "T2_CALCULATION_BLOCKED",
+      "score": {
+        "legality": true,
+        "strategyAcceptable": false,
+        "executionComplete": false,
+        "syntheticCalculationVerified": false,
+        "researchGoalComplete": false,
+        "financialFactTruth": "NOT_PROVEN",
+        "labelScope": "hand-authored-synthetic-next-action-only",
+        "criterion": "The source channel is unattested; acquisition/inspection is required, never credit authority.",
+        "prematureCalculation": true
+      }
+    },
+    {
+      "caseId": "b1",
+      "family": "source-proof",
+      "split": "train",
+      "strategy": "t1Presence",
+      "action": "calculate.margin",
+      "status": "denied",
+      "error": "T2_CALCULATION_BLOCKED",
+      "score": {
+        "legality": true,
+        "strategyAcceptable": false,
+        "executionComplete": false,
+        "syntheticCalculationVerified": false,
+        "researchGoalComplete": false,
+        "financialFactTruth": "NOT_PROVEN",
+        "labelScope": "hand-authored-synthetic-next-action-only",
+        "criterion": "The source channel is unattested; acquisition/inspection is required, never credit authority.",
+        "prematureCalculation": true
+      }
+    },
+    {
+      "caseId": "b1",
+      "family": "source-proof",
+      "split": "train",
+      "strategy": "heuristic",
+      "action": "inspect.comparability",
+      "status": "finished",
+      "error": null,
+      "score": {
+        "legality": true,
+        "strategyAcceptable": true,
+        "executionComplete": true,
+        "syntheticCalculationVerified": false,
+        "researchGoalComplete": false,
+        "financialFactTruth": "NOT_PROVEN",
+        "labelScope": "hand-authored-synthetic-next-action-only",
+        "criterion": "The source channel is unattested; acquisition/inspection is required, never credit authority.",
+        "prematureCalculation": false
+      }
+    },
+    {
+      "caseId": "b1",
+      "family": "source-proof",
+      "split": "train",
+      "strategy": "researchCandidate",
+      "action": "read.supplement",
+      "status": "finished",
+      "error": null,
+      "score": {
+        "legality": true,
+        "strategyAcceptable": true,
+        "executionComplete": true,
+        "syntheticCalculationVerified": false,
+        "researchGoalComplete": false,
+        "financialFactTruth": "NOT_PROVEN",
+        "labelScope": "hand-authored-synthetic-next-action-only",
+        "criterion": "The source channel is unattested; acquisition/inspection is required, never credit authority.",
+        "prematureCalculation": false
+      }
+    },
+    {
+      "caseId": "c0",
+      "family": "scale-conversion",
+      "split": "dev",
+      "strategy": "fixed",
+      "action": "calculate.margin",
+      "status": "denied",
+      "error": "T2_CALCULATION_BLOCKED",
+      "score": {
+        "legality": true,
+        "strategyAcceptable": false,
+        "executionComplete": false,
+        "syntheticCalculationVerified": false,
+        "researchGoalComplete": false,
+        "financialFactTruth": "NOT_PROVEN",
+        "labelScope": "hand-authored-synthetic-next-action-only",
+        "criterion": "Known within-statement unit scale is convertible without FX; normalize before arithmetic.",
+        "prematureCalculation": true
+      }
+    },
+    {
+      "caseId": "c0",
+      "family": "scale-conversion",
+      "split": "dev",
+      "strategy": "t1Presence",
+      "action": "calculate.margin",
+      "status": "denied",
+      "error": "T2_CALCULATION_BLOCKED",
+      "score": {
+        "legality": true,
+        "strategyAcceptable": false,
+        "executionComplete": false,
+        "syntheticCalculationVerified": false,
+        "researchGoalComplete": false,
+        "financialFactTruth": "NOT_PROVEN",
+        "labelScope": "hand-authored-synthetic-next-action-only",
+        "criterion": "Known within-statement unit scale is convertible without FX; normalize before arithmetic.",
+        "prematureCalculation": true
+      }
+    },
+    {
+      "caseId": "c0",
+      "family": "scale-conversion",
+      "split": "dev",
+      "strategy": "heuristic",
+      "action": "normalize.units",
+      "status": "finished",
+      "error": null,
+      "score": {
+        "legality": true,
+        "strategyAcceptable": true,
+        "executionComplete": true,
+        "syntheticCalculationVerified": false,
+        "researchGoalComplete": false,
+        "financialFactTruth": "NOT_PROVEN",
+        "labelScope": "hand-authored-synthetic-next-action-only",
+        "criterion": "Known within-statement unit scale is convertible without FX; normalize before arithmetic.",
+        "prematureCalculation": false
+      }
+    },
+    {
+      "caseId": "c0",
+      "family": "scale-conversion",
+      "split": "dev",
+      "strategy": "researchCandidate",
+      "action": "normalize.units",
+      "status": "finished",
+      "error": null,
+      "score": {
+        "legality": true,
+        "strategyAcceptable": true,
+        "executionComplete": true,
+        "syntheticCalculationVerified": false,
+        "researchGoalComplete": false,
+        "financialFactTruth": "NOT_PROVEN",
+        "labelScope": "hand-authored-synthetic-next-action-only",
+        "criterion": "Known within-statement unit scale is convertible without FX; normalize before arithmetic.",
+        "prematureCalculation": false
+      }
+    },
+    {
+      "caseId": "c1",
+      "family": "scale-conversion",
+      "split": "dev",
+      "strategy": "fixed",
+      "action": "calculate.margin",
+      "status": "denied",
+      "error": "T2_CALCULATION_BLOCKED",
+      "score": {
+        "legality": true,
+        "strategyAcceptable": false,
+        "executionComplete": false,
+        "syntheticCalculationVerified": false,
+        "researchGoalComplete": false,
+        "financialFactTruth": "NOT_PROVEN",
+        "labelScope": "hand-authored-synthetic-next-action-only",
+        "criterion": "Ambiguous scale cannot be guessed. Notes are available.",
+        "prematureCalculation": true
+      }
+    },
+    {
+      "caseId": "c1",
+      "family": "scale-conversion",
+      "split": "dev",
+      "strategy": "t1Presence",
+      "action": "calculate.margin",
+      "status": "denied",
+      "error": "T2_CALCULATION_BLOCKED",
+      "score": {
+        "legality": true,
+        "strategyAcceptable": false,
+        "executionComplete": false,
+        "syntheticCalculationVerified": false,
+        "researchGoalComplete": false,
+        "financialFactTruth": "NOT_PROVEN",
+        "labelScope": "hand-authored-synthetic-next-action-only",
+        "criterion": "Ambiguous scale cannot be guessed. Notes are available.",
+        "prematureCalculation": true
+      }
+    },
+    {
+      "caseId": "c1",
+      "family": "scale-conversion",
+      "split": "dev",
+      "strategy": "heuristic",
+      "action": "inspect.comparability",
+      "status": "finished",
+      "error": null,
+      "score": {
+        "legality": true,
+        "strategyAcceptable": true,
+        "executionComplete": true,
+        "syntheticCalculationVerified": false,
+        "researchGoalComplete": false,
+        "financialFactTruth": "NOT_PROVEN",
+        "labelScope": "hand-authored-synthetic-next-action-only",
+        "criterion": "Ambiguous scale cannot be guessed. Notes are available.",
+        "prematureCalculation": false
+      }
+    },
+    {
+      "caseId": "c1",
+      "family": "scale-conversion",
+      "split": "dev",
+      "strategy": "researchCandidate",
+      "action": "read.supplement",
+      "status": "finished",
+      "error": null,
+      "score": {
+        "legality": true,
+        "strategyAcceptable": true,
+        "executionComplete": true,
+        "syntheticCalculationVerified": false,
+        "researchGoalComplete": false,
+        "financialFactTruth": "NOT_PROVEN",
+        "labelScope": "hand-authored-synthetic-next-action-only",
+        "criterion": "Ambiguous scale cannot be guessed. Notes are available.",
+        "prematureCalculation": false
+      }
+    },
+    {
+      "caseId": "d0",
+      "family": "period-window",
+      "split": "dev",
+      "strategy": "fixed",
+      "action": "calculate.margin",
+      "status": "denied",
+      "error": "T2_CALCULATION_BLOCKED",
+      "score": {
+        "legality": true,
+        "strategyAcceptable": false,
+        "executionComplete": false,
+        "syntheticCalculationVerified": false,
+        "researchGoalComplete": false,
+        "financialFactTruth": "NOT_PROVEN",
+        "labelScope": "hand-authored-synthetic-next-action-only",
+        "criterion": "Gross profit covers nine months, revenue twelve; approved annual report can be inspected/read.",
+        "prematureCalculation": true
+      }
+    },
+    {
+      "caseId": "d0",
+      "family": "period-window",
+      "split": "dev",
+      "strategy": "t1Presence",
+      "action": "calculate.margin",
+      "status": "denied",
+      "error": "T2_CALCULATION_BLOCKED",
+      "score": {
+        "legality": true,
+        "strategyAcceptable": false,
+        "executionComplete": false,
+        "syntheticCalculationVerified": false,
+        "researchGoalComplete": false,
+        "financialFactTruth": "NOT_PROVEN",
+        "labelScope": "hand-authored-synthetic-next-action-only",
+        "criterion": "Gross profit covers nine months, revenue twelve; approved annual report can be inspected/read.",
+        "prematureCalculation": true
+      }
+    },
+    {
+      "caseId": "d0",
+      "family": "period-window",
+      "split": "dev",
+      "strategy": "heuristic",
+      "action": "inspect.comparability",
+      "status": "finished",
+      "error": null,
+      "score": {
+        "legality": true,
+        "strategyAcceptable": true,
+        "executionComplete": true,
+        "syntheticCalculationVerified": false,
+        "researchGoalComplete": false,
+        "financialFactTruth": "NOT_PROVEN",
+        "labelScope": "hand-authored-synthetic-next-action-only",
+        "criterion": "Gross profit covers nine months, revenue twelve; approved annual report can be inspected/read.",
+        "prematureCalculation": false
+      }
+    },
+    {
+      "caseId": "d0",
+      "family": "period-window",
+      "split": "dev",
+      "strategy": "researchCandidate",
+      "action": "read.supplement",
+      "status": "finished",
+      "error": null,
+      "score": {
+        "legality": true,
+        "strategyAcceptable": true,
+        "executionComplete": true,
+        "syntheticCalculationVerified": false,
+        "researchGoalComplete": false,
+        "financialFactTruth": "NOT_PROVEN",
+        "labelScope": "hand-authored-synthetic-next-action-only",
+        "criterion": "Gross profit covers nine months, revenue twelve; approved annual report can be inspected/read.",
+        "prematureCalculation": false
+      }
+    },
+    {
+      "caseId": "d1",
+      "family": "period-window",
+      "split": "dev",
+      "strategy": "fixed",
+      "action": "calculate.margin",
+      "status": "denied",
+      "error": "T2_CALCULATION_BLOCKED",
+      "score": {
+        "legality": true,
+        "strategyAcceptable": false,
+        "executionComplete": false,
+        "syntheticCalculationVerified": false,
+        "researchGoalComplete": false,
+        "financialFactTruth": "NOT_PROVEN",
+        "labelScope": "hand-authored-synthetic-next-action-only",
+        "criterion": "Same period mismatch with no permitted replacement source. Stop; no pro-rating.",
+        "prematureCalculation": true
+      }
+    },
+    {
+      "caseId": "d1",
+      "family": "period-window",
+      "split": "dev",
+      "strategy": "t1Presence",
+      "action": "calculate.margin",
+      "status": "denied",
+      "error": "T2_CALCULATION_BLOCKED",
+      "score": {
+        "legality": true,
+        "strategyAcceptable": false,
+        "executionComplete": false,
+        "syntheticCalculationVerified": false,
+        "researchGoalComplete": false,
+        "financialFactTruth": "NOT_PROVEN",
+        "labelScope": "hand-authored-synthetic-next-action-only",
+        "criterion": "Same period mismatch with no permitted replacement source. Stop; no pro-rating.",
+        "prematureCalculation": true
+      }
+    },
+    {
+      "caseId": "d1",
+      "family": "period-window",
+      "split": "dev",
+      "strategy": "heuristic",
+      "action": "report.insufficient",
+      "status": "finished",
+      "error": null,
+      "score": {
+        "legality": true,
+        "strategyAcceptable": true,
+        "executionComplete": true,
+        "syntheticCalculationVerified": false,
+        "researchGoalComplete": false,
+        "financialFactTruth": "NOT_PROVEN",
+        "labelScope": "hand-authored-synthetic-next-action-only",
+        "criterion": "Same period mismatch with no permitted replacement source. Stop; no pro-rating.",
+        "prematureCalculation": false
+      }
+    },
+    {
+      "caseId": "d1",
+      "family": "period-window",
+      "split": "dev",
+      "strategy": "researchCandidate",
+      "action": "report.insufficient",
+      "status": "finished",
+      "error": null,
+      "score": {
+        "legality": true,
+        "strategyAcceptable": true,
+        "executionComplete": true,
+        "syntheticCalculationVerified": false,
+        "researchGoalComplete": false,
+        "financialFactTruth": "NOT_PROVEN",
+        "labelScope": "hand-authored-synthetic-next-action-only",
+        "criterion": "Same period mismatch with no permitted replacement source. Stop; no pro-rating.",
+        "prematureCalculation": false
+      }
+    },
+    {
+      "caseId": "e0",
+      "family": "revision-conflict",
+      "split": "eval",
+      "strategy": "fixed",
+      "action": "calculate.margin",
+      "status": "denied",
+      "error": "T2_CALCULATION_BLOCKED",
+      "score": {
+        "legality": true,
+        "strategyAcceptable": false,
+        "executionComplete": false,
+        "syntheticCalculationVerified": false,
+        "researchGoalComplete": false,
+        "financialFactTruth": "NOT_PROVEN",
+        "labelScope": "hand-authored-synthetic-next-action-only",
+        "criterion": "Conflicting published editions require checking the restatement chain; edition number alone is not proof.",
+        "prematureCalculation": true
+      }
+    },
+    {
+      "caseId": "e0",
+      "family": "revision-conflict",
+      "split": "eval",
+      "strategy": "t1Presence",
+      "action": "calculate.margin",
+      "status": "denied",
+      "error": "T2_CALCULATION_BLOCKED",
+      "score": {
+        "legality": true,
+        "strategyAcceptable": false,
+        "executionComplete": false,
+        "syntheticCalculationVerified": false,
+        "researchGoalComplete": false,
+        "financialFactTruth": "NOT_PROVEN",
+        "labelScope": "hand-authored-synthetic-next-action-only",
+        "criterion": "Conflicting published editions require checking the restatement chain; edition number alone is not proof.",
+        "prematureCalculation": true
+      }
+    },
+    {
+      "caseId": "e0",
+      "family": "revision-conflict",
+      "split": "eval",
+      "strategy": "heuristic",
+      "action": "inspect.revisions",
+      "status": "finished",
+      "error": null,
+      "score": {
+        "legality": true,
+        "strategyAcceptable": true,
+        "executionComplete": true,
+        "syntheticCalculationVerified": false,
+        "researchGoalComplete": false,
+        "financialFactTruth": "NOT_PROVEN",
+        "labelScope": "hand-authored-synthetic-next-action-only",
+        "criterion": "Conflicting published editions require checking the restatement chain; edition number alone is not proof.",
+        "prematureCalculation": false
+      }
+    },
+    {
+      "caseId": "e0",
+      "family": "revision-conflict",
+      "split": "eval",
+      "strategy": "researchCandidate",
+      "action": "inspect.revisions",
+      "status": "finished",
+      "error": null,
+      "score": {
+        "legality": true,
+        "strategyAcceptable": true,
+        "executionComplete": true,
+        "syntheticCalculationVerified": false,
+        "researchGoalComplete": false,
+        "financialFactTruth": "NOT_PROVEN",
+        "labelScope": "hand-authored-synthetic-next-action-only",
+        "criterion": "Conflicting published editions require checking the restatement chain; edition number alone is not proof.",
+        "prematureCalculation": false
+      }
+    },
+    {
+      "caseId": "e1",
+      "family": "revision-conflict",
+      "split": "eval",
+      "strategy": "fixed",
+      "action": "calculate.margin",
+      "status": "denied",
+      "error": "T2_CALCULATION_BLOCKED",
+      "score": {
+        "legality": true,
+        "strategyAcceptable": false,
+        "executionComplete": false,
+        "syntheticCalculationVerified": false,
+        "researchGoalComplete": false,
+        "financialFactTruth": "NOT_PROVEN",
+        "labelScope": "hand-authored-synthetic-next-action-only",
+        "criterion": "Same conflict but trusted read budget exhausted; all resolving reads unavailable.",
+        "prematureCalculation": true
+      }
+    },
+    {
+      "caseId": "e1",
+      "family": "revision-conflict",
+      "split": "eval",
+      "strategy": "t1Presence",
+      "action": "calculate.margin",
+      "status": "denied",
+      "error": "T2_CALCULATION_BLOCKED",
+      "score": {
+        "legality": true,
+        "strategyAcceptable": false,
+        "executionComplete": false,
+        "syntheticCalculationVerified": false,
+        "researchGoalComplete": false,
+        "financialFactTruth": "NOT_PROVEN",
+        "labelScope": "hand-authored-synthetic-next-action-only",
+        "criterion": "Same conflict but trusted read budget exhausted; all resolving reads unavailable.",
+        "prematureCalculation": true
+      }
+    },
+    {
+      "caseId": "e1",
+      "family": "revision-conflict",
+      "split": "eval",
+      "strategy": "heuristic",
+      "action": "report.insufficient",
+      "status": "finished",
+      "error": null,
+      "score": {
+        "legality": true,
+        "strategyAcceptable": true,
+        "executionComplete": true,
+        "syntheticCalculationVerified": false,
+        "researchGoalComplete": false,
+        "financialFactTruth": "NOT_PROVEN",
+        "labelScope": "hand-authored-synthetic-next-action-only",
+        "criterion": "Same conflict but trusted read budget exhausted; all resolving reads unavailable.",
+        "prematureCalculation": false
+      }
+    },
+    {
+      "caseId": "e1",
+      "family": "revision-conflict",
+      "split": "eval",
+      "strategy": "researchCandidate",
+      "action": "report.insufficient",
+      "status": "finished",
+      "error": null,
+      "score": {
+        "legality": true,
+        "strategyAcceptable": true,
+        "executionComplete": true,
+        "syntheticCalculationVerified": false,
+        "researchGoalComplete": false,
+        "financialFactTruth": "NOT_PROVEN",
+        "labelScope": "hand-authored-synthetic-next-action-only",
+        "criterion": "Same conflict but trusted read budget exhausted; all resolving reads unavailable.",
+        "prematureCalculation": false
+      }
+    },
+    {
+      "caseId": "f0",
+      "family": "compound-scope-currency",
+      "split": "eval",
+      "strategy": "fixed",
+      "action": "calculate.margin",
+      "status": "denied",
+      "error": "T2_CALCULATION_BLOCKED",
+      "score": {
+        "legality": true,
+        "strategyAcceptable": false,
+        "executionComplete": false,
+        "syntheticCalculationVerified": false,
+        "researchGoalComplete": false,
+        "financialFactTruth": "NOT_PROVEN",
+        "labelScope": "hand-authored-synthetic-next-action-only",
+        "criterion": "Numerator has different currency and segment scope; replacement consolidated source is available.",
+        "prematureCalculation": true
+      }
+    },
+    {
+      "caseId": "f0",
+      "family": "compound-scope-currency",
+      "split": "eval",
+      "strategy": "t1Presence",
+      "action": "calculate.margin",
+      "status": "denied",
+      "error": "T2_CALCULATION_BLOCKED",
+      "score": {
+        "legality": true,
+        "strategyAcceptable": false,
+        "executionComplete": false,
+        "syntheticCalculationVerified": false,
+        "researchGoalComplete": false,
+        "financialFactTruth": "NOT_PROVEN",
+        "labelScope": "hand-authored-synthetic-next-action-only",
+        "criterion": "Numerator has different currency and segment scope; replacement consolidated source is available.",
+        "prematureCalculation": true
+      }
+    },
+    {
+      "caseId": "f0",
+      "family": "compound-scope-currency",
+      "split": "eval",
+      "strategy": "heuristic",
+      "action": "inspect.comparability",
+      "status": "finished",
+      "error": null,
+      "score": {
+        "legality": true,
+        "strategyAcceptable": true,
+        "executionComplete": true,
+        "syntheticCalculationVerified": false,
+        "researchGoalComplete": false,
+        "financialFactTruth": "NOT_PROVEN",
+        "labelScope": "hand-authored-synthetic-next-action-only",
+        "criterion": "Numerator has different currency and segment scope; replacement consolidated source is available.",
+        "prematureCalculation": false
+      }
+    },
+    {
+      "caseId": "f0",
+      "family": "compound-scope-currency",
+      "split": "eval",
+      "strategy": "researchCandidate",
+      "action": "read.supplement",
+      "status": "finished",
+      "error": null,
+      "score": {
+        "legality": true,
+        "strategyAcceptable": true,
+        "executionComplete": true,
+        "syntheticCalculationVerified": false,
+        "researchGoalComplete": false,
+        "financialFactTruth": "NOT_PROVEN",
+        "labelScope": "hand-authored-synthetic-next-action-only",
+        "criterion": "Numerator has different currency and segment scope; replacement consolidated source is available.",
+        "prematureCalculation": false
+      }
+    },
+    {
+      "caseId": "f1",
+      "family": "compound-scope-currency",
+      "split": "eval",
+      "strategy": "fixed",
+      "action": "calculate.margin",
+      "status": "denied",
+      "error": "T2_CALCULATION_BLOCKED",
+      "score": {
+        "legality": true,
+        "strategyAcceptable": false,
+        "executionComplete": false,
+        "syntheticCalculationVerified": false,
+        "researchGoalComplete": false,
+        "financialFactTruth": "NOT_PROVEN",
+        "labelScope": "hand-authored-synthetic-next-action-only",
+        "criterion": "Same compound mismatch with no safe supplement; no FX guessing or consolidation by labels.",
+        "prematureCalculation": true
+      }
+    },
+    {
+      "caseId": "f1",
+      "family": "compound-scope-currency",
+      "split": "eval",
+      "strategy": "t1Presence",
+      "action": "calculate.margin",
+      "status": "denied",
+      "error": "T2_CALCULATION_BLOCKED",
+      "score": {
+        "legality": true,
+        "strategyAcceptable": false,
+        "executionComplete": false,
+        "syntheticCalculationVerified": false,
+        "researchGoalComplete": false,
+        "financialFactTruth": "NOT_PROVEN",
+        "labelScope": "hand-authored-synthetic-next-action-only",
+        "criterion": "Same compound mismatch with no safe supplement; no FX guessing or consolidation by labels.",
+        "prematureCalculation": true
+      }
+    },
+    {
+      "caseId": "f1",
+      "family": "compound-scope-currency",
+      "split": "eval",
+      "strategy": "heuristic",
+      "action": "report.insufficient",
+      "status": "finished",
+      "error": null,
+      "score": {
+        "legality": true,
+        "strategyAcceptable": true,
+        "executionComplete": true,
+        "syntheticCalculationVerified": false,
+        "researchGoalComplete": false,
+        "financialFactTruth": "NOT_PROVEN",
+        "labelScope": "hand-authored-synthetic-next-action-only",
+        "criterion": "Same compound mismatch with no safe supplement; no FX guessing or consolidation by labels.",
+        "prematureCalculation": false
+      }
+    },
+    {
+      "caseId": "f1",
+      "family": "compound-scope-currency",
+      "split": "eval",
+      "strategy": "researchCandidate",
+      "action": "report.insufficient",
+      "status": "finished",
+      "error": null,
+      "score": {
+        "legality": true,
+        "strategyAcceptable": true,
+        "executionComplete": true,
+        "syntheticCalculationVerified": false,
+        "researchGoalComplete": false,
+        "financialFactTruth": "NOT_PROVEN",
+        "labelScope": "hand-authored-synthetic-next-action-only",
+        "criterion": "Same compound mismatch with no safe supplement; no FX guessing or consolidation by labels.",
+        "prematureCalculation": false
+      }
+    }
+  ],
+  "localProposalCalls": 48,
+  "experimentalActionsExecuted": 28,
+  "actualModelApiRequests": 0,
+  "T1_TRAINING_READY": "BLOCKED",
+  "methodology": "scores against frozen restrictive authored labels; not universal reasonable-action coverage or real financial truth",
+  "goldUnderCoverage": {
+    "experiment": "frozen-gold-under-coverage",
+    "underCredit": {
+      "legality": true,
+      "strategyAcceptable": false,
+      "executionComplete": true,
+      "syntheticCalculationVerified": false,
+      "researchGoalComplete": false,
+      "financialFactTruth": "NOT_PROVEN",
+      "labelScope": "hand-authored-synthetic-next-action-only",
+      "criterion": "Known within-statement unit scale is convertible without FX; normalize before arithmetic.",
+      "prematureCalculation": false
+    },
+    "criterion": "Known within-statement unit scale is convertible without FX; normalize before arithmetic."
+  },
+  "rawStateIncluded": false
+}

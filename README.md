@@ -1,14 +1,14 @@
 # FlowCredit-Harness
 
-Evidence-native 的原生金融研究 Harness：由主机控制授权、模型路由、预算与工具；通过可恢复执行和独立验证积累可审计的研究轨迹。当前包含 **T1 离线训练数据研究候选**，唯一实现基线为已验收 R0 本地提交 `e389b6a`。
+Evidence-native 的原生金融研究 Harness：由主机控制授权、模型路由、预算与工具；通过可恢复执行和独立验证积累可审计的研究轨迹。当前包含 **T2-A 财务可比性研究 Benchmark**，唯一实现基线为已验收 T1 本地提交 `508d0f1`。
 
 需要 **Node.js 24、Git、macOS 或 Linux**。无外部依赖、无需安装、无需 npm、无需模型密钥。
 
 ```sh
-node scripts/verify-t1.mjs all
+node scripts/verify-t2.mjs all
 ```
 
-完整验证保留 **280 项原 M3-A/T0 测试 + 11 项仓库安全测试**，另行执行 14 项 T1 实验。CI 依次运行这两个独立门槛。只验证 T1：`node scripts/verify-t1.mjs`。每次测试在新的受保护目录中执行，日志和失败现场分别保留。快捷验证：`node scripts/verify.mjs repository`；DeepSeek / Recorder 子集：`node scripts/verify.mjs deepseek`、`node scripts/verify.mjs trajectory`。子集不代表完整验收。
+完整验证保留 **280 项原 M3-A/T0 测试 + 11 项仓库安全测试**，另行执行 14 项 T1 实验和 14 项 T2-A 专项测试。CI 保留三个独立门槛。只验证 T1：`node scripts/verify-t1.mjs`；只验证 T2：`node scripts/verify-t2.mjs`。每次测试在新的受保护目录中执行，日志和失败现场分别保留。快捷验证：`node scripts/verify.mjs repository`；DeepSeek / Recorder 子集：`node scripts/verify.mjs deepseek`、`node scripts/verify.mjs trajectory`。子集不代表完整验收。
 
 当前能力包括 Durable Harness、独立 Model API、DeepSeek 注入式 HTTP 协议、M4 动态循环，以及 T0 签名轨迹、质量门和可核验结构导出。76 个继承模块与测试原样保留。真实模型默认关闭；unknown 不自动重发，预算预留不自动退还；工具与完成状态由 Runtime 独立校验。T0 入口保持离线。
 
@@ -18,12 +18,14 @@ node scripts/verify-t1.mjs all
 | `vendor/flowcredit-finance/` | 原 Evidence Authority、确定性计算和真实金融测试闭包 |
 | `scripts/`、`test/`、`.github/workflows/` | 发布文件审查、独立测试入口和 CI |
 | `history/`、原协议文档 | M0–M4、M3-A、T0 的来源摘要与版本边界 |
+| `research/t2-a/` | 独立下一行动 Benchmark；12 个合成任务、6 配对机制、4 个策略、手写可接受集合；实验工具不属于正式 Runtime |
 | `research/t1/` | 独立数据构建实验、固定规则 oracle、来源 / 隔离门控与合成行动样例；未训练模型 |
 | `examples/` | 已检查的合成结构样例，不是可直接训练的聊天 SFT 数据 |
 | `work/`、`validation/` | Git 忽略的本地受保护实验现场，禁止公开 |
 
 包入口保持 `flowcredit-harness` 与 `flowcredit-harness/trajectory`。装配实例及行为合同在原 `packages/native-agent/test/deepseek.test.mjs` 和 `trajectory.test.mjs` 中；新使用者先读 [架构](docs/architecture.md) 与 [开发 / CI](docs/development.md)。
 
+- [T2-A 验收与研究结论](reports/T2_A_ACCEPTANCE.md) · [实验合同](research/t2-a/CONTRACT.md) · [冻结预注册](research/t2-a/PREREGISTRATION.md) · [独立审查](reports/T2_A_REVIEW.md)
 - [T1 研究结论](research/t1/STUDY.md) · [数据合同](research/t1/CONTRACT.md) · [T1 验收](reports/T1_ACCEPTANCE.md)
 - [R0 验收与真实测试证据](reports/R0_ACCEPTANCE.md) · [独立审查](reports/R0_REVIEW.md)
 - [模型与恢复合同](PROTOCOL.md) · [轨迹与质量合同](TRAJECTORY_CONTRACT.md)
@@ -36,3 +38,5 @@ Finch 已知并发回归 **286/287**、相同原标准串行复核 **287/287** �
 R0 不证明真实模型研究增益、金融事实 Gold、数据法律使用权、匿名化、真实计费或断电一致性。Teacher 采样、Student 训练、正式发布与推送均需另行授权。仓库根代码尚未另授开源许可；金融 vendor 的原 MIT 许可证保留。
 
 T1 产生两种可追溯的下一动作候选；它们只覆盖固定策略的两个状态，训练就绪为 **BLOCKED**。不同工具观察确实导致不同动作，但严格隔离后没有未见评测集，也没有模型学习增益证据。原 79 个 R0 JS/MJS 模块不变；T0 标签和导出标准不变。
+
+T2-A 比 T1 增加了期间、口径、单位、版本、来源与当前权限等决策信息。实际对照：固定/T1 各 2/12，启发式/候选各 12/12；启发式足够不构成模型训练动机。当前 Gold 已发现合理补证动作漏标，严格未见与金融事实正确性仍有局限。T1 的训练阻断保持有效，未启动真实 Teacher 采样。
