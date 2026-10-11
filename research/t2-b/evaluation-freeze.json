@@ -1,0 +1,23 @@
+{
+  "version": "flowcredit.t2-b-evaluation-freeze/v1",
+  "createdAt": "2026-10-11T06:48:18.147002+00:00",
+  "policyCommit": "cf32509203452c5578be3cfd9907c50e4a71946d",
+  "policyChanged": false,
+  "formalEvaluationsSoFar": 0,
+  "blindEvaluation": "BLIND_EVALUATION_NOT_PROVEN",
+  "digests": {
+    "development.json": "5de9479c1af6dfcb9ae863be9db163b05c70957d3681719351efd89bce1aacfb",
+    "held-out.json": "a6950731bbbe485f2d03f6b9a4206933c6c49fb8b0c3bcbee1953ae73dc69c20",
+    "held-out-spec.json": "e7c5fe00b9db2d0c73d74790c288d2daf982141060914d9fb60ff5856f561792",
+    "gold-v2.json": "77d9306d261746533bdb3b9b01b00be271b3bce43433874688f2e676273c940c",
+    "verifier.mjs": "c0a5904003ff12c4a3a879c3a99d155769bd42b170f3ab9fe6dec395a3606e0e",
+    "policies.mjs": "449263ac78bdfd435451063f5d207ea8228053fec8e092ad4e6d907a62eadb3a",
+    "fixtures.mjs": "75a547e4bfa3903e318c078269f2f0c8505a79602a0ab60b311b31fb826d16a7",
+    "loop.mjs": "5794ce39923adf7429d0f4436bd142aeb469979057cdbfed1788b2811f5136c8",
+    "experiment.mjs": "0ab86cd74ca53b31afa7246d1d81cc3fd82a5f2e7942045591d1c38238a6647e",
+    "PREREGISTRATION.md": "e6a7227e1ab1f9766c9696d91763097bf68803a5075a2107619a991f288b5380",
+    "CONTRACT.md": "62d71c675ec4f860a339ff2a0a29c85d364780782c20aa1f6a37c077689068fc",
+    "policy-freeze.json": "8f69d06ea5c8cd4cbd8740097010d342b0f35da1c2d1c2edcd099ecd361c1959",
+    "../t2-a/strategies.mjs": "5525c3d3f678cffc98d5f08d40f30734e9b32b9df1ef80753493509429eda41a"
+  }
+}

@@ -1,0 +1,255 @@
+{
+  "author": "t2b_unseen_evaluation_curator",
+  "createdAfterPolicyFreeze": true,
+  "rights": "closed-authored-synthetic-offline-only",
+  "specs": [
+    {
+      "id": "h0",
+      "split": "held-out",
+      "family": "scope-numerator-alignment",
+      "year": 2018,
+      "reads": 3,
+      "initial": [
+        [
+          2018,
+          6000000,
+          2400000,
+          {
+            "profitScope": "segment"
+          }
+        ],
+        [
+          2019,
+          8000000,
+          3200000,
+          {
+            "profitScope": "segment"
+          }
+        ]
+      ],
+      "releases": [
+        [
+          {
+            "kind": "annual-report",
+            "scope": "consolidated",
+            "rows": [
+              [
+                2018,
+                6000000,
+                2700000,
+                {}
+              ]
+            ]
+          }
+        ],
+        [
+          {
+            "kind": "annual-report",
+            "scope": "consolidated",
+            "rows": [
+              [
+                2019,
+                8000000,
+                2800000,
+                {
+                  "profitScope": "consolidated"
+                }
+              ]
+            ]
+          }
+        ]
+      ],
+      "financialGold": {
+        "margins": [
+          45,
+          35
+        ],
+        "changePp": -10
+      },
+      "terminalGold": "calculated"
+    },
+    {
+      "id": "h1",
+      "split": "held-out",
+      "family": "scope-numerator-alignment",
+      "year": 2018,
+      "reads": 3,
+      "initial": [
+        [
+          2018,
+          6000000,
+          2400000,
+          {
+            "profitScope": "segment"
+          }
+        ],
+        [
+          2019,
+          8000000,
+          3200000,
+          {
+            "profitScope": "segment"
+          }
+        ]
+      ],
+      "releases": [
+        [
+          {
+            "kind": "annual-report",
+            "scope": "consolidated",
+            "rows": [
+              [
+                2018,
+                6000000,
+                2700000,
+                {}
+              ]
+            ]
+          }
+        ],
+        [
+          {
+            "kind": "annual-report",
+            "scope": "consolidated",
+            "rows": [
+              [
+                2019,
+                8000000,
+                2800000,
+                {
+                  "profitScope": "parent-only"
+                }
+              ]
+            ]
+          }
+        ]
+      ],
+      "financialGold": null,
+      "terminalGold": "insufficient"
+    },
+    {
+      "id": "h2",
+      "split": "held-out",
+      "family": "statutory-cost-basis-bridge",
+      "year": 2022,
+      "reads": 3,
+      "initial": [
+        [
+          2022,
+          10000000,
+          4000000,
+          {}
+        ],
+        [
+          2023,
+          12500000,
+          6250000,
+          {
+            "profitBasis": "adjusted-gross-profit"
+          }
+        ]
+      ],
+      "releases": [
+        [
+          {
+            "kind": "basis-note",
+            "scope": "consolidated",
+            "rows": [
+              [
+                2023,
+                12500000,
+                5250000,
+                {
+                  "profitBasis": "adjusted-gross-profit"
+                }
+              ]
+            ]
+          }
+        ],
+        [
+          {
+            "kind": "annual-report",
+            "scope": "consolidated",
+            "rows": [
+              [
+                2023,
+                12500000,
+                5250000,
+                {
+                  "profitBasis": "IFRS-gross-profit"
+                }
+              ]
+            ]
+          }
+        ]
+      ],
+      "financialGold": {
+        "margins": [
+          40,
+          42
+        ],
+        "changePp": 2
+      },
+      "terminalGold": "calculated"
+    },
+    {
+      "id": "h3",
+      "split": "held-out",
+      "family": "statutory-cost-basis-bridge",
+      "year": 2022,
+      "reads": 3,
+      "initial": [
+        [
+          2022,
+          10000000,
+          4000000,
+          {}
+        ],
+        [
+          2023,
+          12500000,
+          6250000,
+          {
+            "profitBasis": "adjusted-gross-profit"
+          }
+        ]
+      ],
+      "releases": [
+        [
+          {
+            "kind": "basis-note",
+            "scope": "consolidated",
+            "rows": [
+              [
+                2023,
+                12500000,
+                5250000,
+                {
+                  "profitBasis": "adjusted-gross-profit"
+                }
+              ]
+            ]
+          }
+        ],
+        [
+          {
+            "kind": "annual-report",
+            "scope": "consolidated",
+            "rows": [
+              [
+                2023,
+                12500000,
+                5250000,
+                {
+                  "profitBasis": "adjusted-gross-profit"
+                }
+              ]
+            ]
+          }
+        ]
+      ],
+      "financialGold": null,
+      "terminalGold": "insufficient"
+    }
+  ]
+}
