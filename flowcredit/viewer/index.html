@@ -3,73 +3,158 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>FlowAgent Trace Viewer</title>
+<title>FlowAgent</title>
 <style>
   :root {
-    --bg: #ffffff; --panel: #f7f7f5; --ink: #1c1c1a; --muted: #6b6b66;
-    --line: #e2e1dc; --ok: #1d7a4d; --ok-bg: #e9f5ee;
-    --bad: #a32d2d; --bad-bg: #fcebeb; --warn: #8a5a00; --warn-bg: #fdf3e0;
-    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    --paper: #f0eee6;
+    --panel: #e9e6da;
+    --ink: #141413;
+    --muted: #7a7568;
+    --line: #d8d4c4;
+    --accent: #c96442;
+    --ok: #3d7a4e;
+    --bad: #b33a3a;
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
   }
   * { box-sizing: border-box; }
-  body { margin: 0; padding: 32px 24px 64px; background: var(--bg); color: var(--ink);
-         font: 14px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif; }
-  .wrap { max-width: 960px; margin: 0 auto; }
-  h1 { font-size: 18px; font-weight: 500; margin: 0 0 4px; }
-  .sub { color: var(--muted); font-size: 13px; margin-bottom: 24px; }
-  .drop { border: 1px dashed var(--line); border-radius: 10px; padding: 28px; text-align: center;
-          color: var(--muted); background: var(--panel); }
-  .drop.hot { border-color: var(--ink); color: var(--ink); }
-  .drop input { display: none; }
-  .drop label { cursor: pointer; text-decoration: underline; }
-  .banner { border-radius: 10px; padding: 12px 16px; margin: 20px 0; font-size: 13px; }
-  .banner.ok { background: var(--ok-bg); color: var(--ok); }
-  .banner.bad { background: var(--bad-bg); color: var(--bad); }
-  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin: 20px 0; }
-  .card { background: var(--panel); border-radius: 8px; padding: 12px 14px; }
-  .card .k { color: var(--muted); font-size: 12px; }
-  .card .v { font-family: var(--mono); font-size: 15px; margin-top: 2px; word-break: break-all; }
-  h2 { font-size: 15px; font-weight: 500; margin: 32px 0 12px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
-  .round { border: 1px solid var(--line); border-radius: 10px; margin-bottom: 10px; overflow: hidden; }
-  .round > summary { padding: 10px 14px; cursor: pointer; display: flex; gap: 12px; align-items: baseline; }
-  .round > summary::-webkit-details-marker { display: none; }
-  .idx { font-family: var(--mono); color: var(--muted); min-width: 28px; }
-  .tool { font-family: var(--mono); font-weight: 500; }
-  .verdict { margin-left: auto; font-family: var(--mono); font-size: 12px; }
-  .pass { color: var(--ok); } .deny { color: var(--bad); } .unk { color: var(--warn); }
-  .body { padding: 0 14px 14px; border-top: 1px solid var(--line); }
-  .row { display: grid; grid-template-columns: 92px 1fr; gap: 12px; padding: 6px 0; }
-  .row .lbl { color: var(--muted); font-size: 12px; }
-  .row .val { font-family: var(--mono); font-size: 12.5px; word-break: break-word; white-space: pre-wrap; }
-  table { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 12px; }
-  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+  html, body { height: 100%; }
+  body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font: 13px/1.65 var(--mono);
+    -webkit-font-smoothing: antialiased;
+  }
+  .app { display: flex; flex-direction: column; height: 100%; }
+
+  header {
+    display: flex; align-items: baseline; gap: 12px;
+    padding: 14px 18px; border-bottom: 1px solid var(--line);
+  }
+  .mark { color: var(--accent); font-size: 14px; }
+  .title { font-weight: 600; letter-spacing: 0.01em; }
+  .tag { color: var(--muted); font-size: 12px; }
+  header .right { margin-left: auto; display: flex; gap: 14px; align-items: baseline; }
+  .dots { display: flex; gap: 6px; }
+  .dot { width: 7px; height: 7px; border: 1px solid var(--muted); display: inline-block; }
+  .dot.ok { background: var(--ok); border-color: var(--ok); }
+  .dot.bad { background: var(--bad); border-color: var(--bad); }
+  .dot.warn { background: var(--accent); border-color: var(--accent); }
+  .dot.none { background: transparent; }
+
+  .body { display: flex; flex: 1; min-height: 0; }
+
+  nav {
+    width: 208px; border-right: 1px solid var(--line);
+    padding: 14px 0; overflow-y: auto; flex-shrink: 0;
+  }
+  nav .label { color: var(--muted); font-size: 11px; padding: 0 18px 8px; }
+  nav button {
+    display: flex; align-items: baseline; gap: 8px; width: 100%;
+    background: none; border: 0; border-left: 2px solid transparent;
+    color: var(--ink); font: inherit; text-align: left;
+    padding: 5px 16px; cursor: pointer;
+  }
+  nav button:hover { background: var(--panel); }
+  nav button[aria-current="true"] { border-left-color: var(--accent); background: var(--panel); }
+  nav button .k { color: var(--muted); font-size: 12px; }
+  nav button[aria-current="true"] .k { color: var(--accent); }
+  nav .hint { padding: 14px 18px 0; color: var(--muted); font-size: 11px; line-height: 1.9; }
+  nav .hint label { text-decoration: underline; cursor: pointer; }
+
+  main { flex: 1; min-width: 0; overflow-y: auto; padding: 18px 22px 64px; }
+  .empty { color: var(--muted); padding: 40px 0; line-height: 1.9; }
+
+  .runline { display: flex; flex-wrap: wrap; gap: 18px; align-items: baseline; }
+  .runline .id { color: var(--muted); }
+  .state { font-weight: 600; }
+  .state.ok { color: var(--ok); }
+  .state.bad { color: var(--bad); }
+  .state.warn { color: var(--accent); }
+  .rule { border: 0; border-top: 1px solid var(--line); margin: 14px 0 4px; }
+
+  .verify { display: flex; gap: 8px; align-items: baseline; padding: 6px 0 12px; }
+  .verify .g { color: var(--ok); }
+  .verify.bad .g { color: var(--bad); }
+  .verify .txt { color: var(--muted); }
+  .verify code { color: var(--ink); }
+
+  .round { padding: 9px 0; border-bottom: 1px dotted var(--line); }
+  .round:last-of-type { border-bottom: 0; }
+  .line { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+  .idx { color: var(--muted); min-width: 18px; }
+  .g { color: var(--accent); }
+  .g.deny { color: var(--bad); }
+  .g.ok { color: var(--ok); }
+  .tool { font-weight: 600; }
+  .args { color: var(--muted); }
+  .verdict { margin-left: auto; font-size: 12px; }
+  .verdict.pass { color: var(--ok); }
+  .verdict.deny { color: var(--bad); }
+  .sub { padding-left: 26px; }
+  .sub .dim { color: var(--muted); }
+  .budget { padding-left: 26px; color: var(--muted); font-size: 12px; }
+  .note { padding-left: 26px; color: var(--bad); font-size: 12px; }
+
+  .term { margin-top: 22px; border: 1px solid var(--line); padding: 12px 14px; }
+  .term .head { display: flex; gap: 10px; align-items: baseline; margin-bottom: 8px; }
+  .kv { display: grid; grid-template-columns: 92px 1fr; gap: 2px 12px; }
+  .kv .k { color: var(--muted); }
+  .kv .v { word-break: break-word; }
+  .big { color: var(--accent); font-weight: 600; }
+
+  details { margin-top: 24px; }
+  summary { color: var(--muted); cursor: pointer; }
+  table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 12px; }
+  th, td { text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--line); }
   th { color: var(--muted); font-weight: 400; }
   .hash { color: var(--muted); }
-  .err { color: var(--bad); }
-  .muted { color: var(--muted); }
+  pre { white-space: pre-wrap; word-break: break-word; font-size: 11.5px; color: var(--muted); }
 </style>
 </head>
 <body>
-<div class="wrap">
-  <h1>FlowAgent Trace Viewer</h1>
-  <div class="sub">打开一份 trace JSON，浏览器会重新计算整条事件哈希链。任何一处被改动，这里都会变红。</div>
-
-  <div class="drop" id="drop">
-    <div>把 <code>*.trace.json</code> 拖到这里，或者 <label for="file">选择文件</label></div>
-    <input type="file" id="file" accept=".json,application/json">
-    <div class="muted" style="margin-top:8px;font-size:12px">
-      也可以在 URL 后加 <code>?trace=../work/demo/full.trace.json</code> 直接加载
+<div class="app">
+  <header>
+    <span class="mark">✻</span>
+    <span class="title">FlowAgent</span>
+    <span class="tag">trace viewer</span>
+    <div class="right">
+      <span class="dots" id="dots"></span>
+      <span class="tag" id="clock"></span>
     </div>
-  </div>
+  </header>
 
-  <div id="out"></div>
+  <div class="body">
+    <nav>
+      <div class="label">scenarios</div>
+      <div id="nav"></div>
+      <div class="hint">
+        拖入任意 trace JSON 也可查看。<br>
+        链哈希在浏览器里重算。<br><br>
+        <label for="pick">选择文件</label>
+      </div>
+    </nav>
+    <main id="main">
+      <div class="empty">选择一个场景，或把 trace JSON 拖进窗口。</div>
+    </main>
+  </div>
 </div>
+
+<input type="file" id="pick" accept=".json,application/json" style="display:none">
 
 <script>
 "use strict";
 
-// Canonical JSON: sorted keys, no whitespace, UTF-8. This must match the Python
-// encoder byte for byte, otherwise a valid trace would look tampered.
+const SCENARIOS = [
+  ["full", "完整研究"],
+  ["tool-denied", "越权工具"],
+  ["budget", "预算耗尽"],
+  ["crash", "崩溃恢复"],
+  ["unknown", "未知对账"],
+];
+
+const cache = new Map();
+
+/* ----------------------------------------------------------- canonical json */
+
 function canonical(value) {
   if (value === null || typeof value !== "object") return JSON.stringify(value);
   if (Array.isArray(value)) return "[" + value.map(canonical).join(",") + "]";
@@ -77,8 +162,7 @@ function canonical(value) {
 }
 
 async function sha256Hex(text) {
-  const bytes = new TextEncoder().encode(text);
-  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
   return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, "0")).join("");
 }
 
@@ -102,114 +186,256 @@ async function verifyChain(trace) {
   return { ok: true, events: events.length, head: previous };
 }
 
-function esc(value) {
-  return String(value).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+/* ------------------------------------------------------------------ helpers */
+
+const esc = value => String(value).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const pct = bp => (bp / 100).toFixed(2) + "%";
+const pp = bp => (bp >= 0 ? "+" : "") + (bp / 100).toFixed(2) + " pp";
+const num = n => Number(n).toLocaleString("en-US");
+
+function stateClass(status) {
+  if (status === "succeeded") return "ok";
+  if (status === "denied" || status === "failed") return "bad";
+  return "warn";
 }
 
-function row(label, value) {
-  if (value === null || value === undefined) return "";
-  const text = typeof value === "string" ? value : JSON.stringify(value);
-  return `<div class="row"><div class="lbl">${esc(label)}</div><div class="val">${esc(text)}</div></div>`;
-}
+/* ------------------------------------------------------------------- render */
 
-function renderRounds(rounds) {
-  if (!rounds || !rounds.length) return `<div class="muted">这份 trace 没有记录轮次（可能是在崩溃后接续记录的）。</div>`;
-  return rounds.map(r => {
-    const step = (r.proposal && r.proposal.steps && r.proposal.steps[0]) || null;
-    const decision = r.decision || {};
-    const verdict = decision.allowed === false
-      ? `<span class="verdict deny">DENIED ${esc(decision.code || "")}</span>`
-      : decision.allowed === true ? `<span class="verdict pass">PASS</span>` : `<span class="verdict muted">—</span>`;
-    const tool = step ? step.tool : "(no proposal)";
-    const args = step && step.arguments && Object.keys(step.arguments).length
-      ? Object.entries(step.arguments).map(([k, v]) => `${k}=${v}`).join(" ") : "无参数";
-    const obs = r.observation && r.observation.result;
-    const budget = r.budget_after || {};
-    return `<details class="round">
-      <summary><span class="idx">${r.index}</span><span class="tool">${esc(tool)}</span>
-        <span class="muted">${esc(args)}</span>${verdict}</summary>
-      <div class="body">
-        ${row("提议", r.proposal)}
-        ${row("收据", r.receipt)}
-        ${row("门控", r.decision)}
-        ${row("观测", obs)}
-        ${row("预算", budget.calls_used !== undefined
-          ? `calls ${budget.calls_used}/${budget.limits ? budget.limits.max_calls : "?"}, reads ${budget.reads_used}, cost ${budget.cost_used_microusd} µUSD`
-          : null)}
-      </div>
-    </details>`;
-  }).join("");
-}
-
-function renderEvents(events) {
-  return `<table><thead><tr><th>#</th><th>type</th><th>hash</th><th>prev</th></tr></thead><tbody>${
-    events.map(e => `<tr><td>${e.sequence}</td><td>${esc(e.type)}</td>
-      <td class="hash">${esc(String(e.hash).slice(0, 16))}…</td>
-      <td class="hash">${e.prev_hash ? esc(String(e.prev_hash).slice(0, 12)) + "…" : "—"}</td></tr>`).join("")
-  }</tbody></table>`;
-}
-
-async function show(trace) {
-  const out = document.getElementById("out");
-  const check = await verifyChain(trace);
-  const terminal = trace.terminal || {};
-  const task = trace.task || {};
-
-  out.innerHTML = `
-    <div class="banner ${check.ok ? "ok" : "bad"}">
-      ${check.ok
-        ? `哈希链校验通过：${check.events} 个事件，链头 ${esc(check.head.slice(0, 16))}…`
-        : `校验失败：${esc(check.reason)}`}
-    </div>
-    <div class="cards">
-      <div class="card"><div class="k">任务</div><div class="v">${esc(task.id || "?")}</div></div>
-      <div class="card"><div class="k">终态</div><div class="v">${esc(terminal.status || task.status || "?")}</div></div>
-      <div class="card"><div class="k">轮次</div><div class="v">${(trace.rounds || []).length}</div></div>
-      <div class="card"><div class="k">模型</div><div class="v">${esc((trace.model || {}).model || "?")}</div></div>
-    </div>
-    <h2>轮次</h2>
-    ${renderRounds(trace.rounds)}
-    <h2>事件链</h2>
-    ${renderEvents(trace.events || [])}
-    <h2>原始 JSON</h2>
-    <details><summary class="muted">展开</summary><pre class="val" style="white-space:pre-wrap">${esc(JSON.stringify(trace, null, 2))}</pre></details>
-  `;
-}
-
-function fail(message) {
-  document.getElementById("out").innerHTML =
-    `<div class="banner bad">${esc(message)}</div>`;
-}
-
-async function loadFile(file) {
-  try {
-    const text = await file.text();
-    await show(JSON.parse(text));
-  } catch (error) {
-    fail(`无法解析 ${file.name}：${error.message}`);
+function describe(observation) {
+  const tool = observation.tool;
+  const r = observation.result || {};
+  switch (tool) {
+    case "list_documents":
+      return [(r.documents || []).map(d => `${d.id}(${d.unit_label}/${d.basis})`).join("  ")];
+    case "read_document":
+      return [`${r.period} · ${r.unit_label} · ${r.basis}`, `<span class="dim">${esc((r.body || "").slice(0, 60))}…</span>`];
+    case "normalize_units":
+      return [`${r.source_unit} → ${r.target_unit} ×${num(r.factor)} · 毛利 ${num(r.gross_profit_cny)} 元`];
+    case "reconcile_basis":
+      return [`${r.period} ${r.from_basis} → ${r.to_basis} · 差异 ${r.delta >= 0 ? "+" : ""}${r.delta}`, `<span class="dim">${esc(r.reason)}</span>`];
+    case "check_restatement":
+      return r.restated
+        ? [`已重述 ${num(r.original_gross_profit)} → ${num(r.restated_gross_profit)}（${r.delta >= 0 ? "+" : ""}${r.delta}）`]
+        : ["无重述"];
+    case "calculate_margin":
+      return r.computed
+        ? [`2024 ${pct(r.margin_bp_2024)} · 2025 ${pct(r.margin_bp_2025)} · ${pp(r.change_bp)}`]
+        : [`无法计算：${esc((r.blockers || []).join("；"))}`];
+    case "report_blocked":
+      return [`声明受阻：${esc(r.reason)}`];
+    default:
+      return [esc(JSON.stringify(r))];
   }
 }
 
-const input = document.getElementById("file");
-input.addEventListener("change", () => { if (input.files[0]) loadFile(input.files[0]); });
+function renderRound(round) {
+  const step = (round.proposal && round.proposal.steps && round.proposal.steps[0]) || null;
+  const decision = round.decision || {};
+  const denied = decision.allowed === false;
+  const args = step && step.arguments && Object.keys(step.arguments).length
+    ? "(" + Object.entries(step.arguments).map(([k, v]) => `${k}=${v}`).join(", ") + ")"
+    : "()";
+  const verdict = denied
+    ? `<span class="verdict deny">DENIED ${esc(decision.code || "")}</span>`
+    : decision.allowed === true ? `<span class="verdict pass">PASS</span>` : "";
 
-const drop = document.getElementById("drop");
-["dragenter", "dragover"].forEach(name => drop.addEventListener(name, e => {
-  e.preventDefault(); drop.classList.add("hot");
-}));
-["dragleave", "drop"].forEach(name => drop.addEventListener(name, e => {
-  e.preventDefault(); drop.classList.remove("hot");
-}));
-drop.addEventListener("drop", e => {
-  const file = e.dataTransfer.files[0];
-  if (file) loadFile(file);
-});
+  const lines = [];
+  if (round.observation && round.observation.result) {
+    for (const line of describe(round.observation)) lines.push(`<div class="sub"><span class="g">⎿</span>  ${line}</div>`);
+  }
+  if (denied) lines.push(`<div class="note">⎿  ${esc(decision.reason || "")}</div>`);
 
-const param = new URLSearchParams(location.search).get("trace");
-if (param) {
-  fetch(param).then(r => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
-    .then(show).catch(error => fail(`无法加载 ${param}：${error.message}`));
+  const b = round.budget_after || {};
+  const budget = b.calls_used !== undefined
+    ? `<div class="budget">calls ${b.calls_used}/${b.limits ? b.limits.max_calls : "?"} · reads ${b.reads_used}/${b.limits ? b.limits.max_reads : "?"} · ${num(b.cost_used_microusd || 0)} µUSD</div>`
+    : "";
+
+  return `<div class="round">
+    <div class="line">
+      <span class="idx">${round.index}</span>
+      <span class="g${denied ? " deny" : ""}">⏺</span>
+      <span class="tool">${esc(step ? step.tool : "—")}</span>
+      <span class="args">${esc(args)}</span>
+      ${verdict}
+    </div>
+    ${lines.join("")}
+    ${budget}
+  </div>`;
 }
+
+function renderTerminal(trace) {
+  const terminal = trace.terminal || {};
+  const result = terminal.result || {};
+  const failure = terminal.failure || {};
+  const cls = stateClass(terminal.status || trace.task.status);
+  const glyph = cls === "ok" ? "✔" : cls === "bad" ? "✗" : "✻";
+
+  if (terminal.status === "succeeded" && result.change_bp !== undefined) {
+    return `<div class="term">
+      <div class="head"><span class="g ok">${glyph}</span>
+        <span class="state ok">succeeded</span>
+        <span class="tag">Runtime 独立重算通过</span></div>
+      <div class="kv">
+        <span class="k">2024 毛利率</span><span class="v">${pct(result.margin_bp_2024)}</span>
+        <span class="k">2025 毛利率</span><span class="v">${pct(result.margin_bp_2025)}</span>
+        <span class="k">变化</span><span class="v big">${pp(result.change_bp)}</span>
+        <span class="k">口径</span><span class="v">${esc(result.basis)} / ${esc(result.consolidation)} / 已应用 2024 重述</span>
+        <span class="k">引用</span><span class="v">${(result.citations || []).map(c => `${c.period} ${c.doc_id}`).join(" · ")}</span>
+      </div>
+    </div>`;
+  }
+
+  return `<div class="term">
+    <div class="head"><span class="g deny">${glyph}</span>
+      <span class="state ${cls}">${esc(terminal.status || trace.task.status)}</span></div>
+    <div class="kv">
+      <span class="k">原因</span><span class="v">${esc(failure.code || "—")}</span>
+      <span class="k">说明</span><span class="v">${esc(failure.message || "—")}</span>
+    </div>
+  </div>`;
+}
+
+function renderChain(trace) {
+  const events = trace.events || [];
+  return `<details>
+    <summary>事件链 · ${events.length} 个事件</summary>
+    <table>
+      <thead><tr><th>#</th><th>type</th><th>hash</th><th>prev</th></tr></thead>
+      <tbody>${events.map(e => `<tr>
+        <td>${e.sequence}</td><td>${esc(e.type)}</td>
+        <td class="hash">${esc(String(e.hash).slice(0, 16))}…</td>
+        <td class="hash">${e.prev_hash ? esc(String(e.prev_hash).slice(0, 12)) + "…" : "—"}</td>
+      </tr>`).join("")}</tbody>
+    </table>
+    <details><summary style="margin-top:12px">原始 JSON</summary>
+      <pre>${esc(JSON.stringify(trace, null, 2))}</pre></details>
+  </details>`;
+}
+
+async function render(trace, title) {
+  const main = document.getElementById("main");
+  const check = await verifyChain(trace);
+  const task = trace.task || {};
+  const terminal = trace.terminal || {};
+  const rounds = trace.rounds || [];
+  const cls = stateClass(terminal.status || task.status);
+
+  main.innerHTML = `
+    <div class="runline">
+      <span class="state ${cls}">${esc(terminal.status || task.status || "?")}</span>
+      <span class="id">${esc(title || task.id || "")}</span>
+      <span class="tag">${esc((trace.model || {}).model || "")}</span>
+      <span class="tag">${rounds.length} rounds</span>
+      <span class="tag">seq ${esc(task.sequence)}</span>
+    </div>
+    <hr class="rule">
+    <div class="verify ${check.ok ? "" : "bad"}">
+      <span class="g">${check.ok ? "✔" : "✗"}</span>
+      <span class="txt">${check.ok
+        ? `chain verified · ${check.events} events · head <code>${esc(check.head.slice(0, 16))}…</code>`
+        : `chain broken · ${esc(check.reason)}`}</span>
+    </div>
+    ${rounds.map(renderRound).join("")}
+    ${renderTerminal(trace)}
+    ${renderChain(trace)}
+  `;
+}
+
+/* --------------------------------------------------------------------- nav */
+
+async function loadScenario(key) {
+  if (cache.has(key)) return cache.get(key);
+  const response = await fetch(`../work/demo/${key}.trace.json`, { cache: "no-store" });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  const trace = await response.json();
+  cache.set(key, trace);
+  return trace;
+}
+
+function paintDots() {
+  document.getElementById("dots").innerHTML = SCENARIOS.map(([key]) => {
+    const trace = cache.get(key);
+    if (!trace) return `<span class="dot none" title="${key}"></span>`;
+    const cls = stateClass((trace.terminal || {}).status);
+    return `<span class="dot ${cls}" title="${key}: ${esc((trace.terminal || {}).status)}"></span>`;
+  }).join("");
+}
+
+function setCurrent(key) {
+  for (const button of document.querySelectorAll("nav button")) {
+    button.setAttribute("aria-current", button.dataset.key === key ? "true" : "false");
+  }
+}
+
+async function select(key, label) {
+  setCurrent(key);
+  const main = document.getElementById("main");
+  try {
+    const trace = await loadScenario(key);
+    await render(trace, `${key} · ${label}`);
+    paintDots();
+  } catch (error) {
+    main.innerHTML = `<div class="empty">
+      ${esc(key)} 还没有 trace（${esc(error.message)}）。<br><br>
+      先运行 <code>python demo.py ${esc(key)}</code>，或 <code>python demo.py all</code> 一次生成全部。
+    </div>`;
+  }
+}
+
+function buildNav() {
+  const nav = document.getElementById("nav");
+  nav.innerHTML = SCENARIOS.map(([key, label]) =>
+    `<button data-key="${key}"><span class="k">⏺</span><span>${label}</span></button>`
+  ).join("");
+  for (const button of nav.querySelectorAll("button")) {
+    button.addEventListener("click", () => {
+      const label = button.querySelector("span:last-child").textContent;
+      select(button.dataset.key, label);
+    });
+  }
+}
+
+async function fromFile(file) {
+  try {
+    const trace = JSON.parse(await file.text());
+    setCurrent("");
+    await render(trace, file.name);
+  } catch (error) {
+    document.getElementById("main").innerHTML =
+      `<div class="empty">无法解析 ${esc(file.name)}：${esc(error.message)}</div>`;
+  }
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  buildNav();
+  paintDots();
+  document.getElementById("clock").textContent = new Date().toISOString().slice(0, 10);
+
+  document.getElementById("pick").addEventListener("change", event => {
+    if (event.target.files[0]) fromFile(event.target.files[0]);
+  });
+
+  document.addEventListener("dragenter", event => event.preventDefault());
+  document.addEventListener("dragover", event => event.preventDefault());
+  document.addEventListener("drop", event => {
+    event.preventDefault();
+    const file = event.dataTransfer && event.dataTransfer.files[0];
+    if (file) fromFile(file);
+  });
+
+  const param = new URLSearchParams(location.search).get("trace");
+  if (param) {
+    fetch(param)
+      .then(response => response.ok ? response.json() : Promise.reject(new Error(`HTTP ${response.status}`)))
+      .then(trace => { setCurrent(""); return render(trace, param.split("/").pop()); })
+      .catch(error => {
+        document.getElementById("main").innerHTML =
+          `<div class="empty">无法加载 ${esc(param)}：${esc(error.message)}</div>`;
+      });
+  } else {
+    select("full", "完整研究");
+  }
+});
 </script>
 </body>
 </html>

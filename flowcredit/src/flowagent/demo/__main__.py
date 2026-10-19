@@ -17,7 +17,8 @@ import webbrowser
 
 from ..core.contracts import AgentError
 from .fixtures import SCENARIOS
-from .runner import PROJECT_ROOT, run_all, run_scenario
+from .runner import PROJECT_ROOT, WORK_DIR, run_all, run_scenario
+from .serve import serve
 
 __all__ = ["main"]
 
@@ -32,7 +33,7 @@ def _build_parser() -> argparse.ArgumentParser:
             "  python demo.py                 menu in a terminal, full scenario otherwise\n"
             "  python demo.py full --fast     the main story, no pauses\n"
             "  python demo.py all             every scenario, then a summary table\n"
-            "  python demo.py crash           kill the process and resume\n"
+            "  python demo.py --serve         open the trace viewer in a browser\n"
         ),
     )
     parser.add_argument(
@@ -46,6 +47,8 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--trace-out", metavar="PATH", help="write the trace here instead of work/demo/")
     parser.add_argument("--model", default="mock", help="proposal source (Phase 1: mock only)")
     parser.add_argument("--open", action="store_true", dest="open_viewer", help="open the trace viewer afterwards")
+    parser.add_argument("--serve", action="store_true", help="serve the viewer on 127.0.0.1 and open it")
+    parser.add_argument("--port", type=int, default=0, help="port for --serve (default: pick a free one)")
     parser.add_argument("--list", action="store_true", dest="list_scenarios", help="list scenarios and exit")
     return parser
 
@@ -81,6 +84,13 @@ def main(argv: list[str] | None = None) -> int:
         for key, scenario in SCENARIOS.items():
             print(f"  {key:<12} {scenario.title}")
         return 0
+
+    if args.serve:
+        missing = [key for key in SCENARIOS if not (WORK_DIR / f"{key}.trace.json").exists()]
+        if missing:
+            print(f"generating {len(missing)} missing trace(s) before serving…")
+            run_all()
+        return serve(PROJECT_ROOT, port=args.port)
 
     key = args.scenario
     if key is None:

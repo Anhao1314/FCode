@@ -55,10 +55,12 @@ python demo.py all           # 顺序跑完并打印汇总表
 每次运行写出 `work/demo/<scenario>.trace.json`：完整事件哈希链，可直接阅读。
 
 ```sh
-python demo.py full --open
+python demo.py --serve
 ```
 
-会用浏览器打开 `viewer/index.html` 并加载该 trace。也可以手动打开 viewer，把 JSON 拖进去。viewer 用 `crypto.subtle` 重算整条链，任何一处被改动都会立刻变红——这不是日志高亮，是真的重算。
+用标准库起一个本地静态服务并打开查看器。左侧是五个场景，点一下切换；顶部是整轮摘要；每一轮按 `⏺ 工具调用 / ⎿ 返回` 展开；页面加载时用 `crypto.subtle` 重算整条链，改一个字节就变红——这不是日志高亮，是真的重算。
+
+也可以直接打开 `viewer/index.html`，把任意 trace JSON 拖进去。单文件、原生 JS、零构建。
 
 ## 三条约束
 

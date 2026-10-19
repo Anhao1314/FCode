@@ -79,6 +79,7 @@ python demo.py budget        # 预算耗尽：发送前拦住，已占用不退
 python demo.py crash         # 进程被 SIGKILL，重启续跑不重复
 python demo.py unknown       # 供应商超时：不重发，凭签名收据对账
 python demo.py all           # 顺序跑完并打印汇总表
+python demo.py --serve       # 打开 Trace 查看器
 ```
 
 ```
