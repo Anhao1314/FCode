@@ -12,11 +12,11 @@ R0 establishes one local Git repository from the accepted T0 candidate. It adds 
 | Repository verification | `scripts/`, `test/repository.test.mjs`, `.github/workflows/` | Publication inventory, T0 integrity, dependency closure, isolated offline tests and CI. No execution or model authority. |
 | Accepted history | Root protocol documents, `history/`, T0 `reports/ACCEPTANCE.md` | Version boundaries, source/evidence digests and earlier failure summaries. |
 
-The package exports `flowcredit-harness` and `flowcredit-harness/trajectory`. Internal modules remain implementation details; moving or renaming them adds no value in R0. The existing epoch names M1/M2/M4 in source files identify real compatibility boundaries rather than duplicate frameworks.
+The package exports `flowcredit-harness`, `flowcredit-harness/trajectory` and, since M5, `flowcredit-harness/observable`. Internal modules remain implementation details; moving or renaming them adds no value in R0. The existing epoch names M1/M2/M4 in source files identify real compatibility boundaries rather than duplicate frameworks.
 
 Execution and recording remain separate. A model proposes an action; Runtime checks authority, tool schema and Evidence before execution or completion. A Recorder failure cannot change a completed task. A signed locally verified success is an execution label, not a financial factual gold label or demonstrated model research ability.
 
-Unknown model outcomes keep the original reservation and prohibit automatic resend, refund or provider failover. Only explicit reconciliation against a trusted matching receipt can resolve them. Dead-process locks and anchored checkpoints use the existing recovery procedures. The history-before-witness window stays blocked with `M1_HISTORY_AHEAD`.
+Unknown model outcomes keep the original reservation and prohibit automatic resend, refund or provider failover. Only explicit reconciliation against a trusted matching receipt can resolve them. Dead-process locks and anchored checkpoints use the existing recovery procedures. The history-before-witness window still fails closed with `M1_HISTORY_AHEAD` on every read; M5 adds an explicit repair in `recovery-store.mjs` that moves unattested entries into `quarantine/` and is reachable only through `recoverLatest()`.
 
 Future boundaries are documented here, with no empty packages or speculative interfaces:
 
