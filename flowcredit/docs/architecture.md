@@ -1,0 +1,135 @@
+# 架构
+
+## 分层与依赖方向
+
+```
+demo/          CLI、渲染、场景          ← 唯一选择具体实现的地方
+   │
+runtime/       门控、预算、harness、loop
+   │
+tools/  providers/  memory/  trajectory/
+   │
+core/          哈希、契约、存储、收据
+```
+
+依赖是单向的：`core` 不 import 包内任何其他模块；`runtime` 可以 import `core` / `tools` / `providers`；没有任何模块 import `runtime`，除了 `demo` 和测试。这条约束让安全属性可以脱离 demo 单独测。
+
+`tools/finance/` 是示例域，不是内核。`runtime` 不 import 它——换一个领域只需要提供自己的 `build_*_tools` 和 `authority`。
+
+## 一次调用的完整路径
+
+```mermaid
+sequenceDiagram
+    participant L as Loop
+    participant H as Harness
+    participant G as Permissions
+    participant B as Budget
+    participant P as Provider
+    participant T as Registry
+    participant S as TaskStore
+
+    L->>H: propose(task, context)
+    H->>S: save(model_started)  [CAS on sequence]
+    H->>B: charge_call(tokens, cost)   ← 发送前扣
+    B-->>H: ok / BUDGET_EXCEEDED
+    H->>P: propose(context + intent)
+    P-->>H: plan / timeout
+    H->>H: validate_plan
+    H->>S: save(plan_validated)
+    H-->>L: (task, proposal)
+
+    L->>G: gate(tool, args)
+    G-->>L: PASS / DENIED(code)
+    L->>H: execute(task, step)
+    H->>B: charge_read()
+    H->>T: execute(tool, args)
+    T-->>H: observation
+    H->>S: save(tool_succeeded, result + hash)
+    H-->>L: (task, observation)
+
+    L->>H: verify(observation)
+    H->>H: 用世界重算，比对
+    H-->>L: verified / RESULT_VERIFICATION_FAILED
+    L->>S: save(task_succeeded)
+```
+
+关键点：**每一次状态变化都是一次 `save`，都进哈希链**。没有"内存里改一下最后一起写"的路径。
+
+## 任务状态机
+
+```
+created ──▶ planning ──▶ planned ──▶ running ──▶ verifying ──▶ succeeded
+                │            │           │
+                │            │           ├──▶ paused ──▶ running
+                │            │           ├──▶ failed
+                │            │           ├──▶ denied
+                │            │           └──▶ recovery_required ──▶ running
+                │            └──▶ denied
+                └──▶ failed / recovery_required
+```
+
+合法迁移表在 `core/contracts.py::TASK_TRANSITIONS`，由 `core/store.py::_assert_legal_change` 在事务内强制执行。`succeeded` 与 `denied` 是单向终态。
+
+两条容易问到的边：
+
+- `running → recovery_required`：unknown 可能发生在任何一轮，不只是第一轮。
+- `recovery_required → running`：对账成功后回到它当时所在的轮次。
+
+模型侧：`not_started → started → validated / unknown / failed`，且 `validated → started` 允许，因为每一轮都是一次新调用。
+
+## 持久层
+
+单文件 SQLite，WAL 模式，`synchronous=FULL`。
+
+| 表 | 作用 |
+| --- | --- |
+| `task` | 当前任务体、序号、体哈希、链头哈希 |
+| `event` | 追加式事件，`(task_id, sequence)` 主键，含 `prev_hash` 与 `hash` |
+| `receipt` | 签名收据，`ref` 由 intent+plan 派生 |
+| `meta` | 签名密钥（首次使用时生成） |
+| `budget` | 四维计数器 |
+
+写入用 `BEGIN IMMEDIATE` 串行化，读取时 `verify_chain` 全量重算：
+
+```
+hash_n = sha256(canonical_json({sequence, type, payload, prev_hash, at}))
+```
+
+任何一处被改，`load` 抛 `CHAIN_TAMPERED`。删掉最后一条，`CHAIN_ROLLBACK`。
+
+## 恢复
+
+崩溃后重启：
+
+1. `store.load(task_id)` 重算全链，确认没有被截断或篡改。
+2. `Loop.restore(task)` 从 `tool_succeeded` 事件重建工作记忆。
+3. `FinanceWorld.apply_state(memory.state())` 让世界也知道"哪些资料读过了"。
+4. `Loop.pending_step(task)` 检查是否有已批准但未执行的提案（对账后的情况）。
+5. 继续跑，轮次号取自 `task.model.attempts`，不会重复。
+
+## 扩展点
+
+| 想加什么 | 改哪里 | 不用改什么 |
+| --- | --- | --- |
+| 新工具 | `tools/` 加一个 `ToolSpec` | runtime 一行不动 |
+| 新领域 | 新 `tools/<domain>/` + 自己的 authority | core / runtime 一行不动 |
+| 真实供应商 | `providers/` 实现 `Provider` | 门控、预算、收据全部复用 |
+| 新场景 | `demo/fixtures.py` 加一条数据 | runtime 一行不动 |
+
+最后一行是这套架构最想证明的事：**场景是数据，不是分支**。
+
+## 文件索引
+
+| 文件 | 职责 | 关键不变量 |
+| --- | --- | --- |
+| `core/hashing.py` | canonical JSON + sha256 | 拒绝 float；键排序；UTF-8 |
+| `core/contracts.py` | 版本、异常、Task/Plan/Step、迁移表 | 未知键一律拒绝 |
+| `core/store.py` | sqlite、事务、哈希链、CAS | 序列号由 store 独占 |
+| `core/receipts.py` | HMAC 收据 | 签名不符即 `UNTRUSTED` |
+| `runtime/permissions.py` | 三道门控 | 拒绝有稳定错误码 |
+| `runtime/budget.py` | 四维预算 | 发送前扣，不退 |
+| `runtime/harness.py` | 单轮机制 + 独立重算 | 成功只能由 verify 产生 |
+| `runtime/loop.py` | 多轮 + 恢复 | 轮次不重复 |
+| `memory/context.py` | 派生上下文 | 每轮重算，不累积 |
+| `trajectory/exporter.py` | 导出 + 重算 | 与 viewer 算法一致 |
+| `demo/runner.py` | 装配 | 唯一选择具体实现的地方 |

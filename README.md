@@ -1,134 +1,152 @@
-# FlowCredit-Harness
+# FlowAgent
 
-把每次模型调用当金融交易记账的受控 AI 研究执行框架，执行历史写成不可回滚的哈希链。
+**模型不掌权、出错不乱来、全程可审计的 Agent Runtime。**
 
-## 结论：`NO_GO`
-
-三轮研究（T1、T2-A、T2-B）指向同一判断：确定性规则已经解掉全部冻结任务，因此不该训练模型。T2-B 里确定性候选拿到 8/8，四个冻结任务对全部解完，这一路没有学习型决策参与。
-
-结论不是「模型不行」，而是「这批任务不需要模型」。规则已经解完，再训练模型只是把已知答案重学一遍。决策常量是 **`NO_GO`**。
-
-T2-A 的四组指向同一判断：固定策略与 T1 语义映射各 2/12，启发式与研究候选各 12/12。规则打满，弱策略打空。
-
-T1 的 `TRAINING_READY=BLOCKED` 保持有效，真实 Teacher 采样没有启动。
-
-现在能信到哪一层要分清。数字来自离线合成语料与本地脚本，真实模型默认关闭，试点未授权。
-
-## 是 Harness，不是 Agent
-
-正式 Runtime 只暴露 2 个只读工具：`evidence.read` 与 `evidence.assess`。参数必须是空对象，写操作不在模型权限内。
-
-**执行权在主机**。主机给权限、路由、预算与传输授权，模型只能提出动作。Runtime 独立校验工具名、schema 与 Evidence，通过后才执行。任务完成由独立校验器判定，模型不能自报完成。
-
-执行与记录是两条链。Recorder 写失败不能改变已完成的任务，已签收的执行标签也不会被回写。
-
-循环路径目前读不到具体数值。M4 的 `contextFor()` 仍把观测压成事实计数，所以循环只能数事实、不能读事实。M5 只打开了静态路径与轨迹的投影，循环是下一个增量。
-
-模型侧同样收窄：thinking 显式关闭，禁止自评，模型尝试次数上限为 1。包入口三个：`.`、`./trajectory`、`./observable`。没有多智能体编排，没有记忆系统，也没有训练流水线。
-
-## 为什么这样设计
-
-模型调用最容易失控的环节是「不知道发没发出去」。一次超时可能已经计费，也可能根本没到供应商。两种情况该做的事相反，代码却无法从错误里分辨。
-
-所以这里把调用当交易记账，三个机制各管一段。
-
-| 机制 | 做法 | 失败时 |
-| --- | --- | --- |
-| 预留 | 发送前占预算与并发租约 | 拒绝发送 |
-| 收据 | 只认本地签名且匹配的收据 | 保持 unknown |
-| 锚定 | HMAC 链加独立 witness | 拒绝读取 |
-
-**未知不退**是整套设计的核心。unknown 不自动重发、不自动退费、不自动换供应商。唯一出口是凭匹配的签名收据显式 `reconcile`。
-
-witness（主机侧独立锚点）是唯一事实来源。witness 之后的孤儿条目从未被认证，所以既不信任也不删除。修复只允许 `M1_HISTORY_AHEAD` 一种情况，孤儿条目逐字节移进 `quarantine/` 并记录哈希。修复动作本身也签成记录。读取路径永远不修，只有显式 `recoverLatest()` 能移动字节。
-
-## 已经做到哪一步
-
-验收按轮次累积：R0 291 项，T1 14 项，T2-A 14 项，T2-B 20 项，M5 10 项。
-
-T2-B 的四策略冻结对照如下，评分对象是任务级终态，不是模型能力。
-
-| 策略 | 冻结任务级评分 |
-| --- | ---: |
-| Fixed | 0/8 |
-| T1 presence | 0/8 |
-| 原 T2-A 启发式 | 6/8 |
-| 确定性候选 | 8/8 |
-
-严格盲测仍不可证明，常量是 `BLIND_EVALUATION_NOT_PROVEN`。机制家族隔离不等于输入模板隔离。
-
-- M5 是纯增量。新增 `packages/native-agent/src/recovery-store.mjs` 与可观测工具，关掉 history-before-witness 的永久阻塞。每次 `load` 的全量重放降为常数，`evidence.read` 开始返回紧凑 fact 投影。继承模块逐字节未改。
-- T0 基线 98 个文件里有 76 个 `.js/.mjs` 模块，全部原样保留。
-- Finch 有一个已知并发回归：并发跑 286/287，同标准串行复核 287/287。该问题未修复，高负载稳定性未证明。
-- 真实数据试点 P0 协议已写好但未授权执行。硬预算 1,000,000 µUSD，调用上限 200 次，单次输出上限 512 token，并发 1。语料是 50 家 × 2 年度 = 100 个任务单元，当前零网络请求、零凭证、零花费。
-
-## 不证明什么
-
-- 不证明真实模型研究增益，也不证明模型优于确定性规则。
-- 不证明金融事实 Gold，合成作者答案不是真实世界的金融结论。
-- 不证明数据法律使用权，公有领域只解决版权，不构成训练授权。
-- 不证明匿名化，原文不进 Git 也不等于主体身份已经脱敏处理。
-- 不证明真实计费准确，`actualCostMicrousd` 恒为 null，供应商账单从未被外部核验。
-- 不证明断电一致性，SIGKILL 只覆盖进程中断，不等于文件系统任意崩溃后的状态。
-- 签名验证的本地成功不等于金融事实 Gold，也不等于模型研究能力。
-- 真实世界金融事实始终是 `NOT_PROVEN`，这是全部结论的上游常量。
-
-另有四条操作边界。根代码未授开源许可，`vendor/` 保留 MIT。`work/`、`validation/` 被 Git 忽略，禁止公开。Teacher 采样、Student 训练与发布推送需要另行授权。真实数据试点 P0 未授权执行，当前零网络请求、零凭证、零花费。
-
-## 快速开始
-
-需要 Node.js 24、Git、macOS 或 Linux。零外部依赖，无需 npm，无需模型密钥。
-
-### 主入口
+模型只能提议动作，主机掌握授权、预算、工具与凭证；Runtime 独立校验后才执行，每一步落进哈希链，崩溃可恢复，未知结果不重发。金融研究是第一个示例域，内核领域无关。
 
 ```sh
-node scripts/verify-t2.mjs all
+cd flowcredit && python demo.py
 ```
 
-三段验收（R0 + T1 + T2-A）。主入口依次跑 R0 291 项、T1 14 项与 T2-A 14 项，其中 291 项由 280 项原 M3-A/T0 测试加 11 项仓库安全测试组成。T2-B 与 M5 各有自己的 `all` 入口。失败保留现场，不覆盖上一轮日志。
+Python 3.11+，零第三方依赖，零配置，离线。在终端里给出场景菜单；无终端时直接跑完整故事。
 
-### 分项门槛
+```
+第 6 轮   预算 calls 5/12  reads 5/20  cost 2500/20000 µUSD
+  模型提议  reconcile_basis  doc_id=doc_fy2025_adjusted
+  主机门控  PASS  schema, scope and grant all agree
+  工具返回  FY2025  adjusted → IFRS  差异 -28 百万元
+  预算扣减  calls 6/12  reads 6/20  cost 3000/20000 µUSD
+...
+ 终态  SUCCEEDED（Runtime 独立重算通过）
+  2024 毛利率  17.50%
+  2025 毛利率  15.00%
+  变化        -2.50 pp
+ 轨迹自检  通过：40 个事件，链头 75cd9f247c70…
+```
 
-| 命令 | 覆盖范围 | 项数 |
-| --- | --- | ---: |
-| `node scripts/verify.mjs repository` | 发布清单与提交审计；非外部信任锚 | 11 |
-| `node scripts/verify.mjs` | 全量回归 | 291 |
-| `node scripts/verify-t1.mjs` | T1 数据构建实验 | 14 |
-| `node scripts/verify-t2.mjs` | 仅 T2-A 专项 | 14 |
-| `node scripts/verify-t2b.mjs` | T2-B 多步盲测 | 20 |
-| `node scripts/verify-m5.mjs` | M5 增量与继承模块恒等 | 10 |
+## 三个卖点
 
-子集不代表完整验收。`deepseek`、`trajectory` 等子集见 [开发与 CI](docs/development.md)。当前没有单条命令覆盖全部 349 项，最长链是 `node scripts/verify-t2b.mjs all` 的 339 项，M5 的 10 项另跑。每次执行都在新生成的受保护副本里跑。
+| | 主张 | 代码里怎么落实 | 怎么验证 |
+| --- | --- | --- | --- |
+| **模型不掌权** | 模型只能提议，主机门控工具、参数、预算、授权 | 工具是封闭注册表；参数按 schema 校验；工具必须同时出现在任务范围与主机 grant 里；模型不能传财务数值 | `demo.py tool-denied`：提议一个未注册工具，被拒且读取计数为 0 |
+| **出错不乱来** | 崩溃可恢复，unknown 不重发、不重复扣费，结果独立校验 | 调用在发送前扣预算；`unknown` 只能凭匹配的签名收据显式对账；成功必须由 Runtime 重算通过 | `demo.py crash`：真实 SIGKILL 后 9 轮 9 次调用，无一轮重复；`demo.py unknown` |
+| **全程可审计** | 每步签名收据 + 哈希链，Trace 可回放、可评测、防篡改 | 每事件 `sha256(canonical_json({sequence,type,payload,prev_hash,at}))`，链头写入任务行 | `viewer/index.html` 用 `crypto.subtle` 重算全链，改一个字节就变红 |
 
-## 目录与文档索引
+## 架构
 
-### 研究结论
+```mermaid
+flowchart TB
+    subgraph host["主机（可信边界）"]
+        A["authorizer<br/>当前授权"] --> G["permissions<br/>工具 / 参数 / grant"]
+        B["budget<br/>发送前扣减"] --> G
+        C["credential provider<br/>延迟解析"] -.->|"默认关闭"| G
+    end
 
-- [T2-A 验收与研究决策](reports/T2_A_ACCEPTANCE.md)
-- [T2-A 实验合同](research/t2-a/CONTRACT.md)
-- [T2-A 冻结预注册](research/t2-a/PREREGISTRATION.md)
-- [T2-A 独立审查](reports/T2_A_REVIEW.md)
-- [T1 研究结论](research/t1/STUDY.md)
-- [T1 数据合同](research/t1/CONTRACT.md)
-- [T1 验收](reports/T1_ACCEPTANCE.md)
-- [T2-B 验收](reports/T2_B_ACCEPTANCE.md)
-- [R0 验收与真实测试证据](reports/R0_ACCEPTANCE.md)
-- [R0 独立审查](reports/R0_REVIEW.md)
-- [T0 验收报告](reports/ACCEPTANCE.md)
-- [历史失败目录](history/failure-catalog.json)
+    M["模型<br/>只提议"] -->|"1. proposal"| G
+    G -->|"2. PASS"| T["tool registry<br/>只读工具"]
+    G -->|"DENIED + 原因"| X["终态 denied"]
 
-### 合同与文档
+    T --> O["observation"]
+    O --> MEM["working memory<br/>从事件日志重建"]
+    MEM --> M
 
-- [模型与恢复合同](PROTOCOL.md)
-- [轨迹与质量合同](TRAJECTORY_CONTRACT.md)
-- [仓库架构](docs/architecture.md)
-- [开发与 CI](docs/development.md)
-- [研究基础与下一阶段问题](docs/research-foundation.md)
-- [真实数据试点协议 P0](docs/real-data-pilot-protocol.md)
-- [M5 兼容性决策](docs/COMPATIBILITY_M5.md)
+    O --> V["独立重算<br/>Runtime 校验"]
+    V -->|"通过"| S["终态 succeeded"]
+    V -->|"不符"| F["终态 failed"]
 
-### 安全与许可
+    subgraph durable["持久层"]
+        ST["sqlite<br/>task + event 哈希链"]
+        R["签名收据<br/>HMAC"]
+    end
 
-- [发布与隐私边界](SECURITY.md)
-- [许可证范围](LICENSE.md)
-- [试点独立授权清单](REAL_DATA_PILOT_AUTHORIZATION.md)
+    G --> ST
+    T --> ST
+    V --> ST
+    R --> ST
+    ST --> TR["trace JSON"]
+    TR --> VW["viewer<br/>零构建，重算哈希"]
+```
+
+一次调用穿过四道关：**门控 → 预算 → 执行 → 独立重算**。任何一道不过，任务都不会被标记为成功。
+
+## 五个场景
+
+```sh
+cd flowcredit
+python demo.py full          # 完整研究，9 轮
+python demo.py tool-denied   # 越权工具：主机拒绝，工具从未执行
+python demo.py budget        # 预算耗尽：发送前拦住，已占用不退
+python demo.py crash         # 进程被 SIGKILL，重启续跑不重复
+python demo.py unknown       # 供应商超时：不重发，凭签名收据对账
+python demo.py all           # 顺序跑完并打印汇总表
+```
+
+```
+ 场景           终态                     轮次   调用   读取    花费µUSD   轨迹
+ full         succeeded               9    9    9      4500   ok
+ tool-denied  denied                  1    1    0       500   ok
+ budget       failed                  5    4    4      2000   ok
+ crash        succeeded               9    9    9      4500   ok
+ unknown      succeeded               9    9    9      4500   ok
+```
+
+四个可靠性场景都不改 Runtime 代码——它们是不同的主机策略与故障注入。这一点本身就是设计主张：可靠性不是特判出来的。
+
+## 能力清单
+
+| 能力 | 状态 |
+| --- | --- |
+| 主机门控（注册表 / 任务范围 / grant / 参数 schema / effect） | 已实现 |
+| 硬预算（calls / reads / cost / tokens 四维，发送前扣减） | 已实现 |
+| 持久任务（sqlite WAL、`BEGIN IMMEDIATE`、序列号 CAS） | 已实现 |
+| 事件哈希链（写入校验 + 读取重算 + 链头锚定） | 已实现 |
+| 崩溃恢复（从事件日志重建工作记忆，不重放已完成轮次） | 已实现 |
+| 未知结果（不重发 / 不退费 / 签名收据显式对账） | 已实现 |
+| 独立验证（Runtime 重算，模型不能自报完成） | 已实现 |
+| Evidence Authority（区分可用与不可用证据） | 已实现（金融域） |
+| Trace 导出与可视化重算 | 已实现 |
+| 真实供应商（一次性传输授权 + 凭证提供者 + 价格快照） | **门控关闭**，仅骨架 |
+
+## 数字
+
+- **23** 项单元与场景测试，全部离线
+- **5** 个可复现场景，其中崩溃场景用真实 `SIGKILL`
+- **0** 个第三方运行时依赖（只用标准库）
+- **9** 轮完成一次完整研究，**4500 µUSD** 合成预算
+- 哈希链 **40** 个事件，读取时全量重算
+
+## 目录
+
+```
+flowcredit/          Python Runtime 与 Demo
+  src/flowagent/
+    core/            canonical JSON、契约与状态机、sqlite + 哈希链、签名收据
+    runtime/         门控、预算、单轮 harness、多轮 loop（含恢复）
+    tools/           封闭注册表；finance/ 只读工具与 Evidence Authority
+    providers/       离线确定性 mock（三种策略）
+    memory/          模型可见的观测摘要（从事件日志重建）
+    trajectory/      记录、导出、独立重算
+    demo/            CLI、终端渲染、五个场景、崩溃 worker
+  viewer/            零构建单文件 Trace 可视化
+  tests/             23 项 unittest
+  docs/              架构、设计决策、框架对照、JD 映射
+archive/             v1：Node.js 研究原型（保留，不参与 CI）
+```
+
+## v1 与 v2
+
+`archive/node-prototype/` 是 v1：一个 Node.js 研究原型，用来回答"该不该训练模型"，结论是 `NO_GO`——规则基线解掉了全部冻结任务。它保留了 291 项测试、冻结预注册和一份诚实的负结果报告，标签 `archive/node-research-prototype`。
+
+v2 不再问那个问题。它把 v1 里真正有价值的部分——可恢复、可审计、主机可控的执行语义——重写成 Python，并做成一条命令能跑完的演示。
+
+## 边界
+
+- 真实模型默认关闭。真实传输需要一次性授权（≤1h）、凭证提供者、主机复核的价格快照与硬预算，缺一不可。
+- 演示中的金额、公司、资料全部是合成的，不是真实财报，也不构成任何投资或信贷意见。
+- 签名收据证明的是"这次调用发生了、内容是什么"，不证明供应商账单准确。`external_billing` 恒为 `not-verified`。
+- 哈希链保护的是本地记录的一致性。能同时改写数据库与签名密钥的攻击者不在威胁模型内。
+- 未做：RAG、多智能体、MCP、FastAPI、前端工程化。这些不是遗漏，是刻意的范围边界。
+
+## 许可
+
+根目录代码未授开源许可。`archive/node-prototype/vendor/` 保留其原始 MIT 许可证。
