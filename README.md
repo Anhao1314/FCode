@@ -34,6 +34,7 @@ node scripts/verify-t2.mjs all
 - [模型与恢复合同](PROTOCOL.md) · [轨迹与质量合同](TRAJECTORY_CONTRACT.md)
 - [发布与隐私边界](SECURITY.md) · [许可证范围](LICENSE.md)
 - [下一阶段数据集研究问题](docs/research-foundation.md)
+- [真实数据试点协议 P0](docs/real-data-pilot-protocol.md) · [试点独立授权清单](REAL_DATA_PILOT_AUTHORIZATION.md)（**未授权执行**）
 - [已验收 T0 报告](reports/ACCEPTANCE.md) · [历史失败目录](history/failure-catalog.json)
 
 Finch 已知并发回归 **286/287**、相同原标准串行复核 **287/287** 的历史事实完整保留；高负载稳定性未证明，也未在 R0 修复。当前仓库只包含 Harness 所需的真实金融依赖闭包，不包含完整 Finch Buyer/服务器套件。
