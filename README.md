@@ -8,13 +8,16 @@ Evidence-native 的原生金融研究 Harness：由主机控制授权、模型�
 node scripts/verify-t2.mjs all
 ```
 
-完整验证保留 **280 项原 M3-A/T0 测试 + 11 项仓库安全测试**，另行执行 14 项 T1 实验和 14 项 T2-A 专项测试。CI 保留三个独立门槛。只验证 T1：`node scripts/verify-t1.mjs`；只验证 T2：`node scripts/verify-t2.mjs`。每次测试在新的受保护目录中执行，日志和失败现场分别保留。快捷验证：`node scripts/verify.mjs repository`；DeepSeek / Recorder 子集：`node scripts/verify.mjs deepseek`、`node scripts/verify.mjs trajectory`。子集不代表完整验收。
+完整验证保留 **280 项原 M3-A/T0 测试 + 11 项仓库安全测试**，另行执行 14 项 T1 实验和 14 项 T2-A 专项测试。CI 保留三个独立门槛。只验证 T1：`node scripts/verify-t1.mjs`；只验证 T2：`node scripts/verify-t2.mjs`；只验证 M5：`node scripts/verify-m5.mjs`。每次测试在新的受保护目录中执行，日志和失败现场分别保留。快捷验证：`node scripts/verify.mjs repository`；DeepSeek / Recorder 子集：`node scripts/verify.mjs deepseek`、`node scripts/verify.mjs trajectory`。子集不代表完整验收。
 
 当前能力包括 Durable Harness、独立 Model API、DeepSeek 注入式 HTTP 协议、M4 动态循环，以及 T0 签名轨迹、质量门和可核验结构导出。76 个继承模块与测试原样保留。真实模型默认关闭；unknown 不自动重发，预算预留不自动退还；工具与完成状态由 Runtime 独立校验。T0 入口保持离线。
+
+**M5 是纯增量**：新增 `RecoveringDurableTaskStore` 与可观测工具，关闭 history-before-witness 的永久阻塞、把每次 `load` 的全量重放降为常数，并让 `evidence.read` 返回紧凑 fact 投影（值/单位/期间/口径/来源），同时保留原 `factIds` 形状。继承模块、T1/T2 冻结清单与三个研究门槛均未改动。详见 [M5 兼容性决策](docs/COMPATIBILITY_M5.md)。
 
 | 目录 / 文件 | 用途 |
 | --- | --- |
 | `packages/native-agent/` | 原 Harness、Model API、Loop、Trajectory 和适用测试 |
+| `packages/native-agent/src/recovery-store.mjs`、`observable-tools.mjs`、`observable-runtime.mjs` | M5 增量：历史恢复与已验证缓存、可读取的 fact 投影；继承模块逐字节未改 |
 | `vendor/flowcredit-finance/` | 原 Evidence Authority、确定性计算和真实金融测试闭包 |
 | `scripts/`、`test/`、`.github/workflows/` | 发布文件审查、独立测试入口和 CI |
 | `history/`、原协议文档 | M0–M4、M3-A、T0 的来源摘要与版本边界 |
