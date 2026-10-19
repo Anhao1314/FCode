@@ -72,10 +72,18 @@ class UnknownReconcileTest(unittest.TestCase):
 
 class TraceFileTest(unittest.TestCase):
     def test_every_scenario_writes_a_verifiable_trace(self) -> None:
+        """Each scenario must produce its own trace, independent of test order.
+
+        An earlier version of this test only looked for files that other tests
+        happened to leave behind. It passed locally because a manual run had
+        populated work/, and failed in CI where work/ starts empty. Running each
+        scenario here makes the assertion self-contained.
+        """
         import json
 
         for key in ("full", "tool-denied", "budget", "crash", "unknown"):
             with self.subTest(scenario=key):
+                run_scenario(key, fast=True, quiet=True)
                 path = ROOT / "work" / "demo" / f"{key}.trace.json"
                 self.assertTrue(path.exists(), f"{key} did not write a trace")
                 trace = json.loads(path.read_text(encoding="utf-8"))
