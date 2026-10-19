@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "flowagent"
-version = "0.1.0"
+version = "0.2.0"
 description = "Host-governed, durable, auditable agent runtime with an offline finance demo"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -17,6 +17,9 @@ license = { text = "UNLICENSED" }
 
 [project.scripts]
 flowagent-demo = "flowagent.demo.__main__:main"
+
+[project.urls]
+Repository = "https://github.com/Anhao1314/FCode"
 
 [tool.setuptools]
 package-dir = { "" = "src" }

@@ -2,7 +2,7 @@ name: Python runtime
 
 on:
   push:
-    branches: [refactor/python-runtime]
+    branches: [main]
   pull_request:
   workflow_dispatch:
 

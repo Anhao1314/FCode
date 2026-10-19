@@ -1,5 +1,7 @@
 # flowagent
 
+FCode 的运行时内核（Python 包名 `flowagent`）。
+
 一个**主机可控、可恢复、可审计**的 Agent Runtime。模型只能提议动作，Runtime 独立校验后才执行；每一步落进哈希链，崩溃可恢复，未知结果不重发。金融研究是第一个示例域，内核领域无关。
 
 ```sh
@@ -56,12 +58,16 @@ python demo.py all           # 顺序跑完并打印汇总表
 每次运行写出 `work/demo/<scenario>.trace.json`：完整事件哈希链，可直接阅读。
 
 ```sh
-python demo.py --serve
+python demo.py --serve        # 只读回放：静态服务 + 浏览器
 ```
 
-用标准库起一个本地静态服务并打开查看器。左侧是五个场景，点一下切换；顶部是整轮摘要；每一轮按 `⏺ 工具调用 / ⎿ 返回` 展开；页面加载时用 `crypto.subtle` 重算整条链，改一个字节就变红——这不是日志高亮，是真的重算。
+打开的是 `viewer/index.html`：左侧是六个场景，点一下切换；每一轮是一张工具卡（默认折叠，带一行结果预览），页面加载时用 `crypto.subtle` 重算整条链，改一个字节就变红——这不是日志高亮，是真的重算。也可以把任意 trace JSON 拖进窗口。
 
-也可以直接打开 `viewer/index.html`，把任意 trace JSON 拖进去。单文件、原生 JS、零构建。
+想真实派活用控制台 server（SSE 流式运行 + 运行记录）：
+
+```sh
+python viewer/server.py --repo ..   # 打开 http://127.0.0.1:8642/
+```
 
 ## 三条约束
 
@@ -92,13 +98,13 @@ src/flowagent/
   memory/      context（模型可见的观测摘要，从事件日志重建）
   trajectory/  recorder、exporter（导出与独立重算）
   demo/        CLI、终端渲染、五个场景、崩溃 worker
-viewer/        零构建单文件 Trace 可视化
+viewer/        实时控制台 + Trace 回放（零依赖零构建）
 tests/         23 项 unittest
 ```
 
 ## 现在还没有的
 
-`docs/` 下的架构说明、设计决策（至少 10 问）、JD 映射与框架对照属于 Phase 1c。Node 研究原型仍在仓库根目录，1c 会归档到 `archive/`。
+`docs/` 下的架构说明、设计决策（至少 10 问）、JD 映射与框架对照见 `docs/`。v1 的 Node 研究原型已归档在 `archive/node-prototype/`，不参与 CI。
 
 ## 为什么不用 `pip install`
 

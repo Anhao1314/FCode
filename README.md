@@ -1,6 +1,6 @@
-# FlowAgent
+# FCode
 
-**模型不掌权、出错不乱来、全程可审计的 Agent Runtime。**
+**flowcredit 的 Agent Runtime：模型不掌权、出错不乱来、全程可审计。**
 
 模型只能提议动作，主机掌握授权、预算、工具与凭证；Runtime 独立校验后才执行，每一步落进哈希链，崩溃可恢复，未知结果不重发。金融研究是第一个示例域，内核领域无关。
 
@@ -30,7 +30,7 @@ Python 3.11+，零第三方依赖，零配置，离线。在终端里给出场�
 | --- | --- | --- | --- |
 | **模型不掌权** | 模型只能提议，主机门控工具、参数、预算、授权 | 工具是封闭注册表；参数按 schema 校验；工具必须同时出现在任务范围与主机 grant 里；模型不能传财务数值 | `demo.py tool-denied`：提议一个未注册工具，被拒且读取计数为 0 |
 | **出错不乱来** | 崩溃可恢复，unknown 不重发、不重复扣费，结果独立校验 | 调用在发送前扣预算；`unknown` 只能凭匹配的签名收据显式对账；成功必须由 Runtime 重算通过 | `demo.py crash`：真实 SIGKILL 后 9 轮 9 次调用，无一轮重复；`demo.py unknown` |
-| **全程可审计** | 每步签名收据 + 哈希链，Trace 可回放、可评测、防篡改 | 每事件 `sha256(canonical_json({sequence,type,payload,prev_hash,at}))`，链头写入任务行 | `viewer/index.html` 用 `crypto.subtle` 重算全链，改一个字节就变红 |
+| **全程可审计** | 每步签名收据 + 哈希链，Trace 可回放、可评测、防篡改 | 每事件 `sha256(canonical_json({sequence,type,payload,prev_hash,at}))`，链头写入任务行 | `flowcredit/viewer/` 用 `crypto.subtle` 重算全链，改一个字节就变红 |
 
 ## 架构
 
@@ -64,7 +64,7 @@ flowchart TB
     V --> ST
     R --> ST
     ST --> TR["trace JSON"]
-    TR --> VW["viewer<br/>零构建，重算哈希"]
+    TR --> VW["console<br/>零构建，重算哈希"]
 ```
 
 一次调用穿过四道关：**门控 → 预算 → 执行 → 独立重算**。任何一道不过，任务都不会被标记为成功。
@@ -80,7 +80,7 @@ python demo.py crash         # 进程被 SIGKILL，重启续跑不重复
 python demo.py unknown       # 供应商超时：不重发，凭签名收据对账
 python demo.py open-ended    # 计划被卡住：诚实停止，不给算不出的数字
 python demo.py all           # 顺序跑完并打印汇总表
-python demo.py --serve       # 打开 Trace 查看器
+python demo.py --serve       # 打开只读回放控制台
 ```
 
 ```
@@ -94,6 +94,21 @@ python demo.py --serve       # 打开 Trace 查看器
 ```
 
 四个可靠性场景都不改 Runtime 代码——它们是不同的主机策略与故障注入。这一点本身就是设计主张：可靠性不是特判出来的。
+
+## 控制台
+
+`flowcredit/viewer/` 是可实时运行的 Agent 控制台：真实任务用 SSE 流式渲染，也可以只读回放任意签名 trace。零依赖、零构建，由标准库 server 直接托管。
+
+```sh
+python3 flowcredit/viewer/server.py --repo .   # 打开 http://127.0.0.1:8642/
+```
+
+![console](flowcredit/viewer/docs/console-live.png)
+
+- 左侧：运行记录（搜索 / 双击重命名 / ☆ 固定）与 6 个演示场景；右侧：常驻证据栏（事件 / 链 / 原始）。
+- 真实运行：输入任务 → Enter，Runtime 现场执行，Plan、预算、逐轮工具卡与哈希链边产生边渲染；`⌘.` 在轮次边界停止。
+- 只读回放：`cd flowcredit && python demo.py --serve`；页面加载时用 `crypto.subtle` 重算全链，改一个字节就变红。
+- 设计：颜色只表达状态语义，层级靠间距与字重，内容默认折叠——「简洁可以让人用的很久」。
 
 ## 能力清单
 
@@ -109,15 +124,17 @@ python demo.py --serve       # 打开 Trace 查看器
 | 独立验证（Runtime 重算，模型不能自报完成） | 已实现 |
 | Evidence Authority（区分可用与不可用证据） | 已实现（金融域） |
 | Trace 导出与可视化重算 | 已实现 |
+| 实时控制台（SSE 直播 / 运行记录 / 只读回放） | 已实现 |
 | 真实供应商（一次性传输授权 + 凭证提供者 + 价格快照） | **门控关闭**，仅骨架 |
 
 ## 数字
 
-- **23** 项单元与场景测试，全部离线
+- **35** 项单元与场景测试，全部离线
 - **5** 个可复现场景，其中崩溃场景用真实 `SIGKILL`
 - **0** 个第三方运行时依赖（只用标准库）
 - **9** 轮完成一次完整研究，**4500 µUSD** 合成预算
 - 哈希链 **40** 个事件，读取时全量重算
+- 控制台 **3** 个静态文件 + **1** 个标准库 server，零构建、可离线
 
 ## 目录
 
@@ -131,8 +148,8 @@ flowcredit/          Python Runtime 与 Demo
     memory/          模型可见的观测摘要（从事件日志重建）
     trajectory/      记录、导出、独立重算
     demo/            CLI、终端渲染、五个场景、崩溃 worker
-  viewer/            零构建单文件 Trace 可视化
-  tests/             23 项 unittest
+  viewer/            实时控制台 + Trace 回放（零依赖零构建）
+  tests/             35 项 unittest
   docs/              架构、设计决策、框架对照、JD 映射
 archive/             v1：Node.js 研究原型（保留，不参与 CI）
 ```
