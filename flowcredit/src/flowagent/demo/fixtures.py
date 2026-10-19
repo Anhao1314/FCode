@@ -1,8 +1,8 @@
-"""Scenario definitions and the narrative text used by the demo.
+"""Scenario definitions: one story, four ways for the runtime to say no.
 
-Only ``full`` is implemented in Phase 1a. The other four keys exist so the CLI
-can give an honest answer instead of an exception traceback: they are declared
-here, and :func:`get_scenario` reports them as scheduled for Phase 1b.
+Each scenario is the same kernel with a different host policy or a different
+failure injected. None of them changes runtime code — that is the claim the demo
+is making, so the scenarios are data, not branches.
 """
 
 from __future__ import annotations
@@ -25,6 +25,12 @@ class Scenario:
     grant: dict[str, Any]
     limits: BudgetLimits
     max_rounds: int
+    policy: str = "research"
+    fail_at_call: int | None = None
+    reconcile: bool = False
+    crash_at: str | None = None
+    crash_at_count: int = 1
+    expected_status: str = "succeeded"
     available: bool = True
 
 
@@ -38,82 +44,83 @@ _ALL_TOOLS = (
     "report_blocked",
 )
 
-_GRANT = {
-    "grant_id": "demo-host-grant",
-    "revision": 1,
-    "allowed_tools": list(_ALL_TOOLS),
-    "max_calls": 12,
-    "max_reads": 20,
-    "max_cost_microusd": 20_000,
-    "max_tokens": 20_000,
-}
-
-_LIMITS = BudgetLimits(
-    max_calls=12,
-    max_reads=20,
-    max_cost_microusd=20_000,
-    max_tokens=20_000,
+_OBJECTIVE = "判断恒星智算 2024 与 2025 两期合并毛利率是否可比，并在可比时给出变化"
+_STORY = (
+    "两年年报放在一起并不能直接相减：2024 年用万元、2025 年用百万元；"
+    "2025 年还发布了一份调整后口径的补充材料；2024 年的毛利后来被一份重述说明改过。"
 )
+
+
+def _grant(max_calls: int = 12, max_reads: int = 20) -> dict[str, Any]:
+    return {
+        "grant_id": "demo-host-grant",
+        "revision": 1,
+        "allowed_tools": list(_ALL_TOOLS),
+        "max_calls": max_calls,
+        "max_reads": max_reads,
+        "max_cost_microusd": 20_000,
+        "max_tokens": 20_000,
+    }
 
 
 SCENARIOS: dict[str, Scenario] = {
     "full": Scenario(
         key="full",
         title="完整研究：两期毛利率是否可比",
-        objective="判断恒星智算 2024 与 2025 两期合并毛利率是否可比，并在可比时给出变化",
-        story=(
-            "这家公司的两年年报放在一起并不能直接相减：2024 年用万元、2025 年用百万元；"
-            "2025 年还发布了一份调整后口径的补充材料；2024 年的毛利后来被一份重述说明改过。"
-            "正确的结论必须同时穿过这三个坑。"
-        ),
+        objective=_OBJECTIVE,
+        story=_STORY + "正确的结论必须同时穿过这三个坑。",
         allowed_tools=_ALL_TOOLS,
-        grant=_GRANT,
-        limits=_LIMITS,
+        grant=_grant(),
+        limits=BudgetLimits(12, 20, 20_000, 20_000),
         max_rounds=12,
     ),
     "tool-denied": Scenario(
         key="tool-denied",
-        title="越权工具被主机拒绝",
-        objective="（Phase 1b）演示模型提议一个不在授权范围内的工具",
-        story="模型提议越权动作，主机门控拒绝，工具与模型均未执行。",
+        title="越权工具：主机拒绝，模型与工具都未执行",
+        objective=_OBJECTIVE,
+        story="模型一上来就提出一个从未注册的工具 write_document。名字合法、schema 合法，但主机不认。",
         allowed_tools=_ALL_TOOLS,
-        grant=_GRANT,
-        limits=_LIMITS,
-        max_rounds=6,
-        available=False,
+        grant=_grant(),
+        limits=BudgetLimits(12, 20, 20_000, 20_000),
+        max_rounds=3,
+        policy="escalate",
+        expected_status="denied",
     ),
     "budget": Scenario(
         key="budget",
-        title="预算耗尽被拦截",
-        objective="（Phase 1b）演示调用预算在发送前被拒绝",
-        story="预算在上限处停止，已占用额度可见且不退还。",
+        title="预算耗尽：发送前被拒绝，已占用不退",
+        objective=_OBJECTIVE,
+        story="模型反复请求同一份资料，第 5 次调用在发出之前就被预算拦住。前 4 次的额度真实占用。",
         allowed_tools=_ALL_TOOLS,
-        grant=_GRANT,
-        limits=_LIMITS,
-        max_rounds=6,
-        available=False,
+        grant=_grant(max_calls=4),
+        limits=BudgetLimits(4, 20, 20_000, 20_000),
+        max_rounds=10,
+        policy="loop",
+        expected_status="failed",
     ),
     "crash": Scenario(
         key="crash",
-        title="崩溃后恢复且不重复执行",
-        objective="（Phase 1b）演示工具执行后进程被杀，重启续跑",
-        story="SIGKILL 之后重新加载，已完成步骤不重放，模型调用次数不增加。",
+        title="崩溃恢复：进程被杀，续跑不重复",
+        objective=_OBJECTIVE,
+        story="第三轮工具执行落盘后进程被 SIGKILL。重启后从事件日志重建记忆，第四轮继续，前三次调用不重发。",
         allowed_tools=_ALL_TOOLS,
-        grant=_GRANT,
-        limits=_LIMITS,
+        grant=_grant(),
+        limits=BudgetLimits(12, 20, 20_000, 20_000),
         max_rounds=12,
-        available=False,
+        crash_at="tool_succeeded",
+        crash_at_count=3,
     ),
     "unknown": Scenario(
         key="unknown",
-        title="未知结果不重发，凭收据对账",
-        objective="（Phase 1b）演示发送后超时进入 unknown",
-        story="超时后不重发、不退费；只有匹配的签名收据能显式对账。",
+        title="未知结果：不重发，凭签名收据对账",
+        objective=_OBJECTIVE,
+        story="第三轮调用发出后供应商超时。Runtime 记 unknown，不重发、不退费；只有匹配的签名收据能把它拉回来。",
         allowed_tools=_ALL_TOOLS,
-        grant=_GRANT,
-        limits=_LIMITS,
+        grant=_grant(),
+        limits=BudgetLimits(12, 20, 20_000, 20_000),
         max_rounds=12,
-        available=False,
+        fail_at_call=3,
+        reconcile=True,
     ),
 }
 
@@ -121,7 +128,7 @@ AVAILABLE = tuple(key for key, scenario in SCENARIOS.items() if scenario.availab
 
 
 def get_scenario(key: str) -> Scenario:
-    """Return a scenario by key, raising a clear error for unknown keys."""
+    """Return a scenario by key, raising ``KeyError`` for unknown keys."""
     scenario = SCENARIOS.get(key)
     if scenario is None:
         raise KeyError(key)

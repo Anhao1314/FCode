@@ -32,8 +32,9 @@ class Renderer:
     MAGENTA = "\033[35m"
     CYAN = "\033[36m"
 
-    def __init__(self, *, fast: bool = False, stream: Any = None) -> None:
+    def __init__(self, *, fast: bool = False, stream: Any = None, quiet: bool = False) -> None:
         self.fast = fast
+        self.quiet = quiet
         self.stream = stream or sys.stdout
         self.use_color = self._detect_color()
 
@@ -63,6 +64,8 @@ class Renderer:
     # ------------------------------------------------------------------ frames
 
     def header(self, scenario_title: str, objective: str, story: str, model: str, budget: dict[str, Any]) -> None:
+        if self.quiet:
+            return
         line = "─" * 72
         self._p()
         self._p(self._c(self.BOLD, line))
@@ -75,29 +78,48 @@ class Renderer:
         self._p(self._c(self.DIM, line))
 
     def round_start(self, round_no: int, budget: dict[str, Any]) -> None:
+        if self.quiet:
+            return
         self._p()
         self._p(self._c(self.CYAN, f"第 {round_no} 轮") + self._c(self.DIM, f"   预算 {self._budget_text(budget)}"))
 
     def proposal(self, round_no: int, proposal: Proposal) -> None:
+        if self.quiet:
+            return
         step = proposal.plan["steps"][0]
         arguments = step.get("arguments") or {}
         args = ", ".join(f"{key}={value}" for key, value in arguments.items()) or "无参数"
         self._p(f"  模型提议  {self._c(self.BOLD, step['tool'])}  {self._c(self.DIM, args)}")
 
     def gate(self, round_no: int, decision: GateDecision) -> None:
+        if self.quiet:
+            return
         if decision.allowed:
             self._p(f"  主机门控  {self._c(self.GREEN, 'PASS')}  {self._c(self.DIM, decision.reason)}")
         else:
             self._p(f"  主机门控  {self._c(self.RED, 'DENIED')}  {decision.code}  {self._c(self.DIM, decision.reason)}")
 
     def observation(self, round_no: int, observation: Observation) -> None:
+        if self.quiet:
+            return
         for line in self._describe(observation):
             self._p(f"  工具返回  {line}")
 
     def round_end(self, round_no: int, budget: dict[str, Any]) -> None:
+        if self.quiet:
+            return
         self._p(self._c(self.DIM, f"  预算扣减  {self._budget_text(budget)}"))
 
+    def event(self, tag: str, message: str, *, colour: str | None = None) -> None:
+        """Print a security-relevant event on its own highlighted line."""
+        if self.quiet:
+            return
+        code = colour or self.YELLOW
+        self._p(f"  {self._c(code + self.BOLD, tag):<24} {message}")
+
     def terminal(self, task: Task, result: dict[str, Any] | None) -> None:
+        if self.quiet:
+            return
         line = "─" * 72
         self._p()
         self._p(self._c(self.BOLD, line))
@@ -125,9 +147,11 @@ class Renderer:
         self._p(self._c(self.BOLD, line))
 
     def footer(self, trace_path: str, budget: dict[str, Any], rounds: int) -> None:
+        if self.quiet:
+            return
         self._p(f" 轮次 {rounds}   预算 {self._budget_text(budget)}")
         self._p(f" Trace {trace_path}")
-        self._p(self._c(self.DIM, " Trace 是可直接阅读的 JSON，含完整事件哈希链；可视化 viewer 在 Phase 1b 提供。"))
+        self._p(self._c(self.DIM, " 可视化：python demo.py --open <scenario>，或浏览器打开 viewer/index.html 拖入该 JSON"))
         self._p()
 
     # ------------------------------------------------------------- formatting

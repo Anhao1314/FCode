@@ -317,6 +317,21 @@ class FinanceWorld:
         self.blockers.append({"reason": reason})
         return {"acknowledged": True, "reason": reason, "blocker_count": len(self.blockers)}
 
+    # ----------------------------------------------------------- resumption
+
+    def apply_state(self, state: dict[str, Any]) -> None:
+        """Rebuild the prepared-evidence flags from a recorded observation state.
+
+        The world must not be the only place that remembers what has been read:
+        a new process starts with an empty world, and without this the runtime
+        would re-read documents it already has. Deriving the flags from the log
+        keeps "what we know" in one place — the event chain.
+        """
+        self.read_documents = set(state.get("read_documents", []))
+        self.normalised = set(state.get("normalised_documents", []))
+        self.reconciled = set(state.get("reconciled_periods", []))
+        self.restatement_applied = bool(state.get("restatement_applied"))
+
     # ------------------------------------------------------------------ utils
 
     def _require(self, doc_id: str) -> Document:

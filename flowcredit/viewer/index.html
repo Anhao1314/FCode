@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FlowAgent Trace Viewer</title>
+<style>
+  :root {
+    --bg: #ffffff; --panel: #f7f7f5; --ink: #1c1c1a; --muted: #6b6b66;
+    --line: #e2e1dc; --ok: #1d7a4d; --ok-bg: #e9f5ee;
+    --bad: #a32d2d; --bad-bg: #fcebeb; --warn: #8a5a00; --warn-bg: #fdf3e0;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 32px 24px 64px; background: var(--bg); color: var(--ink);
+         font: 14px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", sans-serif; }
+  .wrap { max-width: 960px; margin: 0 auto; }
+  h1 { font-size: 18px; font-weight: 500; margin: 0 0 4px; }
+  .sub { color: var(--muted); font-size: 13px; margin-bottom: 24px; }
+  .drop { border: 1px dashed var(--line); border-radius: 10px; padding: 28px; text-align: center;
+          color: var(--muted); background: var(--panel); }
+  .drop.hot { border-color: var(--ink); color: var(--ink); }
+  .drop input { display: none; }
+  .drop label { cursor: pointer; text-decoration: underline; }
+  .banner { border-radius: 10px; padding: 12px 16px; margin: 20px 0; font-size: 13px; }
+  .banner.ok { background: var(--ok-bg); color: var(--ok); }
+  .banner.bad { background: var(--bad-bg); color: var(--bad); }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin: 20px 0; }
+  .card { background: var(--panel); border-radius: 8px; padding: 12px 14px; }
+  .card .k { color: var(--muted); font-size: 12px; }
+  .card .v { font-family: var(--mono); font-size: 15px; margin-top: 2px; word-break: break-all; }
+  h2 { font-size: 15px; font-weight: 500; margin: 32px 0 12px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+  .round { border: 1px solid var(--line); border-radius: 10px; margin-bottom: 10px; overflow: hidden; }
+  .round > summary { padding: 10px 14px; cursor: pointer; display: flex; gap: 12px; align-items: baseline; }
+  .round > summary::-webkit-details-marker { display: none; }
+  .idx { font-family: var(--mono); color: var(--muted); min-width: 28px; }
+  .tool { font-family: var(--mono); font-weight: 500; }
+  .verdict { margin-left: auto; font-family: var(--mono); font-size: 12px; }
+  .pass { color: var(--ok); } .deny { color: var(--bad); } .unk { color: var(--warn); }
+  .body { padding: 0 14px 14px; border-top: 1px solid var(--line); }
+  .row { display: grid; grid-template-columns: 92px 1fr; gap: 12px; padding: 6px 0; }
+  .row .lbl { color: var(--muted); font-size: 12px; }
+  .row .val { font-family: var(--mono); font-size: 12.5px; word-break: break-word; white-space: pre-wrap; }
+  table { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 12px; }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+  th { color: var(--muted); font-weight: 400; }
+  .hash { color: var(--muted); }
+  .err { color: var(--bad); }
+  .muted { color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>FlowAgent Trace Viewer</h1>
+  <div class="sub">打开一份 trace JSON，浏览器会重新计算整条事件哈希链。任何一处被改动，这里都会变红。</div>
+
+  <div class="drop" id="drop">
+    <div>把 <code>*.trace.json</code> 拖到这里，或者 <label for="file">选择文件</label></div>
+    <input type="file" id="file" accept=".json,application/json">
+    <div class="muted" style="margin-top:8px;font-size:12px">
+      也可以在 URL 后加 <code>?trace=../work/demo/full.trace.json</code> 直接加载
+    </div>
+  </div>
+
+  <div id="out"></div>
+</div>
+
+<script>
+"use strict";
+
+// Canonical JSON: sorted keys, no whitespace, UTF-8. This must match the Python
+// encoder byte for byte, otherwise a valid trace would look tampered.
+function canonical(value) {
+  if (value === null || typeof value !== "object") return JSON.stringify(value);
+  if (Array.isArray(value)) return "[" + value.map(canonical).join(",") + "]";
+  return "{" + Object.keys(value).sort().map(k => JSON.stringify(k) + ":" + canonical(value[k])).join(",") + "}";
+}
+
+async function sha256Hex(text) {
+  const bytes = new TextEncoder().encode(text);
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, "0")).join("");
+}
+
+async function verifyChain(trace) {
+  const events = trace.events || [];
+  if (!events.length) return { ok: false, reason: "trace 里没有事件" };
+  let previous = null;
+  for (let i = 0; i < events.length; i++) {
+    const e = events[i];
+    if (e.sequence !== i + 1) return { ok: false, reason: `第 ${i + 1} 个事件序号不连续` };
+    if (e.prev_hash !== previous) return { ok: false, reason: `第 ${i + 1} 个事件没有链接到前一个` };
+    const expected = await sha256Hex(canonical({
+      sequence: e.sequence, type: e.type, payload: e.payload, prev_hash: e.prev_hash, at: e.at
+    }));
+    if (expected !== e.hash) return { ok: false, reason: `第 ${i + 1} 个事件（${e.type}）哈希不匹配` };
+    previous = e.hash;
+  }
+  const chain = trace.chain || {};
+  if (chain.head_hash !== previous) return { ok: false, reason: "链头与最后一个事件不一致" };
+  if (chain.event_count !== events.length) return { ok: false, reason: "事件计数与实际不符" };
+  return { ok: true, events: events.length, head: previous };
+}
+
+function esc(value) {
+  return String(value).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+}
+
+function row(label, value) {
+  if (value === null || value === undefined) return "";
+  const text = typeof value === "string" ? value : JSON.stringify(value);
+  return `<div class="row"><div class="lbl">${esc(label)}</div><div class="val">${esc(text)}</div></div>`;
+}
+
+function renderRounds(rounds) {
+  if (!rounds || !rounds.length) return `<div class="muted">这份 trace 没有记录轮次（可能是在崩溃后接续记录的）。</div>`;
+  return rounds.map(r => {
+    const step = (r.proposal && r.proposal.steps && r.proposal.steps[0]) || null;
+    const decision = r.decision || {};
+    const verdict = decision.allowed === false
+      ? `<span class="verdict deny">DENIED ${esc(decision.code || "")}</span>`
+      : decision.allowed === true ? `<span class="verdict pass">PASS</span>` : `<span class="verdict muted">—</span>`;
+    const tool = step ? step.tool : "(no proposal)";
+    const args = step && step.arguments && Object.keys(step.arguments).length
+      ? Object.entries(step.arguments).map(([k, v]) => `${k}=${v}`).join(" ") : "无参数";
+    const obs = r.observation && r.observation.result;
+    const budget = r.budget_after || {};
+    return `<details class="round">
+      <summary><span class="idx">${r.index}</span><span class="tool">${esc(tool)}</span>
+        <span class="muted">${esc(args)}</span>${verdict}</summary>
+      <div class="body">
+        ${row("提议", r.proposal)}
+        ${row("收据", r.receipt)}
+        ${row("门控", r.decision)}
+        ${row("观测", obs)}
+        ${row("预算", budget.calls_used !== undefined
+          ? `calls ${budget.calls_used}/${budget.limits ? budget.limits.max_calls : "?"}, reads ${budget.reads_used}, cost ${budget.cost_used_microusd} µUSD`
+          : null)}
+      </div>
+    </details>`;
+  }).join("");
+}
+
+function renderEvents(events) {
+  return `<table><thead><tr><th>#</th><th>type</th><th>hash</th><th>prev</th></tr></thead><tbody>${
+    events.map(e => `<tr><td>${e.sequence}</td><td>${esc(e.type)}</td>
+      <td class="hash">${esc(String(e.hash).slice(0, 16))}…</td>
+      <td class="hash">${e.prev_hash ? esc(String(e.prev_hash).slice(0, 12)) + "…" : "—"}</td></tr>`).join("")
+  }</tbody></table>`;
+}
+
+async function show(trace) {
+  const out = document.getElementById("out");
+  const check = await verifyChain(trace);
+  const terminal = trace.terminal || {};
+  const task = trace.task || {};
+
+  out.innerHTML = `
+    <div class="banner ${check.ok ? "ok" : "bad"}">
+      ${check.ok
+        ? `哈希链校验通过：${check.events} 个事件，链头 ${esc(check.head.slice(0, 16))}…`
+        : `校验失败：${esc(check.reason)}`}
+    </div>
+    <div class="cards">
+      <div class="card"><div class="k">任务</div><div class="v">${esc(task.id || "?")}</div></div>
+      <div class="card"><div class="k">终态</div><div class="v">${esc(terminal.status || task.status || "?")}</div></div>
+      <div class="card"><div class="k">轮次</div><div class="v">${(trace.rounds || []).length}</div></div>
+      <div class="card"><div class="k">模型</div><div class="v">${esc((trace.model || {}).model || "?")}</div></div>
+    </div>
+    <h2>轮次</h2>
+    ${renderRounds(trace.rounds)}
+    <h2>事件链</h2>
+    ${renderEvents(trace.events || [])}
+    <h2>原始 JSON</h2>
+    <details><summary class="muted">展开</summary><pre class="val" style="white-space:pre-wrap">${esc(JSON.stringify(trace, null, 2))}</pre></details>
+  `;
+}
+
+function fail(message) {
+  document.getElementById("out").innerHTML =
+    `<div class="banner bad">${esc(message)}</div>`;
+}
+
+async function loadFile(file) {
+  try {
+    const text = await file.text();
+    await show(JSON.parse(text));
+  } catch (error) {
+    fail(`无法解析 ${file.name}：${error.message}`);
+  }
+}
+
+const input = document.getElementById("file");
+input.addEventListener("change", () => { if (input.files[0]) loadFile(input.files[0]); });
+
+const drop = document.getElementById("drop");
+["dragenter", "dragover"].forEach(name => drop.addEventListener(name, e => {
+  e.preventDefault(); drop.classList.add("hot");
+}));
+["dragleave", "drop"].forEach(name => drop.addEventListener(name, e => {
+  e.preventDefault(); drop.classList.remove("hot");
+}));
+drop.addEventListener("drop", e => {
+  const file = e.dataTransfer.files[0];
+  if (file) loadFile(file);
+});
+
+const param = new URLSearchParams(location.search).get("trace");
+if (param) {
+  fetch(param).then(r => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
+    .then(show).catch(error => fail(`无法加载 ${param}：${error.message}`));
+}
+</script>
+</body>
+</html>

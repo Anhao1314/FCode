@@ -55,24 +55,31 @@ STEP_STATES = ("pending", "started", "succeeded", "failed", "denied")
 
 #: Legal task transitions. Anything not listed is rejected by the store, so a
 #: crash cannot silently move a task into a state the design never allowed.
+#:
+#: ``running -> recovery_required`` exists because an unknown model outcome can
+#: happen in any round, not only the first. ``recovery_required -> running``
+#: exists because reconciliation returns the task to the round it was in.
 TASK_TRANSITIONS: dict[str, tuple[str, ...]] = {
     "created": ("created", "planning", "denied"),
     "planning": ("planning", "planned", "failed", "recovery_required"),
     "planned": ("planned", "running", "denied"),
-    "running": ("running", "paused", "verifying", "failed", "denied"),
+    "running": ("running", "paused", "verifying", "failed", "denied", "recovery_required"),
     "paused": ("paused", "running", "denied"),
     "verifying": ("verifying", "succeeded", "failed", "denied"),
     "failed": ("failed", "running", "denied"),
     "denied": ("denied",),
     "succeeded": ("succeeded",),
-    "recovery_required": ("recovery_required", "planned", "failed"),
+    "recovery_required": ("recovery_required", "planned", "running", "failed"),
 }
 
+#: Each round is a fresh call, so ``validated`` may return to ``started``. Without
+#: that edge a timeout in round two would have no legal state to move to, and the
+#: task would be forced into ``failed`` instead of the honest ``unknown``.
 MODEL_TRANSITIONS: dict[str, tuple[str, ...]] = {
     "not_started": ("not_started", "started"),
     "started": ("started", "unknown", "validated", "failed"),
     "unknown": ("unknown", "validated", "failed"),
-    "validated": ("validated",),
+    "validated": ("validated", "started"),
     "failed": ("failed",),
 }
 

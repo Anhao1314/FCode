@@ -1,9 +1,15 @@
 """Multi-round driver: one action per round, termination owned by the runtime.
 
-The loop is where "the model cannot declare success" becomes concrete. A round
-ends only when the runtime has an observation it can re-verify; the task ends
-only when that verification passes, or when a blocker is accepted as terminal.
-The model's last word is a proposal, never a verdict.
+Two properties are implemented here rather than in the harness.
+
+**Resumption.** The loop rebuilds its working memory from the event log instead
+of keeping it in a Python object. A process that dies after a tool call can
+therefore restart and know what it already read, which is what makes "recovery
+does not repeat work" true rather than aspirational.
+
+**No duplicate dispatch after reconciliation.** If the last committed event is a
+reconciliation, the loop executes the already-approved proposal instead of asking
+the model again. Asking again would be a second paid call for the same round.
 """
 
 from __future__ import annotations
@@ -45,30 +51,44 @@ class Loop:
 
     def run(self, task_id: str) -> Task:
         task = self.harness.store.load(task_id)
-        memory = WorkingMemory(
-            objective=task.objective,
-            tool_catalog=self.harness.registry.catalog(),
-        )
+        memory = self.restore(task)
+        pending = self.pending_step(task)
 
-        for round_no in range(1, self.max_rounds + 1):
+        while True:
+            if pending is None and task.model.attempts >= self.max_rounds:
+                return self._abort(task_id, AgentError("ROUND_LIMIT", f"no verified result after {self.max_rounds} rounds"))
+
             budget_snapshot = self.harness.budget(task).snapshot()
-            self.observer.round_start(round_no, budget_snapshot)
-            context = memory.build(round_no, budget_snapshot)
 
-            try:
-                task, proposal = self.harness.propose(task, context)
-            except AgentError as error:
-                return self._abort(task_id, error)
-            self.observer.proposal(round_no, proposal)
+            if pending is not None:
+                # A reconciled round: the proposal is already approved and paid
+                # for. Execute it; do not ask the model again.
+                step = pending
+                pending = None
+                round_no = task.model.attempts
+                self.observer.round_start(round_no, budget_snapshot)
+            else:
+                round_no = task.model.attempts + 1
+                self.observer.round_start(round_no, budget_snapshot)
+                context = memory.build(round_no, budget_snapshot)
+                try:
+                    task, proposal = self.harness.propose(task, context)
+                except AgentError as error:
+                    return self._abort(task_id, error)
+                if proposal is None:
+                    # propose() already committed a terminal state.
+                    self.observer.terminal(task, None)
+                    return task
+                self.observer.proposal(round_no, proposal)
+                step = proposal.plan["steps"][0]
 
-            step = proposal.plan["steps"][0]
             decision = self.harness.gate(task, step)
             self.observer.gate(round_no, decision)
             if not decision.allowed:
                 return self._deny(task, decision)
 
             try:
-                task, observation = self.harness.execute(task, step)
+                task, observation = self.harness.execute(task, step, round_no=round_no)
             except AgentError as error:
                 return self._abort(task_id, error)
 
@@ -86,12 +106,39 @@ class Loop:
                 if not self.harness.world.calculate_margin().get("computed"):
                     return self._stop_insufficient(task, observation)
 
-        return self._abort(
-            task_id,
-            AgentError("ROUND_LIMIT", f"no verified result after {self.max_rounds} rounds"),
-        )
+    # -------------------------------------------------------------- resumption
 
-    # ------------------------------------------------------------- terminals
+    def restore(self, task: Task) -> WorkingMemory:
+        """Rebuild working memory from committed observations."""
+        memory = WorkingMemory(
+            objective=task.objective,
+            tool_catalog=self.harness.registry.catalog(),
+        )
+        for event in self.harness.store.events(task.id):
+            if event["type"] != "tool_succeeded":
+                continue
+            detail = event["payload"].get("detail", {})
+            memory.record(
+                int(detail.get("round", 0)),
+                Observation(
+                    tool=detail["tool"],
+                    arguments=detail.get("arguments", {}),
+                    result=detail["result"],
+                    result_hash=detail["result_hash"],
+                ),
+            )
+        return memory
+
+    def pending_step(self, task: Task) -> dict[str, Any] | None:
+        """Return an approved-but-unexecuted step, if reconciliation left one."""
+        if task.model.status != "validated" or not task.model.proposal:
+            return None
+        events = self.harness.store.events(task.id)
+        if not events or events[-1]["type"] != "model_reconciled":
+            return None
+        return task.model.proposal["steps"][0]
+
+    # --------------------------------------------------------------- terminals
 
     def _succeed(self, task: Task, verified: dict[str, Any]) -> Task:
         result = dict(verified["result"])
