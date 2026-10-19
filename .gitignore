@@ -9,6 +9,8 @@ packages/native-agent/validation/
 *.p12
 *.pfx
 *.log
+# console runtime artifacts
+flowcredit/viewer/runs/
 **/receipts/
 **/checkpoints/
 **/blobs/

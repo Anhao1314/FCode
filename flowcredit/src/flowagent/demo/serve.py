@@ -1,9 +1,9 @@
 """Serve the viewer with the standard library, nothing else.
 
-A static file server is all this needs: the page is one HTML file and the data is
-already on disk as JSON. ``http.server`` is in the standard library, so serving
-the viewer costs no dependency and no build step — the same constraint the rest
-of the project is under.
+A static file server is all this needs: the page is plain static files and the
+data is already on disk as JSON. ``http.server`` is in the standard library, so
+serving the viewer costs no dependency and no build step — the same constraint
+the rest of the project is under.
 
 Bound to 127.0.0.1 on purpose. This is a local demo, not a deployment.
 """

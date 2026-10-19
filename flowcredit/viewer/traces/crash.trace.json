@@ -1,0 +1,4152 @@
+{
+  "version": "flowagent.trace/v1",
+  "task": {
+    "id": "task-crash-0001",
+    "objective": "判断恒星智算 2024 与 2025 两期合并毛利率是否可比，并在可比时给出变化",
+    "principal": "demo-researcher",
+    "binding": {
+      "corpus": "synthetic-authored-v1",
+      "scenario": "crash"
+    },
+    "allowed_tools": [
+      "list_documents",
+      "read_document",
+      "normalize_units",
+      "reconcile_basis",
+      "check_restatement",
+      "calculate_margin",
+      "report_blocked"
+    ],
+    "model_grant": {
+      "allowed_tools": [
+        "list_documents",
+        "read_document",
+        "normalize_units",
+        "reconcile_basis",
+        "check_restatement",
+        "calculate_margin",
+        "report_blocked"
+      ],
+      "grant_id": "demo-host-grant",
+      "max_calls": 12,
+      "max_cost_microusd": 20000,
+      "max_reads": 20,
+      "max_tokens": 20000,
+      "revision": 1
+    },
+    "status": "succeeded",
+    "sequence": 48,
+    "failure": null
+  },
+  "model": {
+    "provider": "offline-mock",
+    "model": "offline-deterministic-mock-v1",
+    "note": "offline deterministic mock; no network, no credentials, no paid call"
+  },
+  "rounds": [
+    {
+      "index": 4,
+      "budget_before": {
+        "calls_used": 3,
+        "reads_used": 3,
+        "cost_used_microusd": 1500,
+        "tokens_used": 3000,
+        "calls_remaining": 9,
+        "reads_remaining": 17,
+        "cost_remaining_microusd": 18500,
+        "limits": {
+          "max_calls": 12,
+          "max_reads": 20,
+          "max_cost_microusd": 20000,
+          "max_tokens": 20000
+        }
+      },
+      "proposal": {
+        "version": "flowagent.plan/v1",
+        "steps": [
+          {
+            "id": "t4",
+            "tool": "check_restatement",
+            "arguments": {
+              "doc_id": "doc_fy2024"
+            }
+          }
+        ]
+      },
+      "receipt": {
+        "provider": "offline-mock",
+        "model": "offline-deterministic-mock-v1",
+        "tokens": 880,
+        "cost_microusd": 420,
+        "latency_ms": 0,
+        "external_billing": "not-verified",
+        "todo_id": "t4",
+        "metadata": {
+          "policy": "research",
+          "round": 4
+        }
+      },
+      "decision": {
+        "allowed": true,
+        "code": "PASS",
+        "reason": "schema, scope and grant all agree",
+        "tool": "check_restatement"
+      },
+      "observation": {
+        "tool": "check_restatement",
+        "arguments": {
+          "doc_id": "doc_fy2024"
+        },
+        "result": {
+          "period": "FY2024",
+          "restated": true,
+          "superseded_by": "doc_fy2024_restated",
+          "original_gross_profit": 15552,
+          "restated_gross_profit": 15120,
+          "delta": -432,
+          "reason": "因将 432 万元履约成本由销售费用重分类至营业成本，2024 年毛利由 15,552 万元重述为 15,120 万元。本说明替代 2024 年年度报告中的对应金额。"
+        },
+        "result_hash": "2088f6ea307fb1572b4c7172ab7cd56cbebed888b1f3209edf97bcf6e7a0e89a"
+      },
+      "budget_after": {
+        "calls_used": 4,
+        "reads_used": 4,
+        "cost_used_microusd": 2000,
+        "tokens_used": 4000,
+        "calls_remaining": 8,
+        "reads_remaining": 16,
+        "cost_remaining_microusd": 18000,
+        "limits": {
+          "max_calls": 12,
+          "max_reads": 20,
+          "max_cost_microusd": 20000,
+          "max_tokens": 20000
+        }
+      },
+      "plan": {
+        "goal": "判断恒星智算 2024 与 2025 两期合并毛利率是否可比，并在可比时给出变化",
+        "revision": 1,
+        "todos": [
+          {
+            "id": "t1",
+            "text": "列出本次评估可用的资料",
+            "tool": "list_documents",
+            "done_when": "listed",
+            "arguments": {},
+            "status": "done",
+            "evidence": [
+              "8c555e29b41cd382da2f98801d9c73dcf86b58e0cb1f1cef87011badaf7410ee"
+            ],
+            "reason": ""
+          },
+          {
+            "id": "t2",
+            "text": "读取 FY2024 年报，确认单位与口径",
+            "tool": "read_document",
+            "done_when": "read:doc_fy2024",
+            "arguments": {
+              "doc_id": "doc_fy2024"
+            },
+            "status": "done",
+            "evidence": [
+              "b8b86c98b83a2b992afecac9a4a399f91437541bb369e3d93297fb373fcf9fb3"
+            ],
+            "reason": ""
+          },
+          {
+            "id": "t3",
+            "text": "读取 FY2025 年报，确认单位与口径",
+            "tool": "read_document",
+            "done_when": "read:doc_fy2025",
+            "arguments": {
+              "doc_id": "doc_fy2025"
+            },
+            "status": "done",
+            "evidence": [
+              "f6f9f8dfbfa1056f35fa89e84572c1e65ba38ca0a91b67526af590d6c3fab228"
+            ],
+            "reason": ""
+          },
+          {
+            "id": "t4",
+            "text": "检查 FY2024 是否被后续说明重述",
+            "tool": "check_restatement",
+            "done_when": "restatement_checked",
+            "arguments": {
+              "doc_id": "doc_fy2024"
+            },
+            "status": "pending",
+            "evidence": [],
+            "reason": ""
+          },
+          {
+            "id": "t5",
+            "text": "读取 FY2025 调整后口径补充材料",
+            "tool": "read_document",
+            "done_when": "read:doc_fy2025_adjusted",
+            "arguments": {
+              "doc_id": "doc_fy2025_adjusted"
+            },
+            "status": "pending",
+            "evidence": [],
+            "reason": ""
+          },
+          {
+            "id": "t6",
+            "text": "把调整后口径桥接到 IFRS",
+            "tool": "reconcile_basis",
+            "done_when": "reconciled:FY2025",
+            "arguments": {
+              "doc_id": "doc_fy2025_adjusted"
+            },
+            "status": "pending",
+            "evidence": [],
+            "reason": ""
+          },
+          {
+            "id": "t7",
+            "text": "把 FY2024 重述后金额归一到 CNY",
+            "tool": "normalize_units",
+            "done_when": "normalised:doc_fy2024_restated",
+            "arguments": {
+              "doc_id": "doc_fy2024_restated"
+            },
+            "status": "pending",
+            "evidence": [],
+            "reason": ""
+          },
+          {
+            "id": "t8",
+            "text": "把 FY2025 金额归一到 CNY",
+            "tool": "normalize_units",
+            "done_when": "normalised:doc_fy2025",
+            "arguments": {
+              "doc_id": "doc_fy2025"
+            },
+            "status": "pending",
+            "evidence": [],
+            "reason": ""
+          },
+          {
+            "id": "t9",
+            "text": "计算并核对两期毛利率",
+            "tool": "calculate_margin",
+            "done_when": "computed",
+            "arguments": {},
+            "status": "pending",
+            "evidence": [],
+            "reason": ""
+          }
+        ]
+      },
+      "plan_after": {
+        "goal": "判断恒星智算 2024 与 2025 两期合并毛利率是否可比，并在可比时给出变化",
+        "revision": 1,
+        "todos": [
+          {
+            "id": "t1",
+            "text": "列出本次评估可用的资料",
+            "tool": "list_documents",
+            "done_when": "listed",
+            "arguments": {},
+            "status": "done",
+            "evidence": [
+              "8c555e29b41cd382da2f98801d9c73dcf86b58e0cb1f1cef87011badaf7410ee"
+            ],
+            "reason": ""
+          },
+          {
+            "id": "t2",
+            "text": "读取 FY2024 年报，确认单位与口径",
+            "tool": "read_document",
+            "done_when": "read:doc_fy2024",
+            "arguments": {
+              "doc_id": "doc_fy2024"
+            },
+            "status": "done",
+            "evidence": [
+              "b8b86c98b83a2b992afecac9a4a399f91437541bb369e3d93297fb373fcf9fb3"
+            ],
+            "reason": ""
+          },
+          {
+            "id": "t3",
+            "text": "读取 FY2025 年报，确认单位与口径",
+            "tool": "read_document",
+            "done_when": "read:doc_fy2025",
+            "arguments": {
+              "doc_id": "doc_fy2025"
+            },
+            "status": "done",
+            "evidence": [
+              "f6f9f8dfbfa1056f35fa89e84572c1e65ba38ca0a91b67526af590d6c3fab228"
+            ],
+            "reason": ""
+          },
+          {
+            "id": "t4",
+            "text": "检查 FY2024 是否被后续说明重述",
+            "tool": "check_restatement",
+            "done_when": "restatement_checked",
+            "arguments": {
+              "doc_id": "doc_fy2024"
+            },
+            "status": "done",
+            "evidence": [
+              "2088f6ea307fb1572b4c7172ab7cd56cbebed888b1f3209edf97bcf6e7a0e89a"
+            ],
+            "reason": ""
+          },
+          {
+            "id": "t5",
+            "text": "读取 FY2025 调整后口径补充材料",
+            "tool": "read_document",
+            "done_when": "read:doc_fy2025_adjusted",
+            "arguments": {
+              "doc_id": "doc_fy2025_adjusted"
+            },
+            "status": "pending",
+            "evidence": [],
+            "reason": ""
+          },
+          {
+            "id": "t6",
+            "text": "把调整后口径桥接到 IFRS",
+            "tool": "reconcile_basis",
+            "done_when": "reconciled:FY2025",
+            "arguments": {
+              "doc_id": "doc_fy2025_adjusted"
+            },
+            "status": "pending",
+            "evidence": [],
+            "reason": ""
+          },
+          {
+            "id": "t7",
+            "text": "把 FY2024 重述后金额归一到 CNY",
+            "tool": "normalize_units",
+            "done_when": "normalised:doc_fy2024_restated",
+            "arguments": {
+              "doc_id": "doc_fy2024_restated"
+            },
+            "status": "pending",
+            "evidence": [],
+            "reason": ""
+          },
+          {
+            "id": "t8",
+            "text": "把 FY2025 金额归一到 CNY",
+            "tool": "normalize_units",
+            "done_when": "normalised:doc_fy2025",
+            "arguments": {
+              "doc_id": "doc_fy2025"
+            },
+            "status": "pending",
+            "evidence": [],
+            "reason": ""
+          },
+          {
+            "id": "t9",
+            "text": "计算并核对两期毛利率",
+            "tool": "calculate_margin",
+            "done_when": "computed",
+            "arguments": {},
+            "status": "pending",
+            "evidence": [],
+            "reason": ""
+          }
+        ]
+      }
+    },
+    {
+      "index": 5,
+      "budget_before": {
+        "calls_used": 4,
+        "reads_used": 4,
+        "cost_used_microusd": 2000,
+        "tokens_used": 4000,
+        "calls_remaining": 8,
+        "reads_remaining": 16,
+        "cost_remaining_microusd": 18000,
+        "limits": {
+          "max_calls": 12,
+          "max_reads": 20,
+          "max_cost_microusd": 20000,
+          "max_tokens": 20000
+        }
+      },
+      "proposal": {
+        "version": "flowagent.plan/v1",
+        "steps": [
+          {
+            "id": "t5",
+            "tool": "read_document",
+            "arguments": {
+              "doc_id": "doc_fy2025_adjusted"
+            }
+          }
+        ]
+      },
+      "receipt": {
+        "provider": "offline-mock",
+        "model": "offline-deterministic-mock-v1",
+        "tokens": 880,
+        "cost_microusd": 420,
+        "latency_ms": 0,
+        "external_billing": "not-verified",
+        "todo_id": "t5",
+        "metadata": {
+          "policy": "research",
+          "round": 5
+        }
+      },
+      "decision": {
+        "allowed": true,
+        "code": "PASS",
+        "reason": "schema, scope and grant all agree",
+        "tool": "read_document"
+      },
+      "observation": {
+        "tool": "read_document",
+        "arguments": {
+          "doc_id": "doc_fy2025_adjusted"
+        },
+        "result": {
+          "id": "doc_fy2025_adjusted",
+          "title": "恒星智算 2025 年调整后口径补充材料",
+          "kind": "supplement",
+          "period": "FY2025",
+          "unit": "CNY_1M",
+          "unit_label": "百万元",
+          "basis": "adjusted",
+          "revenue": 1120,
+          "gross_profit": 196,
+          "supersedes": null,
+          "body": "调整后毛利 196 百万元，已加回股权激励费用 28 百万元。该口径不是 IFRS 口径，仅供内部管理使用。"
+        },
+        "result_hash": "e20268fee279e511ed7159c4f50376a03debe88e74245325ec7f327e4d2f30b5"
+      },
+      "budget_after": {
+        "calls_used": 5,
+        "reads_used": 5,
+        "cost_used_microusd": 2500,
+        "tokens_used": 5000,
+        "calls_remaining": 7,
+        "reads_remaining": 15,
+        "cost_remaining_microusd": 17500,
+        "limits": {
+          "max_calls": 12,
+          "max_reads": 20,
+          "max_cost_microusd": 20000,
+          "max_tokens": 20000
+        }
+      },
+      "plan": {
+        "goal": "判断恒星智算 2024 与 2025 两期合并毛利率是否可比，并在可比时给出变化",
+        "revision": 1,
+        "todos": [
+          {
+            "id": "t1",
+            "text": "列出本次评估可用的资料",
+            "tool": "list_documents",
+            "done_when": "listed",
+            "arguments": {},
+            "status": "done",
+            "evidence": [
+              "8c555e29b41cd382da2f98801d9c73dcf86b58e0cb1f1cef87011badaf7410ee"
+            ],
+            "reason": ""
+          },
+          {
+            "id": "t2",
+            "text": "读取 FY2024 年报，确认单位与口径",
+            "tool": "read_document",
+            "done_when": "read:doc_fy2024",
+            "arguments": {
+              "doc_id": "doc_fy2024"
+            },
+            "status": "done",
+            "evidence": [
+              "b8b86c98b83a2b992afecac9a4a399f91437541bb369e3d93297fb373fcf9fb3"
+            ],
+            "reason": ""
+          },
+          {
+            "id": "t3",
+            "text": "读取 FY2025 年报，确认单位与口径",
+            "tool": "read_document",
+            "done_when": "read:doc_fy2025",
+            "arguments": {
+              "doc_id": "doc_fy2025"
+            },
+            "status": "done",
+            "evidence": [
+              "f6f9f8dfbfa1056f35fa89e84572c1e65ba38ca0a91b67526af590d6c3fab228"
+            ],
+            "reason": ""
+          },
+          {
+            "id": "t4",
+            "text": "检查 FY2024 是否被后续说明重述",
+            "tool": "check_restatement",
+            "done_when": "restatement_checked",
+            "arguments": {
+              "doc_id": "doc_fy2024"
+            },
+            "status": "done",
+            "evidence": [
+              "2088f6ea307fb1572b4c7172ab7cd56cbebed888b1f3209edf97bcf6e7a0e89a"
+            ],
+            "reason": ""
+          },
+          {
+            "id": "t5",
+            "text": "读取 FY2025 调整后口径补充材料",
+            "tool": "read_document",
+            "done_when": "read:doc_fy2025_adjusted",
+            "arguments": {
+              "doc_id": "doc_fy2025_adjusted"
+            },
+            "status": "pending",
+            "evidence": [],
+            "reason": ""
+          },
+          {
+            "id": "t6",
+            "text": "把调整后口径桥接到 IFRS",
+            "tool": "reconcile_basis",
+            "done_when": "reconciled:FY2025",
+            "arguments": {
+              "doc_id": "doc_fy2025_adjusted"
+            },
+            "status": "pending",
+            "evidence": [],
+            "reason": ""
+          },
+          {
+            "id": "t7",
+            "text": "把 FY2024 重述后金额归一到 CNY",
+            "tool": "normalize_units",
+            "done_when": "normalised:doc_fy2024_restated",
+            "arguments": {
+              "doc_id": "doc_fy2024_restated"
+            },
+            "status": "pending",
+            "evidence": [],
+            "reason": ""
+          },
+          {
+            "id": "t8",
+            "text": "把 FY2025 金额归一到 CNY",
+            "tool": "normalize_units",
+            "done_when": "normalised:doc_fy2025",
+            "arguments": {
+              "doc_id": "doc_fy2025"
+            },
+            "status": "pending",
+            "evidence": [],
+            "reason": ""
+          },
+          {
+            "id": "t9",
+            "text": "计算并核对两期毛利率",
+            "tool": "calculate_margin",
+            "done_when": "computed",
+            "arguments": {},
+            "status": "pending",
+            "evidence": [],
+            "reason": ""
+          }
+        ]
+      },
+      "plan_after": {
+        "goal": "判断恒星智算 2024 与 2025 两期合并毛利率是否可比，并在可比时给出变化",
+        "revision": 1,
+        "todos": [
+          {
+            "id": "t1",
+            "text": "列出本次评估可用的资料",
+            "tool": "list_documents",
+            "done_when": "listed",
+            "arguments": {},
+            "status": "done",
+            "evidence": [
+              "8c555e29b41cd382da2f98801d9c73dcf86b58e0cb1f1cef87011badaf7410ee"
+            ],
+            "reason": ""
+          },
+          {
+            "id": "t2",
+            "text": "读取 FY2024 年报，确认单位与口径",
+            "tool": "read_document",
+            "done_when": "read:doc_fy2024",
+            "arguments": {
+              "doc_id": "doc_fy2024"
+            },
+            "status": "done",
+            "evidence": [
+              "b8b86c98b83a2b992afecac9a4a399f91437541bb369e3d93297fb373fcf9fb3"
+            ],
+            "reason": ""
+          },
+          {
+            "id": "t3",
+            "text": "读取 FY2025 年报，确认单位与口径",
+            "tool": "read_document",
+            "done_when": "read:doc_fy2025",
+            "arguments": {
+              "doc_id": "doc_fy2025"
+            },
+            "status": "done",
+            "evidence": [
+              "f6f9f8dfbfa1056f35fa89e84572c1e65ba38ca0a91b67526af590d6c3fab228"
+            ],
+            "reason": ""
+          },
+          {
+            "id": "t4",
+            "text": "检查 FY2024 是否被后续说明重述",
+            "tool": "check_restatement",
+            "done_when": "restatement_checked",
+            "arguments": {
+              "doc_id": "doc_fy2024"
+            },
+            "status": "done",
+            "evidence": [
+              "2088f6ea307fb1572b4c7172ab7cd56cbebed888b1f3209edf97bcf6e7a0e89a"
+            ],
+            "reason": ""
+          },
+          {
+            "id": "t5",
+            "text": "读取 FY2025 调整后口径补充材料",
+            "tool": "read_document",
+            "done_when": "read:doc_fy2025_adjusted",
+            "arguments": {
+              "doc_id": "doc_fy2025_adjusted"
+            },
+            "status": "done",
+            "evidence": [
+              "e20268fee279e511ed7159c4f50376a03debe88e74245325ec7f327e4d2f30b5"
+            ],
+            "reason": ""
+          },
+          {
+            "id": "t6",
+            "text": "把调整后口径桥接到 IFRS",
+            "tool": "reconcile_basis",
+            "done_when": "reconciled:FY2025",
+            "arguments": {
+              "doc_id": "doc_fy2025_adjusted"
+            },
+            "status": "pending",
+            "evidence": [],
+            "reason": ""
+          },
+          {
+            "id": "t7",
+            "text": "把 FY2024 重述后金额归一到 CNY",
+            "tool": "normalize_units",
+            "done_when": "normalised:doc_fy2024_restated",
+            "arguments": {
+              "doc_id": "doc_fy2024_restated"
+            },
+            "status": "pending",
+            "evidence": [],
+            "reason": ""
+          },
+          {
+            "id": "t8",
+            "text": "把 FY2025 金额归一到 CNY",
+            "tool": "normalize_units",
+            "done_when": "normalised:doc_fy2025",
+            "arguments": {
+              "doc_id": "doc_fy2025"
+            },
+            "status": "pending",
+            "evidence": [],
+            "reason": ""
+          },
+          {
+            "id": "t9",
+            "text": "计算并核对两期毛利率",
+            "tool": "calculate_margin",
+            "done_when": "computed",
+            "arguments": {},
+            "status": "pending",
+            "evidence": [],
+            "reason": ""
+          }
+        ]
+      }
+    },
+    {
+      "index": 6,
+      "budget_before": {
+        "calls_used": 5,
+        "reads_used": 5,
+        "cost_used_microusd": 2500,
+        "tokens_used": 5000,
+        "calls_remaining": 7,
+        "reads_remaining": 15,
+        "cost_remaining_microusd": 17500,
+        "limits": {
+          "max_calls": 12,
+          "max_reads": 20,
+          "max_cost_microusd": 20000,
+          "max_tokens": 20000
+        }
+      },
+      "proposal": {
+        "version": "flowagent.plan/v1",
+        "steps": [
+          {
+            "id": "t6",
+            "tool": "reconcile_basis",
+            "arguments": {
+              "doc_id": "doc_fy2025_adjusted"
+            }
+          }
+        ]
+      },
+      "receipt": {
+        "provider": "offline-mock",
+        "model": "offline-deterministic-mock-v1",
+        "tokens": 880,
+        "cost_microusd": 420,
+        "latency_ms": 0,
+        "external_billing": "not-verified",
+        "todo_id": "t6",
+        "metadata": {
+          "policy": "research",
+          "round": 6
+        }
+      },
+      "decision": {
+        "allowed": true,
+        "code": "PASS",
+        "reason": "schema, scope and grant all agree",
+        "tool": "reconcile_basis"
+      },
+      "observation": {
+        "tool": "reconcile_basis",
+        "arguments": {
+          "doc_id": "doc_fy2025_adjusted"
+        },
+        "result": {
+          "period": "FY2025",
+          "from_basis": "adjusted",
+          "to_basis": "IFRS",
+          "bridge_id": "doc_fy2025_bridge",
+          "delta": -28,
+          "reason": "股权激励费用 28 百万元由营业成本转回期间费用",
+          "reconciled_gross_profit": 168
+        },
+        "result_hash": "67b5631481bad9ac2c3f56ef9566ecb463decef256485422fafae4392409f024"
+      },
+      "budget_after": {
+        "calls_used": 6,
+        "reads_used": 6,
+        "cost_used_microusd": 3000,
+        "tokens_used": 6000,
+        "calls_remaining": 6,
+        "reads_remaining": 14,
+        "cost_remaining_microusd": 17000,
+        "limits": {
+          "max_calls": 12,
+          "max_reads": 20,
+          "max_cost_microusd": 20000,
+          "max_tokens": 20000
+        }
+      },
+      "plan": {
+        "goal": "判断恒星智算 2024 与 2025 两期合并毛利率是否可比，并在可比时给出变化",
+        "revision": 1,
+        "todos": [
+          {
+            "id": "t1",
+            "text": "列出本次评估可用的资料",
+            "tool": "list_documents",
+            "done_when": "listed",
+            "arguments": {},
+            "status": "done",
+            "evidence": [
+              "8c555e29b41cd382da2f98801d9c73dcf86b58e0cb1f1cef87011badaf7410ee"
+            ],
+            "reason": ""
+          },
+          {
+            "id": "t2",
+            "text": "读取 FY2024 年报，确认单位与口径",
+            "tool": "read_document",
+            "done_when": "read:doc_fy2024",
+            "arguments": {
+              "doc_id": "doc_fy2024"
+            },
+            "status": "done",
+            "evidence": [
+              "b8b86c98b83a2b992afecac9a4a399f91437541bb369e3d93297fb373fcf9fb3"
+            ],
+            "reason": ""
+          },
+          {
+            "id": "t3",
+            "text": "读取 FY2025 年报，确认单位与口径",
+            "tool": "read_document",
+            "done_when": "read:doc_fy2025",
+            "arguments": {
+              "doc_id": "doc_fy2025"
+            },
+            "status": "done",
+            "evidence": [
+              "f6f9f8dfbfa1056f35fa89e84572c1e65ba38ca0a91b67526af590d6c3fab228"
+            ],
+            "reason": ""
+          },
+          {
+            "id": "t4",
+            "text": "检查 FY2024 是否被后续说明重述",
+            "tool": "check_restatement",
+            "done_when": "restatement_checked",
+            "arguments": {
+              "doc_id": "doc_fy2024"
+            },
+            "status": "done",
+            "evidence": [
+              "2088f6ea307fb1572b4c7172ab7cd56cbebed888b1f3209edf97bcf6e7a0e89a"
+            ],
+            "reason": ""
+          },
+          {
+            "id": "t5",
+            "text": "读取 FY2025 调整后口径补充材料",
+            "tool": "read_document",
+            "done_when": "read:doc_fy2025_adjusted",
+            "arguments": {
+              "doc_id": "doc_fy2025_adjusted"
+            },
+            "status": "done",
+            "evidence": [
+              "e20268fee279e511ed7159c4f50376a03debe88e74245325ec7f327e4d2f30b5"
+            ],
+            "reason": ""
+          },
+          {
+            "id": "t6",
+            "text": "把调整后口径桥接到 IFRS",
+            "tool": "reconcile_basis",
+            "done_when": "reconciled:FY2025",
+            "arguments": {
+              "doc_id": "doc_fy2025_adjusted"
+            },
+            "status": "pending",
+            "evidence": [],
+            "reason": ""
+          },
+          {
+            "id": "t7",
+            "text": "把 FY2024 重述后金额归一到 CNY",
+            "tool": "normalize_units",
+            "done_when": "normalised:doc_fy2024_restated",
+            "arguments": {
+              "doc_id": "doc_fy2024_restated"
+            },
+            "status": "pending",
+            "evidence": [],
+            "reason": ""
+          },
+          {
+            "id": "t8",
+            "text": "把 FY2025 金额归一到 CNY",
+            "tool": "normalize_units",
+            "done_when": "normalised:doc_fy2025",
+            "arguments": {
+              "doc_id": "doc_fy2025"
+            },
+            "status": "pending",
+            "evidence": [],
+            "reason": ""
+          },
+          {
+            "id": "t9",
+            "text": "计算并核对两期毛利率",
+            "tool": "calculate_margin",
+            "done_when": "computed",
+            "arguments": {},
+            "status": "pending",
+            "evidence": [],
+            "reason": ""
+          }
+        ]
+      },
+      "plan_after": {
+        "goal": "判断恒星智算 2024 与 2025 两期合并毛利率是否可比，并在可比时给出变化",
+        "revision": 1,
+        "todos": [
+          {
+            "id": "t1",
+            "text": "列出本次评估可用的资料",
+            "tool": "list_documents",
+            "done_when": "listed",
+            "arguments": {},
+            "status": "done",
+            "evidence": [
+              "8c555e29b41cd382da2f98801d9c73dcf86b58e0cb1f1cef87011badaf7410ee"
+            ],
+            "reason": ""
+          },
+          {
+            "id": "t2",
+            "text": "读取 FY2024 年报，确认单位与口径",
+            "tool": "read_document",
+            "done_when": "read:doc_fy2024",
+            "arguments": {
+              "doc_id": "doc_fy2024"
+            },
+            "status": "done",
+            "evidence": [
+              "b8b86c98b83a2b992afecac9a4a399f91437541bb369e3d93297fb373fcf9fb3"
+            ],
+            "reason": ""
+          },
+          {
+            "id": "t3",
+            "text": "读取 FY2025 年报，确认单位与口径",
+            "tool": "read_document",
+            "done_when": "read:doc_fy2025",
+            "arguments": {
+              "doc_id": "doc_fy2025"
+            },
+            "status": "done",
+            "evidence": [
+              "f6f9f8dfbfa1056f35fa89e84572c1e65ba38ca0a91b67526af590d6c3fab228"
+            ],
+            "reason": ""
+          },
+          {
+            "id": "t4",
+            "text": "检查 FY2024 是否被后续说明重述",
+            "tool": "check_restatement",
+            "done_when": "restatement_checked",
+            "arguments": {
+              "doc_id": "doc_fy2024"
+            },
+            "status": "done",
+            "evidence": [
+              "2088f6ea307fb1572b4c7172ab7cd56cbebed888b1f3209edf97bcf6e7a0e89a"
+            ],
+            "reason": ""
+          },
+          {
+            "id": "t5",
+            "text": "读取 FY2025 调整后口径补充材料",
+            "tool": "read_document",
+            "done_when": "read:doc_fy2025_adjusted",
+            "arguments": {
+              "doc_id": "doc_fy2025_adjusted"
+            },
+            "status": "done",
+            "evidence": [
+              "e20268fee279e511ed7159c4f50376a03debe88e74245325ec7f327e4d2f30b5"
+            ],
+            "reason": ""
+          },
+          {
+            "id": "t6",
+            "text": "把调整后口径桥接到 IFRS",
+            "tool": "reconcile_basis",
+            "done_when": "reconciled:FY2025",
+            "arguments": {
+              "doc_id": "doc_fy2025_adjusted"
+            },
+            "status": "done",
+            "evidence": [
+              "67b5631481bad9ac2c3f56ef9566ecb463decef256485422fafae4392409f024"
+            ],
+            "reason": ""
+          },
+          {
+            "id": "t7",
+            "text": "把 FY2024 重述后金额归一到 CNY",
+            "tool": "normalize_units",
+            "done_when": "normalised:doc_fy2024_restated",
+            "arguments": {
+              "doc_id": "doc_fy2024_restated"
+            },
+            "status": "pending",
+            "evidence": [],
+            "reason": ""
+          },
+          {
+            "id": "t8",
+            "text": "把 FY2025 金额归一到 CNY",
+            "tool": "normalize_units",
+            "done_when": "normalised:doc_fy2025",
+            "arguments": {
+              "doc_id": "doc_fy2025"
+            },
+            "status": "pending",
+            "evidence": [],
+            "reason": ""
+          },
+          {
+            "id": "t9",
+            "text": "计算并核对两期毛利率",
+            "tool": "calculate_margin",
+            "done_when": "computed",
+            "arguments": {},
+            "status": "pending",
+            "evidence": [],
+            "reason": ""
+          }
+        ]
+      }
+    },
+    {
+      "index": 7,
+      "budget_before": {
+        "calls_used": 6,
+        "reads_used": 6,
+        "cost_used_microusd": 3000,
+        "tokens_used": 6000,
+        "calls_remaining": 6,
+        "reads_remaining": 14,
+        "cost_remaining_microusd": 17000,
+        "limits": {
+          "max_calls": 12,
+          "max_reads": 20,
+          "max_cost_microusd": 20000,
+          "max_tokens": 20000
+        }
+      },
+      "proposal": {
+        "version": "flowagent.plan/v1",
+        "steps": [
+          {
+            "id": "t7",
+            "tool": "normalize_units",
+            "arguments": {
+              "doc_id": "doc_fy2024_restated"
+            }
+          }
+        ]
+      },
+      "receipt": {
+        "provider": "offline-mock",
+        "model": "offline-deterministic-mock-v1",
+        "tokens": 880,
+        "cost_microusd": 420,
+        "latency_ms": 0,
+        "external_billing": "not-verified",
+        "todo_id": "t7",
+        "metadata": {
+          "policy": "research",
+          "round": 7
+        }
+      },
+      "decision": {
+        "allowed": true,
+        "code": "PASS",
+        "reason": "schema, scope and grant all agree",
+        "tool": "normalize_units"
+      },
+      "observation": {
+        "tool": "normalize_units",
+        "arguments": {
+          "doc_id": "doc_fy2024_restated"
+        },
+        "result": {
+          "id": "doc_fy2024_restated",
+          "period": "FY2024",
+          "source_unit": "CNY_10K",
+          "target_unit": "CNY",
+          "revenue_cny": 864000000,
+          "gross_profit_cny": 151200000,
+          "factor": 10000
+        },
+        "result_hash": "5dbb7422f2dbb073b2b777478851815293642ad0da2c39c1e340b0ca5cca74cc"
+      },
+      "budget_after": {
+        "calls_used": 7,
+        "reads_used": 7,
+        "cost_used_microusd": 3500,
+        "tokens_used": 7000,
+        "calls_remaining": 5,
+        "reads_remaining": 13,
+        "cost_remaining_microusd": 16500,
+        "limits": {
+          "max_calls": 12,
+          "max_reads": 20,
+          "max_cost_microusd": 20000,
+          "max_tokens": 20000
+        }
+      },
+      "plan": {
+        "goal": "判断恒星智算 2024 与 2025 两期合并毛利率是否可比，并在可比时给出变化",
+        "revision": 1,
+        "todos": [
+          {
+            "id": "t1",
+            "text": "列出本次评估可用的资料",
+            "tool": "list_documents",
+            "done_when": "listed",
+            "arguments": {},
+            "status": "done",
+            "evidence": [
+              "8c555e29b41cd382da2f98801d9c73dcf86b58e0cb1f1cef87011badaf7410ee"
+            ],
+            "reason": ""
+          },
+          {
+            "id": "t2",
+            "text": "读取 FY2024 年报，确认单位与口径",
+            "tool": "read_document",
+            "done_when": "read:doc_fy2024",
+            "arguments": {
+              "doc_id": "doc_fy2024"
+            },
+            "status": "done",
+            "evidence": [
+              "b8b86c98b83a2b992afecac9a4a399f91437541bb369e3d93297fb373fcf9fb3"
+            ],
+            "reason": ""
+          },
+          {
+            "id": "t3",
+            "text": "读取 FY2025 年报，确认单位与口径",
+            "tool": "read_document",
+            "done_when": "read:doc_fy2025",
+            "arguments": {
+              "doc_id": "doc_fy2025"
+            },
+            "status": "done",
+            "evidence": [
+              "f6f9f8dfbfa1056f35fa89e84572c1e65ba38ca0a91b67526af590d6c3fab228"
+            ],
+            "reason": ""
+          },
+          {
+            "id": "t4",
+            "text": "检查 FY2024 是否被后续说明重述",
+            "tool": "check_restatement",
+            "done_when": "restatement_checked",
+            "arguments": {
+              "doc_id": "doc_fy2024"
+            },
+            "status": "done",
+            "evidence": [
+              "2088f6ea307fb1572b4c7172ab7cd56cbebed888b1f3209edf97bcf6e7a0e89a"
+            ],
+            "reason": ""
+          },
+          {
+            "id": "t5",
+            "text": "读取 FY2025 调整后口径补充材料",
+            "tool": "read_document",
+            "done_when": "read:doc_fy2025_adjusted",
+            "arguments": {
+              "doc_id": "doc_fy2025_adjusted"
+            },
+            "status": "done",
+            "evidence": [
+              "e20268fee279e511ed7159c4f50376a03debe88e74245325ec7f327e4d2f30b5"
+            ],
+            "reason": ""
+          },
+          {
+            "id": "t6",
+            "text": "把调整后口径桥接到 IFRS",
+            "tool": "reconcile_basis",
+            "done_when": "reconciled:FY2025",
+            "arguments": {
+              "doc_id": "doc_fy2025_adjusted"
+            },
+            "status": "done",
+            "evidence": [
+              "67b5631481bad9ac2c3f56ef9566ecb463decef256485422fafae4392409f024"
+            ],
+            "reason": ""
+          },
+          {
+            "id": "t7",
+            "text": "把 FY2024 重述后金额归一到 CNY",
+            "tool": "normalize_units",
+            "done_when": "normalised:doc_fy2024_restated",
+            "arguments": {
+              "doc_id": "doc_fy2024_restated"
+            },
+            "status": "pending",
+            "evidence": [],
+            "reason": ""
+          },
+          {
+            "id": "t8",
+            "text": "把 FY2025 金额归一到 CNY",
+            "tool": "normalize_units",
+            "done_when": "normalised:doc_fy2025",
+            "arguments": {
+              "doc_id": "doc_fy2025"
+            },
+            "status": "pending",
+            "evidence": [],
+            "reason": ""
+          },
+          {
+            "id": "t9",
+            "text": "计算并核对两期毛利率",
+            "tool": "calculate_margin",
+            "done_when": "computed",
+            "arguments": {},
+            "status": "pending",
+            "evidence": [],
+            "reason": ""
+          }
+        ]
+      },
+      "plan_after": {
+        "goal": "判断恒星智算 2024 与 2025 两期合并毛利率是否可比，并在可比时给出变化",
+        "revision": 1,
+        "todos": [
+          {
+            "id": "t1",
+            "text": "列出本次评估可用的资料",
+            "tool": "list_documents",
+            "done_when": "listed",
+            "arguments": {},
+            "status": "done",
+            "evidence": [
+              "8c555e29b41cd382da2f98801d9c73dcf86b58e0cb1f1cef87011badaf7410ee"
+            ],
+            "reason": ""
+          },
+          {
+            "id": "t2",
+            "text": "读取 FY2024 年报，确认单位与口径",
+            "tool": "read_document",
+            "done_when": "read:doc_fy2024",
+            "arguments": {
+              "doc_id": "doc_fy2024"
+            },
+            "status": "done",
+            "evidence": [
+              "b8b86c98b83a2b992afecac9a4a399f91437541bb369e3d93297fb373fcf9fb3"
+            ],
+            "reason": ""
+          },
+          {
+            "id": "t3",
+            "text": "读取 FY2025 年报，确认单位与口径",
+            "tool": "read_document",
+            "done_when": "read:doc_fy2025",
+            "arguments": {
+              "doc_id": "doc_fy2025"
+            },
+            "status": "done",
+            "evidence": [
+              "f6f9f8dfbfa1056f35fa89e84572c1e65ba38ca0a91b67526af590d6c3fab228"
+            ],
+            "reason": ""
+          },
+          {
+            "id": "t4",
+            "text": "检查 FY2024 是否被后续说明重述",
+            "tool": "check_restatement",
+            "done_when": "restatement_checked",
+            "arguments": {
+              "doc_id": "doc_fy2024"
+            },
+            "status": "done",
+            "evidence": [
+              "2088f6ea307fb1572b4c7172ab7cd56cbebed888b1f3209edf97bcf6e7a0e89a"
+            ],
+            "reason": ""
+          },
+          {
+            "id": "t5",
+            "text": "读取 FY2025 调整后口径补充材料",
+            "tool": "read_document",
+            "done_when": "read:doc_fy2025_adjusted",
+            "arguments": {
+              "doc_id": "doc_fy2025_adjusted"
+            },
+            "status": "done",
+            "evidence": [
+              "e20268fee279e511ed7159c4f50376a03debe88e74245325ec7f327e4d2f30b5"
+            ],
+            "reason": ""
+          },
+          {
+            "id": "t6",
+            "text": "把调整后口径桥接到 IFRS",
+            "tool": "reconcile_basis",
+            "done_when": "reconciled:FY2025",
+            "arguments": {
+              "doc_id": "doc_fy2025_adjusted"
+            },
+            "status": "done",
+            "evidence": [
+              "67b5631481bad9ac2c3f56ef9566ecb463decef256485422fafae4392409f024"
+            ],
+            "reason": ""
+          },
+          {
+            "id": "t7",
+            "text": "把 FY2024 重述后金额归一到 CNY",
+            "tool": "normalize_units",
+            "done_when": "normalised:doc_fy2024_restated",
+            "arguments": {
+              "doc_id": "doc_fy2024_restated"
+            },
+            "status": "done",
+            "evidence": [
+              "5dbb7422f2dbb073b2b777478851815293642ad0da2c39c1e340b0ca5cca74cc"
+            ],
+            "reason": ""
+          },
+          {
+            "id": "t8",
+            "text": "把 FY2025 金额归一到 CNY",
+            "tool": "normalize_units",
+            "done_when": "normalised:doc_fy2025",
+            "arguments": {
+              "doc_id": "doc_fy2025"
+            },
+            "status": "pending",
+            "evidence": [],
+            "reason": ""
+          },
+          {
+            "id": "t9",
+            "text": "计算并核对两期毛利率",
+            "tool": "calculate_margin",
+            "done_when": "computed",
+            "arguments": {},
+            "status": "pending",
+            "evidence": [],
+            "reason": ""
+          }
+        ]
+      }
+    },
+    {
+      "index": 8,
+      "budget_before": {
+        "calls_used": 7,
+        "reads_used": 7,
+        "cost_used_microusd": 3500,
+        "tokens_used": 7000,
+        "calls_remaining": 5,
+        "reads_remaining": 13,
+        "cost_remaining_microusd": 16500,
+        "limits": {
+          "max_calls": 12,
+          "max_reads": 20,
+          "max_cost_microusd": 20000,
+          "max_tokens": 20000
+        }
+      },
+      "proposal": {
+        "version": "flowagent.plan/v1",
+        "steps": [
+          {
+            "id": "t8",
+            "tool": "normalize_units",
+            "arguments": {
+              "doc_id": "doc_fy2025"
+            }
+          }
+        ]
+      },
+      "receipt": {
+        "provider": "offline-mock",
+        "model": "offline-deterministic-mock-v1",
+        "tokens": 880,
+        "cost_microusd": 420,
+        "latency_ms": 0,
+        "external_billing": "not-verified",
+        "todo_id": "t8",
+        "metadata": {
+          "policy": "research",
+          "round": 8
+        }
+      },
+      "decision": {
+        "allowed": true,
+        "code": "PASS",
+        "reason": "schema, scope and grant all agree",
+        "tool": "normalize_units"
+      },
+      "observation": {
+        "tool": "normalize_units",
+        "arguments": {
+          "doc_id": "doc_fy2025"
+        },
+        "result": {
+          "id": "doc_fy2025",
+          "period": "FY2025",
+          "source_unit": "CNY_1M",
+          "target_unit": "CNY",
+          "revenue_cny": 1120000000,
+          "gross_profit_cny": 168000000,
+          "factor": 1000000
+        },
+        "result_hash": "fb9670c1564dbb48513f59c6dc0e6e54a7526c59304e82f21ff87f25fd897aac"
+      },
+      "budget_after": {
+        "calls_used": 8,
+        "reads_used": 8,
+        "cost_used_microusd": 4000,
+        "tokens_used": 8000,
+        "calls_remaining": 4,
+        "reads_remaining": 12,
+        "cost_remaining_microusd": 16000,
+        "limits": {
+          "max_calls": 12,
+          "max_reads": 20,
+          "max_cost_microusd": 20000,
+          "max_tokens": 20000
+        }
+      },
+      "plan": {
+        "goal": "判断恒星智算 2024 与 2025 两期合并毛利率是否可比，并在可比时给出变化",
+        "revision": 1,
+        "todos": [
+          {
+            "id": "t1",
+            "text": "列出本次评估可用的资料",
+            "tool": "list_documents",
+            "done_when": "listed",
+            "arguments": {},
+            "status": "done",
+            "evidence": [
+              "8c555e29b41cd382da2f98801d9c73dcf86b58e0cb1f1cef87011badaf7410ee"
+            ],
+            "reason": ""
+          },
+          {
+            "id": "t2",
+            "text": "读取 FY2024 年报，确认单位与口径",
+            "tool": "read_document",
+            "done_when": "read:doc_fy2024",
+            "arguments": {
+              "doc_id": "doc_fy2024"
+            },
+            "status": "done",
+            "evidence": [
+              "b8b86c98b83a2b992afecac9a4a399f91437541bb369e3d93297fb373fcf9fb3"
+            ],
+            "reason": ""
+          },
+          {
+            "id": "t3",
+            "text": "读取 FY2025 年报，确认单位与口径",
+            "tool": "read_document",
+            "done_when": "read:doc_fy2025",
+            "arguments": {
+              "doc_id": "doc_fy2025"
+            },
+            "status": "done",
+            "evidence": [
+              "f6f9f8dfbfa1056f35fa89e84572c1e65ba38ca0a91b67526af590d6c3fab228"
+            ],
+            "reason": ""
+          },
+          {
+            "id": "t4",
+            "text": "检查 FY2024 是否被后续说明重述",
+            "tool": "check_restatement",
+            "done_when": "restatement_checked",
+            "arguments": {
+              "doc_id": "doc_fy2024"
+            },
+            "status": "done",
+            "evidence": [
+              "2088f6ea307fb1572b4c7172ab7cd56cbebed888b1f3209edf97bcf6e7a0e89a"
+            ],
+            "reason": ""
+          },
+          {
+            "id": "t5",
+            "text": "读取 FY2025 调整后口径补充材料",
+            "tool": "read_document",
+            "done_when": "read:doc_fy2025_adjusted",
+            "arguments": {
+              "doc_id": "doc_fy2025_adjusted"
+            },
+            "status": "done",
+            "evidence": [
+              "e20268fee279e511ed7159c4f50376a03debe88e74245325ec7f327e4d2f30b5"
+            ],
+            "reason": ""
+          },
+          {
+            "id": "t6",
+            "text": "把调整后口径桥接到 IFRS",
+            "tool": "reconcile_basis",
+            "done_when": "reconciled:FY2025",
+            "arguments": {
+              "doc_id": "doc_fy2025_adjusted"
+            },
+            "status": "done",
+            "evidence": [
+              "67b5631481bad9ac2c3f56ef9566ecb463decef256485422fafae4392409f024"
+            ],
+            "reason": ""
+          },
+          {
+            "id": "t7",
+            "text": "把 FY2024 重述后金额归一到 CNY",
+            "tool": "normalize_units",
+            "done_when": "normalised:doc_fy2024_restated",
+            "arguments": {
+              "doc_id": "doc_fy2024_restated"
+            },
+            "status": "done",
+            "evidence": [
+              "5dbb7422f2dbb073b2b777478851815293642ad0da2c39c1e340b0ca5cca74cc"
+            ],
+            "reason": ""
+          },
+          {
+            "id": "t8",
+            "text": "把 FY2025 金额归一到 CNY",
+            "tool": "normalize_units",
+            "done_when": "normalised:doc_fy2025",
+            "arguments": {
+              "doc_id": "doc_fy2025"
+            },
+            "status": "pending",
+            "evidence": [],
+            "reason": ""
+          },
+          {
+            "id": "t9",
+            "text": "计算并核对两期毛利率",
+            "tool": "calculate_margin",
+            "done_when": "computed",
+            "arguments": {},
+            "status": "pending",
+            "evidence": [],
+            "reason": ""
+          }
+        ]
+      },
+      "plan_after": {
+        "goal": "判断恒星智算 2024 与 2025 两期合并毛利率是否可比，并在可比时给出变化",
+        "revision": 1,
+        "todos": [
+          {
+            "id": "t1",
+            "text": "列出本次评估可用的资料",
+            "tool": "list_documents",
+            "done_when": "listed",
+            "arguments": {},
+            "status": "done",
+            "evidence": [
+              "8c555e29b41cd382da2f98801d9c73dcf86b58e0cb1f1cef87011badaf7410ee"
+            ],
+            "reason": ""
+          },
+          {
+            "id": "t2",
+            "text": "读取 FY2024 年报，确认单位与口径",
+            "tool": "read_document",
+            "done_when": "read:doc_fy2024",
+            "arguments": {
+              "doc_id": "doc_fy2024"
+            },
+            "status": "done",
+            "evidence": [
+              "b8b86c98b83a2b992afecac9a4a399f91437541bb369e3d93297fb373fcf9fb3"
+            ],
+            "reason": ""
+          },
+          {
+            "id": "t3",
+            "text": "读取 FY2025 年报，确认单位与口径",
+            "tool": "read_document",
+            "done_when": "read:doc_fy2025",
+            "arguments": {
+              "doc_id": "doc_fy2025"
+            },
+            "status": "done",
+            "evidence": [
+              "f6f9f8dfbfa1056f35fa89e84572c1e65ba38ca0a91b67526af590d6c3fab228"
+            ],
+            "reason": ""
+          },
+          {
+            "id": "t4",
+            "text": "检查 FY2024 是否被后续说明重述",
+            "tool": "check_restatement",
+            "done_when": "restatement_checked",
+            "arguments": {
+              "doc_id": "doc_fy2024"
+            },
+            "status": "done",
+            "evidence": [
+              "2088f6ea307fb1572b4c7172ab7cd56cbebed888b1f3209edf97bcf6e7a0e89a"
+            ],
+            "reason": ""
+          },
+          {
+            "id": "t5",
+            "text": "读取 FY2025 调整后口径补充材料",
+            "tool": "read_document",
+            "done_when": "read:doc_fy2025_adjusted",
+            "arguments": {
+              "doc_id": "doc_fy2025_adjusted"
+            },
+            "status": "done",
+            "evidence": [
+              "e20268fee279e511ed7159c4f50376a03debe88e74245325ec7f327e4d2f30b5"
+            ],
+            "reason": ""
+          },
+          {
+            "id": "t6",
+            "text": "把调整后口径桥接到 IFRS",
+            "tool": "reconcile_basis",
+            "done_when": "reconciled:FY2025",
+            "arguments": {
+              "doc_id": "doc_fy2025_adjusted"
+            },
+            "status": "done",
+            "evidence": [
+              "67b5631481bad9ac2c3f56ef9566ecb463decef256485422fafae4392409f024"
+            ],
+            "reason": ""
+          },
+          {
+            "id": "t7",
+            "text": "把 FY2024 重述后金额归一到 CNY",
+            "tool": "normalize_units",
+            "done_when": "normalised:doc_fy2024_restated",
+            "arguments": {
+              "doc_id": "doc_fy2024_restated"
+            },
+            "status": "done",
+            "evidence": [
+              "5dbb7422f2dbb073b2b777478851815293642ad0da2c39c1e340b0ca5cca74cc"
+            ],
+            "reason": ""
+          },
+          {
+            "id": "t8",
+            "text": "把 FY2025 金额归一到 CNY",
+            "tool": "normalize_units",
+            "done_when": "normalised:doc_fy2025",
+            "arguments": {
+              "doc_id": "doc_fy2025"
+            },
+            "status": "done",
+            "evidence": [
+              "fb9670c1564dbb48513f59c6dc0e6e54a7526c59304e82f21ff87f25fd897aac"
+            ],
+            "reason": ""
+          },
+          {
+            "id": "t9",
+            "text": "计算并核对两期毛利率",
+            "tool": "calculate_margin",
+            "done_when": "computed",
+            "arguments": {},
+            "status": "pending",
+            "evidence": [],
+            "reason": ""
+          }
+        ]
+      }
+    },
+    {
+      "index": 9,
+      "budget_before": {
+        "calls_used": 8,
+        "reads_used": 8,
+        "cost_used_microusd": 4000,
+        "tokens_used": 8000,
+        "calls_remaining": 4,
+        "reads_remaining": 12,
+        "cost_remaining_microusd": 16000,
+        "limits": {
+          "max_calls": 12,
+          "max_reads": 20,
+          "max_cost_microusd": 20000,
+          "max_tokens": 20000
+        }
+      },
+      "proposal": {
+        "version": "flowagent.plan/v1",
+        "steps": [
+          {
+            "id": "t9",
+            "tool": "calculate_margin",
+            "arguments": {}
+          }
+        ]
+      },
+      "receipt": {
+        "provider": "offline-mock",
+        "model": "offline-deterministic-mock-v1",
+        "tokens": 880,
+        "cost_microusd": 420,
+        "latency_ms": 0,
+        "external_billing": "not-verified",
+        "todo_id": "t9",
+        "metadata": {
+          "policy": "research",
+          "round": 9
+        }
+      },
+      "decision": {
+        "allowed": true,
+        "code": "PASS",
+        "reason": "schema, scope and grant all agree",
+        "tool": "calculate_margin"
+      },
+      "observation": {
+        "tool": "calculate_margin",
+        "arguments": {},
+        "result": {
+          "computed": true,
+          "comparable": true,
+          "basis": "IFRS",
+          "consolidation": "entity-total",
+          "restatement_applied": true,
+          "periods": [
+            {
+              "fact_id": "fact:FY2024:gross_profit",
+              "doc_id": "doc_fy2024_restated",
+              "period": "FY2024",
+              "basis": "IFRS",
+              "revenue_cny": 864000000,
+              "gross_profit_cny": 151200000
+            },
+            {
+              "fact_id": "fact:FY2025:gross_profit",
+              "doc_id": "doc_fy2025",
+              "period": "FY2025",
+              "basis": "IFRS",
+              "revenue_cny": 1120000000,
+              "gross_profit_cny": 168000000
+            }
+          ],
+          "margin_bp_2024": 1750,
+          "margin_bp_2025": 1500,
+          "change_bp": -250,
+          "citations": [
+            {
+              "doc_id": "doc_fy2024_restated",
+              "period": "FY2024",
+              "value_cny": 151200000
+            },
+            {
+              "doc_id": "doc_fy2025",
+              "period": "FY2025",
+              "value_cny": 168000000
+            }
+          ],
+          "authority": {
+            "FY2024": {
+              "version": "flowagent.evidence-authority/v1",
+              "doc_id": "doc_fy2024_restated",
+              "assertion_class": "rejected",
+              "permissions": {
+                "contextual_calculation": false,
+                "scenario_calculation": false,
+                "risk_calculation": false,
+                "independent_corroboration": false,
+                "integrity_veto": false
+              },
+              "reasons": [
+                {
+                  "code": "SUPERSEDED_DOCUMENT",
+                  "message": "this document replaces an earlier one and cannot itself be cited as a source figure"
+                },
+                {
+                  "code": "PRIVATE_AUTHORITY_NOT_IMPLEMENTED",
+                  "message": "no authenticated private-source policy exists; risk calculation and integrity veto remain denied"
+                }
+              ],
+              "risk_eligible": false,
+              "veto_eligible": false
+            },
+            "FY2025": {
+              "version": "flowagent.evidence-authority/v1",
+              "doc_id": "doc_fy2025",
+              "assertion_class": "issuer-assertion",
+              "permissions": {
+                "contextual_calculation": true,
+                "scenario_calculation": false,
+                "risk_calculation": false,
+                "independent_corroboration": false,
+                "integrity_veto": false
+              },
+              "reasons": [
+                {
+                  "code": "CONTEXTUAL_ONLY",
+                  "message": "the figure may support a labelled comparison; it is not an audited fact or a credit conclusion"
+                },
+                {
+                  "code": "PRIVATE_AUTHORITY_NOT_IMPLEMENTED",
+                  "message": "no authenticated private-source policy exists; risk calculation and integrity veto remain denied"
+                }
+              ],
+              "risk_eligible": false,
+              "veto_eligible": false
+            }
+          }
+        },
+        "result_hash": "e5d54de8d1efec9e489403df48e733eb63c2d1a4e629b4d95f4706e23f5d205d"
+      },
+      "budget_after": {
+        "calls_used": 9,
+        "reads_used": 9,
+        "cost_used_microusd": 4500,
+        "tokens_used": 9000,
+        "calls_remaining": 3,
+        "reads_remaining": 11,
+        "cost_remaining_microusd": 15500,
+        "limits": {
+          "max_calls": 12,
+          "max_reads": 20,
+          "max_cost_microusd": 20000,
+          "max_tokens": 20000
+        }
+      },
+      "plan": {
+        "goal": "判断恒星智算 2024 与 2025 两期合并毛利率是否可比，并在可比时给出变化",
+        "revision": 1,
+        "todos": [
+          {
+            "id": "t1",
+            "text": "列出本次评估可用的资料",
+            "tool": "list_documents",
+            "done_when": "listed",
+            "arguments": {},
+            "status": "done",
+            "evidence": [
+              "8c555e29b41cd382da2f98801d9c73dcf86b58e0cb1f1cef87011badaf7410ee"
+            ],
+            "reason": ""
+          },
+          {
+            "id": "t2",
+            "text": "读取 FY2024 年报，确认单位与口径",
+            "tool": "read_document",
+            "done_when": "read:doc_fy2024",
+            "arguments": {
+              "doc_id": "doc_fy2024"
+            },
+            "status": "done",
+            "evidence": [
+              "b8b86c98b83a2b992afecac9a4a399f91437541bb369e3d93297fb373fcf9fb3"
+            ],
+            "reason": ""
+          },
+          {
+            "id": "t3",
+            "text": "读取 FY2025 年报，确认单位与口径",
+            "tool": "read_document",
+            "done_when": "read:doc_fy2025",
+            "arguments": {
+              "doc_id": "doc_fy2025"
+            },
+            "status": "done",
+            "evidence": [
+              "f6f9f8dfbfa1056f35fa89e84572c1e65ba38ca0a91b67526af590d6c3fab228"
+            ],
+            "reason": ""
+          },
+          {
+            "id": "t4",
+            "text": "检查 FY2024 是否被后续说明重述",
+            "tool": "check_restatement",
+            "done_when": "restatement_checked",
+            "arguments": {
+              "doc_id": "doc_fy2024"
+            },
+            "status": "done",
+            "evidence": [
+              "2088f6ea307fb1572b4c7172ab7cd56cbebed888b1f3209edf97bcf6e7a0e89a"
+            ],
+            "reason": ""
+          },
+          {
+            "id": "t5",
+            "text": "读取 FY2025 调整后口径补充材料",
+            "tool": "read_document",
+            "done_when": "read:doc_fy2025_adjusted",
+            "arguments": {
+              "doc_id": "doc_fy2025_adjusted"
+            },
+            "status": "done",
+            "evidence": [
+              "e20268fee279e511ed7159c4f50376a03debe88e74245325ec7f327e4d2f30b5"
+            ],
+            "reason": ""
+          },
+          {
+            "id": "t6",
+            "text": "把调整后口径桥接到 IFRS",
+            "tool": "reconcile_basis",
+            "done_when": "reconciled:FY2025",
+            "arguments": {
+              "doc_id": "doc_fy2025_adjusted"
+            },
+            "status": "done",
+            "evidence": [
+              "67b5631481bad9ac2c3f56ef9566ecb463decef256485422fafae4392409f024"
+            ],
+            "reason": ""
+          },
+          {
+            "id": "t7",
+            "text": "把 FY2024 重述后金额归一到 CNY",
+            "tool": "normalize_units",
+            "done_when": "normalised:doc_fy2024_restated",
+            "arguments": {
+              "doc_id": "doc_fy2024_restated"
+            },
+            "status": "done",
+            "evidence": [
+              "5dbb7422f2dbb073b2b777478851815293642ad0da2c39c1e340b0ca5cca74cc"
+            ],
+            "reason": ""
+          },
+          {
+            "id": "t8",
+            "text": "把 FY2025 金额归一到 CNY",
+            "tool": "normalize_units",
+            "done_when": "normalised:doc_fy2025",
+            "arguments": {
+              "doc_id": "doc_fy2025"
+            },
+            "status": "done",
+            "evidence": [
+              "fb9670c1564dbb48513f59c6dc0e6e54a7526c59304e82f21ff87f25fd897aac"
+            ],
+            "reason": ""
+          },
+          {
+            "id": "t9",
+            "text": "计算并核对两期毛利率",
+            "tool": "calculate_margin",
+            "done_when": "computed",
+            "arguments": {},
+            "status": "pending",
+            "evidence": [],
+            "reason": ""
+          }
+        ]
+      },
+      "plan_after": {
+        "goal": "判断恒星智算 2024 与 2025 两期合并毛利率是否可比，并在可比时给出变化",
+        "revision": 1,
+        "todos": [
+          {
+            "id": "t1",
+            "text": "列出本次评估可用的资料",
+            "tool": "list_documents",
+            "done_when": "listed",
+            "arguments": {},
+            "status": "done",
+            "evidence": [
+              "8c555e29b41cd382da2f98801d9c73dcf86b58e0cb1f1cef87011badaf7410ee"
+            ],
+            "reason": ""
+          },
+          {
+            "id": "t2",
+            "text": "读取 FY2024 年报，确认单位与口径",
+            "tool": "read_document",
+            "done_when": "read:doc_fy2024",
+            "arguments": {
+              "doc_id": "doc_fy2024"
+            },
+            "status": "done",
+            "evidence": [
+              "b8b86c98b83a2b992afecac9a4a399f91437541bb369e3d93297fb373fcf9fb3"
+            ],
+            "reason": ""
+          },
+          {
+            "id": "t3",
+            "text": "读取 FY2025 年报，确认单位与口径",
+            "tool": "read_document",
+            "done_when": "read:doc_fy2025",
+            "arguments": {
+              "doc_id": "doc_fy2025"
+            },
+            "status": "done",
+            "evidence": [
+              "f6f9f8dfbfa1056f35fa89e84572c1e65ba38ca0a91b67526af590d6c3fab228"
+            ],
+            "reason": ""
+          },
+          {
+            "id": "t4",
+            "text": "检查 FY2024 是否被后续说明重述",
+            "tool": "check_restatement",
+            "done_when": "restatement_checked",
+            "arguments": {
+              "doc_id": "doc_fy2024"
+            },
+            "status": "done",
+            "evidence": [
+              "2088f6ea307fb1572b4c7172ab7cd56cbebed888b1f3209edf97bcf6e7a0e89a"
+            ],
+            "reason": ""
+          },
+          {
+            "id": "t5",
+            "text": "读取 FY2025 调整后口径补充材料",
+            "tool": "read_document",
+            "done_when": "read:doc_fy2025_adjusted",
+            "arguments": {
+              "doc_id": "doc_fy2025_adjusted"
+            },
+            "status": "done",
+            "evidence": [
+              "e20268fee279e511ed7159c4f50376a03debe88e74245325ec7f327e4d2f30b5"
+            ],
+            "reason": ""
+          },
+          {
+            "id": "t6",
+            "text": "把调整后口径桥接到 IFRS",
+            "tool": "reconcile_basis",
+            "done_when": "reconciled:FY2025",
+            "arguments": {
+              "doc_id": "doc_fy2025_adjusted"
+            },
+            "status": "done",
+            "evidence": [
+              "67b5631481bad9ac2c3f56ef9566ecb463decef256485422fafae4392409f024"
+            ],
+            "reason": ""
+          },
+          {
+            "id": "t7",
+            "text": "把 FY2024 重述后金额归一到 CNY",
+            "tool": "normalize_units",
+            "done_when": "normalised:doc_fy2024_restated",
+            "arguments": {
+              "doc_id": "doc_fy2024_restated"
+            },
+            "status": "done",
+            "evidence": [
+              "5dbb7422f2dbb073b2b777478851815293642ad0da2c39c1e340b0ca5cca74cc"
+            ],
+            "reason": ""
+          },
+          {
+            "id": "t8",
+            "text": "把 FY2025 金额归一到 CNY",
+            "tool": "normalize_units",
+            "done_when": "normalised:doc_fy2025",
+            "arguments": {
+              "doc_id": "doc_fy2025"
+            },
+            "status": "done",
+            "evidence": [
+              "fb9670c1564dbb48513f59c6dc0e6e54a7526c59304e82f21ff87f25fd897aac"
+            ],
+            "reason": ""
+          },
+          {
+            "id": "t9",
+            "text": "计算并核对两期毛利率",
+            "tool": "calculate_margin",
+            "done_when": "computed",
+            "arguments": {},
+            "status": "done",
+            "evidence": [
+              "e5d54de8d1efec9e489403df48e733eb63c2d1a4e629b4d95f4706e23f5d205d"
+            ],
+            "reason": ""
+          }
+        ]
+      }
+    }
+  ],
+  "terminal": {
+    "status": "succeeded",
+    "failure": null,
+    "result": {
+      "computed": true,
+      "comparable": true,
+      "basis": "IFRS",
+      "consolidation": "entity-total",
+      "restatement_applied": true,
+      "periods": [
+        {
+          "fact_id": "fact:FY2024:gross_profit",
+          "doc_id": "doc_fy2024_restated",
+          "period": "FY2024",
+          "basis": "IFRS",
+          "revenue_cny": 864000000,
+          "gross_profit_cny": 151200000
+        },
+        {
+          "fact_id": "fact:FY2025:gross_profit",
+          "doc_id": "doc_fy2025",
+          "period": "FY2025",
+          "basis": "IFRS",
+          "revenue_cny": 1120000000,
+          "gross_profit_cny": 168000000
+        }
+      ],
+      "margin_bp_2024": 1750,
+      "margin_bp_2025": 1500,
+      "change_bp": -250,
+      "citations": [
+        {
+          "doc_id": "doc_fy2024_restated",
+          "period": "FY2024",
+          "value_cny": 151200000
+        },
+        {
+          "doc_id": "doc_fy2025",
+          "period": "FY2025",
+          "value_cny": 168000000
+        }
+      ],
+      "verification": "runtime-recomputed",
+      "plan": {
+        "revision": 1,
+        "total": 9,
+        "pending": 0,
+        "active": 0,
+        "done": 9,
+        "blocked": 0,
+        "abandoned": 0
+      }
+    },
+    "sequence": 48
+  },
+  "events": [
+    {
+      "sequence": 1,
+      "type": "task_created",
+      "payload": {
+        "body_hash": "7ca756a1f224f69a1c5e30f219e1e791ab8ac0e847d90630946f1dfb834fee6c",
+        "detail": {}
+      },
+      "prev_hash": null,
+      "hash": "0e81998ebd59a8bebaa8be2282ef53848591ab7e1eb711de859b68c75ddd96a3",
+      "at": "2026-10-19T15:38:10.207Z"
+    },
+    {
+      "sequence": 2,
+      "type": "model_started",
+      "payload": {
+        "body_hash": "b73f793c1d69b2940fa96143944861d37e2fdd22400e429caf628dd891f815ef",
+        "detail": {
+          "round": 1
+        }
+      },
+      "prev_hash": "0e81998ebd59a8bebaa8be2282ef53848591ab7e1eb711de859b68c75ddd96a3",
+      "hash": "5d2281e2627b82ffa824b0d608a1d3b636f31e56a0fdf0c854128e73f7ad1b38",
+      "at": "2026-10-19T15:38:10.234Z"
+    },
+    {
+      "sequence": 3,
+      "type": "plan_validated",
+      "payload": {
+        "body_hash": "b0b674823394554b0ad63d3bc9e46c701890e3e228ff141f7ff2e2608cc5877f",
+        "detail": {
+          "plan": {
+            "steps": [
+              {
+                "arguments": {},
+                "attempts": 0,
+                "error_code": null,
+                "id": "t1",
+                "result": null,
+                "result_hash": null,
+                "status": "pending",
+                "tool": "list_documents"
+              }
+            ],
+            "version": "flowagent.plan/v1"
+          },
+          "round": 1
+        }
+      },
+      "prev_hash": "5d2281e2627b82ffa824b0d608a1d3b636f31e56a0fdf0c854128e73f7ad1b38",
+      "hash": "126ea2447828d589e7b8d434fd043c178954574f13bd370dc59569f7671c51d6",
+      "at": "2026-10-19T15:38:10.234Z"
+    },
+    {
+      "sequence": 4,
+      "type": "execution_started",
+      "payload": {
+        "body_hash": "b5aa72ab07851e447ae27d955c8ecbbc574cebb46086edfaee3a06ed99b71d4e",
+        "detail": {}
+      },
+      "prev_hash": "126ea2447828d589e7b8d434fd043c178954574f13bd370dc59569f7671c51d6",
+      "hash": "1afeea0ed596698c705fc4c5525c8071e003450f5c1ea562131728d892c1da69",
+      "at": "2026-10-19T15:38:10.234Z"
+    },
+    {
+      "sequence": 5,
+      "type": "tool_started",
+      "payload": {
+        "body_hash": "1937513de1ab0afd5cf72f804318b2e967e6c9555fe524477388201e1ef2644a",
+        "detail": {
+          "arguments": {},
+          "round": 1,
+          "tool": "list_documents"
+        }
+      },
+      "prev_hash": "1afeea0ed596698c705fc4c5525c8071e003450f5c1ea562131728d892c1da69",
+      "hash": "fe074b4737943eefbbff88b05468d6c77bfa90d0a16113a5ef49e140b8b6796d",
+      "at": "2026-10-19T15:38:10.235Z"
+    },
+    {
+      "sequence": 6,
+      "type": "tool_succeeded",
+      "payload": {
+        "body_hash": "d9c711f7a2de26ab620bd612bdae459cfb539fe57c130dc1b6c4496386cedc11",
+        "detail": {
+          "arguments": {},
+          "result": {
+            "documents": [
+              {
+                "basis": "IFRS",
+                "id": "doc_fy2024",
+                "kind": "annual_report",
+                "period": "FY2024",
+                "title": "恒星智算 2024 年年度报告（合并口径）",
+                "unit": "CNY_10K",
+                "unit_label": "万元"
+              },
+              {
+                "basis": "IFRS",
+                "id": "doc_fy2024_restated",
+                "kind": "restatement_note",
+                "period": "FY2024",
+                "title": "恒星智算 2024 年重述说明",
+                "unit": "CNY_10K",
+                "unit_label": "万元"
+              },
+              {
+                "basis": "IFRS",
+                "id": "doc_fy2025",
+                "kind": "annual_report",
+                "period": "FY2025",
+                "title": "恒星智算 2025 年年度报告（合并口径）",
+                "unit": "CNY_1M",
+                "unit_label": "百万元"
+              },
+              {
+                "basis": "adjusted",
+                "id": "doc_fy2025_adjusted",
+                "kind": "supplement",
+                "period": "FY2025",
+                "title": "恒星智算 2025 年调整后口径补充材料",
+                "unit": "CNY_1M",
+                "unit_label": "百万元"
+              },
+              {
+                "basis": "reconciliation",
+                "id": "doc_fy2025_bridge",
+                "kind": "basis_bridge",
+                "period": "FY2025",
+                "title": "恒星智算 2025 年调整后口径至 IFRS 口径桥接表",
+                "unit": "CNY_1M",
+                "unit_label": "百万元"
+              }
+            ]
+          },
+          "result_hash": "8c555e29b41cd382da2f98801d9c73dcf86b58e0cb1f1cef87011badaf7410ee",
+          "round": 1,
+          "tool": "list_documents"
+        }
+      },
+      "prev_hash": "fe074b4737943eefbbff88b05468d6c77bfa90d0a16113a5ef49e140b8b6796d",
+      "hash": "9d7c5819626aa6ca7fbf9ca52a5b3a730bed17d63947a24426c3a174af2f93f7",
+      "at": "2026-10-19T15:38:10.235Z"
+    },
+    {
+      "sequence": 7,
+      "type": "plan_updated",
+      "payload": {
+        "body_hash": "69d356af2e0814d932a4365b50a650d460dfb99670fa54e2dfb3185d828f47cc",
+        "detail": {
+          "plan": {
+            "goal": "判断恒星智算 2024 与 2025 两期合并毛利率是否可比，并在可比时给出变化",
+            "revision": 1,
+            "todos": [
+              {
+                "arguments": {},
+                "done_when": "listed",
+                "evidence": [
+                  "8c555e29b41cd382da2f98801d9c73dcf86b58e0cb1f1cef87011badaf7410ee"
+                ],
+                "id": "t1",
+                "reason": "",
+                "status": "done",
+                "text": "列出本次评估可用的资料",
+                "tool": "list_documents"
+              },
+              {
+                "arguments": {
+                  "doc_id": "doc_fy2024"
+                },
+                "done_when": "read:doc_fy2024",
+                "evidence": [],
+                "id": "t2",
+                "reason": "",
+                "status": "pending",
+                "text": "读取 FY2024 年报，确认单位与口径",
+                "tool": "read_document"
+              },
+              {
+                "arguments": {
+                  "doc_id": "doc_fy2025"
+                },
+                "done_when": "read:doc_fy2025",
+                "evidence": [],
+                "id": "t3",
+                "reason": "",
+                "status": "pending",
+                "text": "读取 FY2025 年报，确认单位与口径",
+                "tool": "read_document"
+              },
+              {
+                "arguments": {
+                  "doc_id": "doc_fy2024"
+                },
+                "done_when": "restatement_checked",
+                "evidence": [],
+                "id": "t4",
+                "reason": "",
+                "status": "pending",
+                "text": "检查 FY2024 是否被后续说明重述",
+                "tool": "check_restatement"
+              },
+              {
+                "arguments": {
+                  "doc_id": "doc_fy2025_adjusted"
+                },
+                "done_when": "read:doc_fy2025_adjusted",
+                "evidence": [],
+                "id": "t5",
+                "reason": "",
+                "status": "pending",
+                "text": "读取 FY2025 调整后口径补充材料",
+                "tool": "read_document"
+              },
+              {
+                "arguments": {
+                  "doc_id": "doc_fy2025_adjusted"
+                },
+                "done_when": "reconciled:FY2025",
+                "evidence": [],
+                "id": "t6",
+                "reason": "",
+                "status": "pending",
+                "text": "把调整后口径桥接到 IFRS",
+                "tool": "reconcile_basis"
+              },
+              {
+                "arguments": {
+                  "doc_id": "doc_fy2024_restated"
+                },
+                "done_when": "normalised:doc_fy2024_restated",
+                "evidence": [],
+                "id": "t7",
+                "reason": "",
+                "status": "pending",
+                "text": "把 FY2024 重述后金额归一到 CNY",
+                "tool": "normalize_units"
+              },
+              {
+                "arguments": {
+                  "doc_id": "doc_fy2025"
+                },
+                "done_when": "normalised:doc_fy2025",
+                "evidence": [],
+                "id": "t8",
+                "reason": "",
+                "status": "pending",
+                "text": "把 FY2025 金额归一到 CNY",
+                "tool": "normalize_units"
+              },
+              {
+                "arguments": {},
+                "done_when": "computed",
+                "evidence": [],
+                "id": "t9",
+                "reason": "",
+                "status": "pending",
+                "text": "计算并核对两期毛利率",
+                "tool": "calculate_margin"
+              }
+            ]
+          },
+          "round": 1
+        }
+      },
+      "prev_hash": "9d7c5819626aa6ca7fbf9ca52a5b3a730bed17d63947a24426c3a174af2f93f7",
+      "hash": "6571cc713ac00d0af883ff79820e7a01977c254719c5a7ece679f64667f9e3c7",
+      "at": "2026-10-19T15:38:10.235Z"
+    },
+    {
+      "sequence": 8,
+      "type": "model_started",
+      "payload": {
+        "body_hash": "13d5407ffa08793e82bfe92c04c6bc0622fdec5fc99a079aa2b3a0a1c0463f66",
+        "detail": {
+          "round": 2
+        }
+      },
+      "prev_hash": "6571cc713ac00d0af883ff79820e7a01977c254719c5a7ece679f64667f9e3c7",
+      "hash": "53844d48c481c0a7c4e6933ea2c79976351632cfc4d84ece0b8121cc87a28ff0",
+      "at": "2026-10-19T15:38:10.235Z"
+    },
+    {
+      "sequence": 9,
+      "type": "plan_validated",
+      "payload": {
+        "body_hash": "77984569e4f2ce21b670435d95b4ce0f44131e175c98d92ab95fda91cc99972b",
+        "detail": {
+          "plan": {
+            "steps": [
+              {
+                "arguments": {
+                  "doc_id": "doc_fy2024"
+                },
+                "attempts": 0,
+                "error_code": null,
+                "id": "t2",
+                "result": null,
+                "result_hash": null,
+                "status": "pending",
+                "tool": "read_document"
+              }
+            ],
+            "version": "flowagent.plan/v1"
+          },
+          "round": 2
+        }
+      },
+      "prev_hash": "53844d48c481c0a7c4e6933ea2c79976351632cfc4d84ece0b8121cc87a28ff0",
+      "hash": "c74e4377bb96ef842c787bf3da16d5f2b7c6499486e239bb4f2e71f5e5df7444",
+      "at": "2026-10-19T15:38:10.235Z"
+    },
+    {
+      "sequence": 10,
+      "type": "tool_started",
+      "payload": {
+        "body_hash": "de7c9d424e7f174962bfb3e4ba14d16e171befd8d7f6a9970cfbd5b5d7d2bab1",
+        "detail": {
+          "arguments": {
+            "doc_id": "doc_fy2024"
+          },
+          "round": 2,
+          "tool": "read_document"
+        }
+      },
+      "prev_hash": "c74e4377bb96ef842c787bf3da16d5f2b7c6499486e239bb4f2e71f5e5df7444",
+      "hash": "5f4ca3ee8c6e8962df022515f28fa9ff46a7456c303905ab15f81ec27e7518eb",
+      "at": "2026-10-19T15:38:10.236Z"
+    },
+    {
+      "sequence": 11,
+      "type": "tool_succeeded",
+      "payload": {
+        "body_hash": "9536168e3b44d39d4b7b5454616bb74fe47cae1acb9610dcd57812b3b8659eab",
+        "detail": {
+          "arguments": {
+            "doc_id": "doc_fy2024"
+          },
+          "result": {
+            "basis": "IFRS",
+            "body": "营业收入 86,400 万元，营业成本 70,848 万元，毛利 15,552 万元。本表按国际财务报告准则（IFRS）编制，合并范围包含全部子公司。",
+            "gross_profit": 15552,
+            "id": "doc_fy2024",
+            "kind": "annual_report",
+            "period": "FY2024",
+            "revenue": 86400,
+            "supersedes": null,
+            "title": "恒星智算 2024 年年度报告（合并口径）",
+            "unit": "CNY_10K",
+            "unit_label": "万元"
+          },
+          "result_hash": "b8b86c98b83a2b992afecac9a4a399f91437541bb369e3d93297fb373fcf9fb3",
+          "round": 2,
+          "tool": "read_document"
+        }
+      },
+      "prev_hash": "5f4ca3ee8c6e8962df022515f28fa9ff46a7456c303905ab15f81ec27e7518eb",
+      "hash": "844540329746dc80f036298827c6af980d3cefb27edb7827c912a79988027f4e",
+      "at": "2026-10-19T15:38:10.236Z"
+    },
+    {
+      "sequence": 12,
+      "type": "plan_updated",
+      "payload": {
+        "body_hash": "6c085cd2a68f53be9d667594032fe6e1eed33c75087d6526a2569a771dcb1718",
+        "detail": {
+          "plan": {
+            "goal": "判断恒星智算 2024 与 2025 两期合并毛利率是否可比，并在可比时给出变化",
+            "revision": 1,
+            "todos": [
+              {
+                "arguments": {},
+                "done_when": "listed",
+                "evidence": [
+                  "8c555e29b41cd382da2f98801d9c73dcf86b58e0cb1f1cef87011badaf7410ee"
+                ],
+                "id": "t1",
+                "reason": "",
+                "status": "done",
+                "text": "列出本次评估可用的资料",
+                "tool": "list_documents"
+              },
+              {
+                "arguments": {
+                  "doc_id": "doc_fy2024"
+                },
+                "done_when": "read:doc_fy2024",
+                "evidence": [
+                  "b8b86c98b83a2b992afecac9a4a399f91437541bb369e3d93297fb373fcf9fb3"
+                ],
+                "id": "t2",
+                "reason": "",
+                "status": "done",
+                "text": "读取 FY2024 年报，确认单位与口径",
+                "tool": "read_document"
+              },
+              {
+                "arguments": {
+                  "doc_id": "doc_fy2025"
+                },
+                "done_when": "read:doc_fy2025",
+                "evidence": [],
+                "id": "t3",
+                "reason": "",
+                "status": "pending",
+                "text": "读取 FY2025 年报，确认单位与口径",
+                "tool": "read_document"
+              },
+              {
+                "arguments": {
+                  "doc_id": "doc_fy2024"
+                },
+                "done_when": "restatement_checked",
+                "evidence": [],
+                "id": "t4",
+                "reason": "",
+                "status": "pending",
+                "text": "检查 FY2024 是否被后续说明重述",
+                "tool": "check_restatement"
+              },
+              {
+                "arguments": {
+                  "doc_id": "doc_fy2025_adjusted"
+                },
+                "done_when": "read:doc_fy2025_adjusted",
+                "evidence": [],
+                "id": "t5",
+                "reason": "",
+                "status": "pending",
+                "text": "读取 FY2025 调整后口径补充材料",
+                "tool": "read_document"
+              },
+              {
+                "arguments": {
+                  "doc_id": "doc_fy2025_adjusted"
+                },
+                "done_when": "reconciled:FY2025",
+                "evidence": [],
+                "id": "t6",
+                "reason": "",
+                "status": "pending",
+                "text": "把调整后口径桥接到 IFRS",
+                "tool": "reconcile_basis"
+              },
+              {
+                "arguments": {
+                  "doc_id": "doc_fy2024_restated"
+                },
+                "done_when": "normalised:doc_fy2024_restated",
+                "evidence": [],
+                "id": "t7",
+                "reason": "",
+                "status": "pending",
+                "text": "把 FY2024 重述后金额归一到 CNY",
+                "tool": "normalize_units"
+              },
+              {
+                "arguments": {
+                  "doc_id": "doc_fy2025"
+                },
+                "done_when": "normalised:doc_fy2025",
+                "evidence": [],
+                "id": "t8",
+                "reason": "",
+                "status": "pending",
+                "text": "把 FY2025 金额归一到 CNY",
+                "tool": "normalize_units"
+              },
+              {
+                "arguments": {},
+                "done_when": "computed",
+                "evidence": [],
+                "id": "t9",
+                "reason": "",
+                "status": "pending",
+                "text": "计算并核对两期毛利率",
+                "tool": "calculate_margin"
+              }
+            ]
+          },
+          "round": 2
+        }
+      },
+      "prev_hash": "844540329746dc80f036298827c6af980d3cefb27edb7827c912a79988027f4e",
+      "hash": "7f6f2d9375c40205fda73a8700997101876af08b7552d1f8363d75ae69e2fd05",
+      "at": "2026-10-19T15:38:10.236Z"
+    },
+    {
+      "sequence": 13,
+      "type": "model_started",
+      "payload": {
+        "body_hash": "c604098dd4d0413741be8c83625493c1cb10f6ce894c020ad36c52821e01ff62",
+        "detail": {
+          "round": 3
+        }
+      },
+      "prev_hash": "7f6f2d9375c40205fda73a8700997101876af08b7552d1f8363d75ae69e2fd05",
+      "hash": "f52c0ac01ff32b69138d7cd8f06f83f3923e7460c06ac7af1aaa57a5a0cf5f61",
+      "at": "2026-10-19T15:38:10.236Z"
+    },
+    {
+      "sequence": 14,
+      "type": "plan_validated",
+      "payload": {
+        "body_hash": "b1136aff05835e8ca57292b8896c90960f4ef027412025a1c6b82e67ea89b46f",
+        "detail": {
+          "plan": {
+            "steps": [
+              {
+                "arguments": {
+                  "doc_id": "doc_fy2025"
+                },
+                "attempts": 0,
+                "error_code": null,
+                "id": "t3",
+                "result": null,
+                "result_hash": null,
+                "status": "pending",
+                "tool": "read_document"
+              }
+            ],
+            "version": "flowagent.plan/v1"
+          },
+          "round": 3
+        }
+      },
+      "prev_hash": "f52c0ac01ff32b69138d7cd8f06f83f3923e7460c06ac7af1aaa57a5a0cf5f61",
+      "hash": "d9655f053ab01b3bb2bddf457b3a9e3fe1a6a8f48c2899d1d79f9db66b62380f",
+      "at": "2026-10-19T15:38:10.237Z"
+    },
+    {
+      "sequence": 15,
+      "type": "tool_started",
+      "payload": {
+        "body_hash": "25aab6fcf58fbc1e8ce5df6fe39b050de12c7c932b288672df5cdffafe2c35bb",
+        "detail": {
+          "arguments": {
+            "doc_id": "doc_fy2025"
+          },
+          "round": 3,
+          "tool": "read_document"
+        }
+      },
+      "prev_hash": "d9655f053ab01b3bb2bddf457b3a9e3fe1a6a8f48c2899d1d79f9db66b62380f",
+      "hash": "d9ee61764adf98b1725b66846b08ba1734cebfb88231d586ae9b66d94c140431",
+      "at": "2026-10-19T15:38:10.237Z"
+    },
+    {
+      "sequence": 16,
+      "type": "tool_succeeded",
+      "payload": {
+        "body_hash": "95c948fe591a624c66bba544f1bbd78a7f8e8704658d081b0f524e8a4a0d7142",
+        "detail": {
+          "arguments": {
+            "doc_id": "doc_fy2025"
+          },
+          "result": {
+            "basis": "IFRS",
+            "body": "营业收入 1,120 百万元，营业成本 952 百万元，毛利 168 百万元。本表按国际财务报告准则（IFRS）编制，合并范围与上年一致。",
+            "gross_profit": 168,
+            "id": "doc_fy2025",
+            "kind": "annual_report",
+            "period": "FY2025",
+            "revenue": 1120,
+            "supersedes": null,
+            "title": "恒星智算 2025 年年度报告（合并口径）",
+            "unit": "CNY_1M",
+            "unit_label": "百万元"
+          },
+          "result_hash": "f6f9f8dfbfa1056f35fa89e84572c1e65ba38ca0a91b67526af590d6c3fab228",
+          "round": 3,
+          "tool": "read_document"
+        }
+      },
+      "prev_hash": "d9ee61764adf98b1725b66846b08ba1734cebfb88231d586ae9b66d94c140431",
+      "hash": "d8e0e0b2dfb15292269d3a74f60688142deabc781de5d7caf2cbdbbd967a406e",
+      "at": "2026-10-19T15:38:10.237Z"
+    },
+    {
+      "sequence": 17,
+      "type": "model_started",
+      "payload": {
+        "body_hash": "5346c8d7c9af4604833815bf8b1c2c9f61312824bd95d126bb37f8ba88da03eb",
+        "detail": {
+          "round": 4
+        }
+      },
+      "prev_hash": "d8e0e0b2dfb15292269d3a74f60688142deabc781de5d7caf2cbdbbd967a406e",
+      "hash": "97413a849db6e675a56e394fb1dc1c8e999d04fb6ffc3ebad27ef879ade1f2bf",
+      "at": "2026-10-19T15:38:10.239Z"
+    },
+    {
+      "sequence": 18,
+      "type": "plan_validated",
+      "payload": {
+        "body_hash": "f47b75c16778a9678131d09d423bbfc4d8c0b5383291bef2dbf82d1a5c0f7b2f",
+        "detail": {
+          "plan": {
+            "steps": [
+              {
+                "arguments": {
+                  "doc_id": "doc_fy2024"
+                },
+                "attempts": 0,
+                "error_code": null,
+                "id": "t4",
+                "result": null,
+                "result_hash": null,
+                "status": "pending",
+                "tool": "check_restatement"
+              }
+            ],
+            "version": "flowagent.plan/v1"
+          },
+          "round": 4
+        }
+      },
+      "prev_hash": "97413a849db6e675a56e394fb1dc1c8e999d04fb6ffc3ebad27ef879ade1f2bf",
+      "hash": "2ee2b9b7e6d11de4754721aa8cff61e53147a72bffab15e5c3d561954a24b1fc",
+      "at": "2026-10-19T15:38:10.239Z"
+    },
+    {
+      "sequence": 19,
+      "type": "tool_started",
+      "payload": {
+        "body_hash": "99357a0d6b4f592784581968c6999c5ae196535a3419397fb1deb570535395d8",
+        "detail": {
+          "arguments": {
+            "doc_id": "doc_fy2024"
+          },
+          "round": 4,
+          "tool": "check_restatement"
+        }
+      },
+      "prev_hash": "2ee2b9b7e6d11de4754721aa8cff61e53147a72bffab15e5c3d561954a24b1fc",
+      "hash": "7e31883590dbd5ba00646a207a4fe748573f3f6cb7aa48316eb0b170fd78d617",
+      "at": "2026-10-19T15:38:10.239Z"
+    },
+    {
+      "sequence": 20,
+      "type": "tool_succeeded",
+      "payload": {
+        "body_hash": "cebb9142878f97241854c3b6097c1431daafadecbc4deeb3e562fbcc1a4b483b",
+        "detail": {
+          "arguments": {
+            "doc_id": "doc_fy2024"
+          },
+          "result": {
+            "delta": -432,
+            "original_gross_profit": 15552,
+            "period": "FY2024",
+            "reason": "因将 432 万元履约成本由销售费用重分类至营业成本，2024 年毛利由 15,552 万元重述为 15,120 万元。本说明替代 2024 年年度报告中的对应金额。",
+            "restated": true,
+            "restated_gross_profit": 15120,
+            "superseded_by": "doc_fy2024_restated"
+          },
+          "result_hash": "2088f6ea307fb1572b4c7172ab7cd56cbebed888b1f3209edf97bcf6e7a0e89a",
+          "round": 4,
+          "tool": "check_restatement"
+        }
+      },
+      "prev_hash": "7e31883590dbd5ba00646a207a4fe748573f3f6cb7aa48316eb0b170fd78d617",
+      "hash": "8f8c640c8d51bc886912d49b9761cadd3c961fc7e18eeefe4bfe849482be1ad6",
+      "at": "2026-10-19T15:38:10.240Z"
+    },
+    {
+      "sequence": 21,
+      "type": "plan_updated",
+      "payload": {
+        "body_hash": "7ac54b99f11b5876bc6725b8ed9c7da20a7fa30effb5291ea1ba0bb063cac759",
+        "detail": {
+          "plan": {
+            "goal": "判断恒星智算 2024 与 2025 两期合并毛利率是否可比，并在可比时给出变化",
+            "revision": 1,
+            "todos": [
+              {
+                "arguments": {},
+                "done_when": "listed",
+                "evidence": [
+                  "8c555e29b41cd382da2f98801d9c73dcf86b58e0cb1f1cef87011badaf7410ee"
+                ],
+                "id": "t1",
+                "reason": "",
+                "status": "done",
+                "text": "列出本次评估可用的资料",
+                "tool": "list_documents"
+              },
+              {
+                "arguments": {
+                  "doc_id": "doc_fy2024"
+                },
+                "done_when": "read:doc_fy2024",
+                "evidence": [
+                  "b8b86c98b83a2b992afecac9a4a399f91437541bb369e3d93297fb373fcf9fb3"
+                ],
+                "id": "t2",
+                "reason": "",
+                "status": "done",
+                "text": "读取 FY2024 年报，确认单位与口径",
+                "tool": "read_document"
+              },
+              {
+                "arguments": {
+                  "doc_id": "doc_fy2025"
+                },
+                "done_when": "read:doc_fy2025",
+                "evidence": [
+                  "f6f9f8dfbfa1056f35fa89e84572c1e65ba38ca0a91b67526af590d6c3fab228"
+                ],
+                "id": "t3",
+                "reason": "",
+                "status": "done",
+                "text": "读取 FY2025 年报，确认单位与口径",
+                "tool": "read_document"
+              },
+              {
+                "arguments": {
+                  "doc_id": "doc_fy2024"
+                },
+                "done_when": "restatement_checked",
+                "evidence": [
+                  "2088f6ea307fb1572b4c7172ab7cd56cbebed888b1f3209edf97bcf6e7a0e89a"
+                ],
+                "id": "t4",
+                "reason": "",
+                "status": "done",
+                "text": "检查 FY2024 是否被后续说明重述",
+                "tool": "check_restatement"
+              },
+              {
+                "arguments": {
+                  "doc_id": "doc_fy2025_adjusted"
+                },
+                "done_when": "read:doc_fy2025_adjusted",
+                "evidence": [],
+                "id": "t5",
+                "reason": "",
+                "status": "pending",
+                "text": "读取 FY2025 调整后口径补充材料",
+                "tool": "read_document"
+              },
+              {
+                "arguments": {
+                  "doc_id": "doc_fy2025_adjusted"
+                },
+                "done_when": "reconciled:FY2025",
+                "evidence": [],
+                "id": "t6",
+                "reason": "",
+                "status": "pending",
+                "text": "把调整后口径桥接到 IFRS",
+                "tool": "reconcile_basis"
+              },
+              {
+                "arguments": {
+                  "doc_id": "doc_fy2024_restated"
+                },
+                "done_when": "normalised:doc_fy2024_restated",
+                "evidence": [],
+                "id": "t7",
+                "reason": "",
+                "status": "pending",
+                "text": "把 FY2024 重述后金额归一到 CNY",
+                "tool": "normalize_units"
+              },
+              {
+                "arguments": {
+                  "doc_id": "doc_fy2025"
+                },
+                "done_when": "normalised:doc_fy2025",
+                "evidence": [],
+                "id": "t8",
+                "reason": "",
+                "status": "pending",
+                "text": "把 FY2025 金额归一到 CNY",
+                "tool": "normalize_units"
+              },
+              {
+                "arguments": {},
+                "done_when": "computed",
+                "evidence": [],
+                "id": "t9",
+                "reason": "",
+                "status": "pending",
+                "text": "计算并核对两期毛利率",
+                "tool": "calculate_margin"
+              }
+            ]
+          },
+          "round": 4
+        }
+      },
+      "prev_hash": "8f8c640c8d51bc886912d49b9761cadd3c961fc7e18eeefe4bfe849482be1ad6",
+      "hash": "2b3e7502b490f08266674355983183b125b0ff09284945d27ae7449305a6a275",
+      "at": "2026-10-19T15:38:10.240Z"
+    },
+    {
+      "sequence": 22,
+      "type": "model_started",
+      "payload": {
+        "body_hash": "7be9ee351475bb1c93d4e45de4d029b4ce42ab375ee067fb6d76335f6c85892c",
+        "detail": {
+          "round": 5
+        }
+      },
+      "prev_hash": "2b3e7502b490f08266674355983183b125b0ff09284945d27ae7449305a6a275",
+      "hash": "07639685cfd24eeb0ebc73876c55ebf404bc49a1534aff41e57479bfd4d96c09",
+      "at": "2026-10-19T15:38:10.240Z"
+    },
+    {
+      "sequence": 23,
+      "type": "plan_validated",
+      "payload": {
+        "body_hash": "18bce042b5c8a727250490354ff27e68d251e68f6604d5717eb1181f0801de98",
+        "detail": {
+          "plan": {
+            "steps": [
+              {
+                "arguments": {
+                  "doc_id": "doc_fy2025_adjusted"
+                },
+                "attempts": 0,
+                "error_code": null,
+                "id": "t5",
+                "result": null,
+                "result_hash": null,
+                "status": "pending",
+                "tool": "read_document"
+              }
+            ],
+            "version": "flowagent.plan/v1"
+          },
+          "round": 5
+        }
+      },
+      "prev_hash": "07639685cfd24eeb0ebc73876c55ebf404bc49a1534aff41e57479bfd4d96c09",
+      "hash": "d473972bdb8efbbe06646d3a124b185bb74945ec9282126492a9a3d126ee55c4",
+      "at": "2026-10-19T15:38:10.240Z"
+    },
+    {
+      "sequence": 24,
+      "type": "tool_started",
+      "payload": {
+        "body_hash": "4f289e2c331b0ef04dc4919b4a1ffc2888835214db745b8094ee51daeddebb26",
+        "detail": {
+          "arguments": {
+            "doc_id": "doc_fy2025_adjusted"
+          },
+          "round": 5,
+          "tool": "read_document"
+        }
+      },
+      "prev_hash": "d473972bdb8efbbe06646d3a124b185bb74945ec9282126492a9a3d126ee55c4",
+      "hash": "866c5666703087c52af3a67dca522b8bad8293435a63eb11108dc4fa7fd42c22",
+      "at": "2026-10-19T15:38:10.241Z"
+    },
+    {
+      "sequence": 25,
+      "type": "tool_succeeded",
+      "payload": {
+        "body_hash": "7702fff984234d458385e73152a60f98506fdc2d1b4f5232d9261387b132a462",
+        "detail": {
+          "arguments": {
+            "doc_id": "doc_fy2025_adjusted"
+          },
+          "result": {
+            "basis": "adjusted",
+            "body": "调整后毛利 196 百万元，已加回股权激励费用 28 百万元。该口径不是 IFRS 口径，仅供内部管理使用。",
+            "gross_profit": 196,
+            "id": "doc_fy2025_adjusted",
+            "kind": "supplement",
+            "period": "FY2025",
+            "revenue": 1120,
+            "supersedes": null,
+            "title": "恒星智算 2025 年调整后口径补充材料",
+            "unit": "CNY_1M",
+            "unit_label": "百万元"
+          },
+          "result_hash": "e20268fee279e511ed7159c4f50376a03debe88e74245325ec7f327e4d2f30b5",
+          "round": 5,
+          "tool": "read_document"
+        }
+      },
+      "prev_hash": "866c5666703087c52af3a67dca522b8bad8293435a63eb11108dc4fa7fd42c22",
+      "hash": "56b1efa6c33244fa31e70f15f027f555759e2cac781f053a8a3d7d61438c14e6",
+      "at": "2026-10-19T15:38:10.241Z"
+    },
+    {
+      "sequence": 26,
+      "type": "plan_updated",
+      "payload": {
+        "body_hash": "6c8552dcf3e3e9203c6513ff5e34b05692d2a9f6c0ffad15809e6999994be9fe",
+        "detail": {
+          "plan": {
+            "goal": "判断恒星智算 2024 与 2025 两期合并毛利率是否可比，并在可比时给出变化",
+            "revision": 1,
+            "todos": [
+              {
+                "arguments": {},
+                "done_when": "listed",
+                "evidence": [
+                  "8c555e29b41cd382da2f98801d9c73dcf86b58e0cb1f1cef87011badaf7410ee"
+                ],
+                "id": "t1",
+                "reason": "",
+                "status": "done",
+                "text": "列出本次评估可用的资料",
+                "tool": "list_documents"
+              },
+              {
+                "arguments": {
+                  "doc_id": "doc_fy2024"
+                },
+                "done_when": "read:doc_fy2024",
+                "evidence": [
+                  "b8b86c98b83a2b992afecac9a4a399f91437541bb369e3d93297fb373fcf9fb3"
+                ],
+                "id": "t2",
+                "reason": "",
+                "status": "done",
+                "text": "读取 FY2024 年报，确认单位与口径",
+                "tool": "read_document"
+              },
+              {
+                "arguments": {
+                  "doc_id": "doc_fy2025"
+                },
+                "done_when": "read:doc_fy2025",
+                "evidence": [
+                  "f6f9f8dfbfa1056f35fa89e84572c1e65ba38ca0a91b67526af590d6c3fab228"
+                ],
+                "id": "t3",
+                "reason": "",
+                "status": "done",
+                "text": "读取 FY2025 年报，确认单位与口径",
+                "tool": "read_document"
+              },
+              {
+                "arguments": {
+                  "doc_id": "doc_fy2024"
+                },
+                "done_when": "restatement_checked",
+                "evidence": [
+                  "2088f6ea307fb1572b4c7172ab7cd56cbebed888b1f3209edf97bcf6e7a0e89a"
+                ],
+                "id": "t4",
+                "reason": "",
+                "status": "done",
+                "text": "检查 FY2024 是否被后续说明重述",
+                "tool": "check_restatement"
+              },
+              {
+                "arguments": {
+                  "doc_id": "doc_fy2025_adjusted"
+                },
+                "done_when": "read:doc_fy2025_adjusted",
+                "evidence": [
+                  "e20268fee279e511ed7159c4f50376a03debe88e74245325ec7f327e4d2f30b5"
+                ],
+                "id": "t5",
+                "reason": "",
+                "status": "done",
+                "text": "读取 FY2025 调整后口径补充材料",
+                "tool": "read_document"
+              },
+              {
+                "arguments": {
+                  "doc_id": "doc_fy2025_adjusted"
+                },
+                "done_when": "reconciled:FY2025",
+                "evidence": [],
+                "id": "t6",
+                "reason": "",
+                "status": "pending",
+                "text": "把调整后口径桥接到 IFRS",
+                "tool": "reconcile_basis"
+              },
+              {
+                "arguments": {
+                  "doc_id": "doc_fy2024_restated"
+                },
+                "done_when": "normalised:doc_fy2024_restated",
+                "evidence": [],
+                "id": "t7",
+                "reason": "",
+                "status": "pending",
+                "text": "把 FY2024 重述后金额归一到 CNY",
+                "tool": "normalize_units"
+              },
+              {
+                "arguments": {
+                  "doc_id": "doc_fy2025"
+                },
+                "done_when": "normalised:doc_fy2025",
+                "evidence": [],
+                "id": "t8",
+                "reason": "",
+                "status": "pending",
+                "text": "把 FY2025 金额归一到 CNY",
+                "tool": "normalize_units"
+              },
+              {
+                "arguments": {},
+                "done_when": "computed",
+                "evidence": [],
+                "id": "t9",
+                "reason": "",
+                "status": "pending",
+                "text": "计算并核对两期毛利率",
+                "tool": "calculate_margin"
+              }
+            ]
+          },
+          "round": 5
+        }
+      },
+      "prev_hash": "56b1efa6c33244fa31e70f15f027f555759e2cac781f053a8a3d7d61438c14e6",
+      "hash": "a2301896145cfb0be50dc798a471e7bb241cf1805138492f5afc827c6740fb5b",
+      "at": "2026-10-19T15:38:10.241Z"
+    },
+    {
+      "sequence": 27,
+      "type": "model_started",
+      "payload": {
+        "body_hash": "0f12855d3b960aa22ece3a5a81c746c240453b2a5031b2ff1320289cc6f44588",
+        "detail": {
+          "round": 6
+        }
+      },
+      "prev_hash": "a2301896145cfb0be50dc798a471e7bb241cf1805138492f5afc827c6740fb5b",
+      "hash": "ac28590cc70704b13ace1e346cb57f061ef6c37478e419e477fb6563e062e7bf",
+      "at": "2026-10-19T15:38:10.241Z"
+    },
+    {
+      "sequence": 28,
+      "type": "plan_validated",
+      "payload": {
+        "body_hash": "4b549fe187a94a2244cfe4faa312f59c4ea71275ace194b1bc103f8566dcd6fd",
+        "detail": {
+          "plan": {
+            "steps": [
+              {
+                "arguments": {
+                  "doc_id": "doc_fy2025_adjusted"
+                },
+                "attempts": 0,
+                "error_code": null,
+                "id": "t6",
+                "result": null,
+                "result_hash": null,
+                "status": "pending",
+                "tool": "reconcile_basis"
+              }
+            ],
+            "version": "flowagent.plan/v1"
+          },
+          "round": 6
+        }
+      },
+      "prev_hash": "ac28590cc70704b13ace1e346cb57f061ef6c37478e419e477fb6563e062e7bf",
+      "hash": "4ca610953c361386a5a530e23db71f6ccb4ef714e4786639ee0bee219b302d30",
+      "at": "2026-10-19T15:38:10.242Z"
+    },
+    {
+      "sequence": 29,
+      "type": "tool_started",
+      "payload": {
+        "body_hash": "504d2ef306091f388bd5d91e25560f48e90f20075e348032ab3f257f3f1724f2",
+        "detail": {
+          "arguments": {
+            "doc_id": "doc_fy2025_adjusted"
+          },
+          "round": 6,
+          "tool": "reconcile_basis"
+        }
+      },
+      "prev_hash": "4ca610953c361386a5a530e23db71f6ccb4ef714e4786639ee0bee219b302d30",
+      "hash": "40f31b963ca582ca7063db94cf2df3407ef6906d3e02b40da3f2c4f27927d9dc",
+      "at": "2026-10-19T15:38:10.242Z"
+    },
+    {
+      "sequence": 30,
+      "type": "tool_succeeded",
+      "payload": {
+        "body_hash": "64b38a97865a6db647735e26a16ec89bc1cfc7ae9f0b25e013fb601ab1e32f86",
+        "detail": {
+          "arguments": {
+            "doc_id": "doc_fy2025_adjusted"
+          },
+          "result": {
+            "bridge_id": "doc_fy2025_bridge",
+            "delta": -28,
+            "from_basis": "adjusted",
+            "period": "FY2025",
+            "reason": "股权激励费用 28 百万元由营业成本转回期间费用",
+            "reconciled_gross_profit": 168,
+            "to_basis": "IFRS"
+          },
+          "result_hash": "67b5631481bad9ac2c3f56ef9566ecb463decef256485422fafae4392409f024",
+          "round": 6,
+          "tool": "reconcile_basis"
+        }
+      },
+      "prev_hash": "40f31b963ca582ca7063db94cf2df3407ef6906d3e02b40da3f2c4f27927d9dc",
+      "hash": "0a1a118775f0be64538843a05975cc49b844482b99eea6d69bd75f8046263e73",
+      "at": "2026-10-19T15:38:10.242Z"
+    },
+    {
+      "sequence": 31,
+      "type": "plan_updated",
+      "payload": {
+        "body_hash": "9cd8546d7795b96fda58dae2f4ab4b29cb3cc9d56b9a04bc4eebfe941001b8dc",
+        "detail": {
+          "plan": {
+            "goal": "判断恒星智算 2024 与 2025 两期合并毛利率是否可比，并在可比时给出变化",
+            "revision": 1,
+            "todos": [
+              {
+                "arguments": {},
+                "done_when": "listed",
+                "evidence": [
+                  "8c555e29b41cd382da2f98801d9c73dcf86b58e0cb1f1cef87011badaf7410ee"
+                ],
+                "id": "t1",
+                "reason": "",
+                "status": "done",
+                "text": "列出本次评估可用的资料",
+                "tool": "list_documents"
+              },
+              {
+                "arguments": {
+                  "doc_id": "doc_fy2024"
+                },
+                "done_when": "read:doc_fy2024",
+                "evidence": [
+                  "b8b86c98b83a2b992afecac9a4a399f91437541bb369e3d93297fb373fcf9fb3"
+                ],
+                "id": "t2",
+                "reason": "",
+                "status": "done",
+                "text": "读取 FY2024 年报，确认单位与口径",
+                "tool": "read_document"
+              },
+              {
+                "arguments": {
+                  "doc_id": "doc_fy2025"
+                },
+                "done_when": "read:doc_fy2025",
+                "evidence": [
+                  "f6f9f8dfbfa1056f35fa89e84572c1e65ba38ca0a91b67526af590d6c3fab228"
+                ],
+                "id": "t3",
+                "reason": "",
+                "status": "done",
+                "text": "读取 FY2025 年报，确认单位与口径",
+                "tool": "read_document"
+              },
+              {
+                "arguments": {
+                  "doc_id": "doc_fy2024"
+                },
+                "done_when": "restatement_checked",
+                "evidence": [
+                  "2088f6ea307fb1572b4c7172ab7cd56cbebed888b1f3209edf97bcf6e7a0e89a"
+                ],
+                "id": "t4",
+                "reason": "",
+                "status": "done",
+                "text": "检查 FY2024 是否被后续说明重述",
+                "tool": "check_restatement"
+              },
+              {
+                "arguments": {
+                  "doc_id": "doc_fy2025_adjusted"
+                },
+                "done_when": "read:doc_fy2025_adjusted",
+                "evidence": [
+                  "e20268fee279e511ed7159c4f50376a03debe88e74245325ec7f327e4d2f30b5"
+                ],
+                "id": "t5",
+                "reason": "",
+                "status": "done",
+                "text": "读取 FY2025 调整后口径补充材料",
+                "tool": "read_document"
+              },
+              {
+                "arguments": {
+                  "doc_id": "doc_fy2025_adjusted"
+                },
+                "done_when": "reconciled:FY2025",
+                "evidence": [
+                  "67b5631481bad9ac2c3f56ef9566ecb463decef256485422fafae4392409f024"
+                ],
+                "id": "t6",
+                "reason": "",
+                "status": "done",
+                "text": "把调整后口径桥接到 IFRS",
+                "tool": "reconcile_basis"
+              },
+              {
+                "arguments": {
+                  "doc_id": "doc_fy2024_restated"
+                },
+                "done_when": "normalised:doc_fy2024_restated",
+                "evidence": [],
+                "id": "t7",
+                "reason": "",
+                "status": "pending",
+                "text": "把 FY2024 重述后金额归一到 CNY",
+                "tool": "normalize_units"
+              },
+              {
+                "arguments": {
+                  "doc_id": "doc_fy2025"
+                },
+                "done_when": "normalised:doc_fy2025",
+                "evidence": [],
+                "id": "t8",
+                "reason": "",
+                "status": "pending",
+                "text": "把 FY2025 金额归一到 CNY",
+                "tool": "normalize_units"
+              },
+              {
+                "arguments": {},
+                "done_when": "computed",
+                "evidence": [],
+                "id": "t9",
+                "reason": "",
+                "status": "pending",
+                "text": "计算并核对两期毛利率",
+                "tool": "calculate_margin"
+              }
+            ]
+          },
+          "round": 6
+        }
+      },
+      "prev_hash": "0a1a118775f0be64538843a05975cc49b844482b99eea6d69bd75f8046263e73",
+      "hash": "38fbfc509bdfeea9384e9a2d051880d6b8ce6ae9beed65e887191d5e74145183",
+      "at": "2026-10-19T15:38:10.242Z"
+    },
+    {
+      "sequence": 32,
+      "type": "model_started",
+      "payload": {
+        "body_hash": "9a682adbd3a2a32c76869761086b79dcb2911df87447247dd7259066e8eb807f",
+        "detail": {
+          "round": 7
+        }
+      },
+      "prev_hash": "38fbfc509bdfeea9384e9a2d051880d6b8ce6ae9beed65e887191d5e74145183",
+      "hash": "cf06080ecae0d9d0f535f1842cffb8c159033a45dfec4a9efa56bdecd4fdaab4",
+      "at": "2026-10-19T15:38:10.242Z"
+    },
+    {
+      "sequence": 33,
+      "type": "plan_validated",
+      "payload": {
+        "body_hash": "8c7cdecbc0099a340858a597ca34558b37b2440f75ba4c563bad6fa3ee96e040",
+        "detail": {
+          "plan": {
+            "steps": [
+              {
+                "arguments": {
+                  "doc_id": "doc_fy2024_restated"
+                },
+                "attempts": 0,
+                "error_code": null,
+                "id": "t7",
+                "result": null,
+                "result_hash": null,
+                "status": "pending",
+                "tool": "normalize_units"
+              }
+            ],
+            "version": "flowagent.plan/v1"
+          },
+          "round": 7
+        }
+      },
+      "prev_hash": "cf06080ecae0d9d0f535f1842cffb8c159033a45dfec4a9efa56bdecd4fdaab4",
+      "hash": "2e3895cba85a59aa0a1e83f209fcd0ddb31d96cf1b41a9e477e26fec11031ef1",
+      "at": "2026-10-19T15:38:10.243Z"
+    },
+    {
+      "sequence": 34,
+      "type": "tool_started",
+      "payload": {
+        "body_hash": "9fde8e5225831984c83bf4fc36e4000f594b13608daa4a1e3f66ce60a0400fb6",
+        "detail": {
+          "arguments": {
+            "doc_id": "doc_fy2024_restated"
+          },
+          "round": 7,
+          "tool": "normalize_units"
+        }
+      },
+      "prev_hash": "2e3895cba85a59aa0a1e83f209fcd0ddb31d96cf1b41a9e477e26fec11031ef1",
+      "hash": "2ad3433e937e169c08eb0ff1e26f879fe4460a0ffa262f768585cd3a986200b2",
+      "at": "2026-10-19T15:38:10.243Z"
+    },
+    {
+      "sequence": 35,
+      "type": "tool_succeeded",
+      "payload": {
+        "body_hash": "633fd5717bc97f347a0ba6068d3b7a795f2749d62af940df975f0b3ae69e72e6",
+        "detail": {
+          "arguments": {
+            "doc_id": "doc_fy2024_restated"
+          },
+          "result": {
+            "factor": 10000,
+            "gross_profit_cny": 151200000,
+            "id": "doc_fy2024_restated",
+            "period": "FY2024",
+            "revenue_cny": 864000000,
+            "source_unit": "CNY_10K",
+            "target_unit": "CNY"
+          },
+          "result_hash": "5dbb7422f2dbb073b2b777478851815293642ad0da2c39c1e340b0ca5cca74cc",
+          "round": 7,
+          "tool": "normalize_units"
+        }
+      },
+      "prev_hash": "2ad3433e937e169c08eb0ff1e26f879fe4460a0ffa262f768585cd3a986200b2",
+      "hash": "78c536ff816a32e9c8a1648fb262ebc7ddb6d61b62c9c513ba85f485971f81d0",
+      "at": "2026-10-19T15:38:10.243Z"
+    },
+    {
+      "sequence": 36,
+      "type": "plan_updated",
+      "payload": {
+        "body_hash": "2770ef1da1a35c09a944a9a797acad5585cbab8cf108e2b63af73186a132bdb3",
+        "detail": {
+          "plan": {
+            "goal": "判断恒星智算 2024 与 2025 两期合并毛利率是否可比，并在可比时给出变化",
+            "revision": 1,
+            "todos": [
+              {
+                "arguments": {},
+                "done_when": "listed",
+                "evidence": [
+                  "8c555e29b41cd382da2f98801d9c73dcf86b58e0cb1f1cef87011badaf7410ee"
+                ],
+                "id": "t1",
+                "reason": "",
+                "status": "done",
+                "text": "列出本次评估可用的资料",
+                "tool": "list_documents"
+              },
+              {
+                "arguments": {
+                  "doc_id": "doc_fy2024"
+                },
+                "done_when": "read:doc_fy2024",
+                "evidence": [
+                  "b8b86c98b83a2b992afecac9a4a399f91437541bb369e3d93297fb373fcf9fb3"
+                ],
+                "id": "t2",
+                "reason": "",
+                "status": "done",
+                "text": "读取 FY2024 年报，确认单位与口径",
+                "tool": "read_document"
+              },
+              {
+                "arguments": {
+                  "doc_id": "doc_fy2025"
+                },
+                "done_when": "read:doc_fy2025",
+                "evidence": [
+                  "f6f9f8dfbfa1056f35fa89e84572c1e65ba38ca0a91b67526af590d6c3fab228"
+                ],
+                "id": "t3",
+                "reason": "",
+                "status": "done",
+                "text": "读取 FY2025 年报，确认单位与口径",
+                "tool": "read_document"
+              },
+              {
+                "arguments": {
+                  "doc_id": "doc_fy2024"
+                },
+                "done_when": "restatement_checked",
+                "evidence": [
+                  "2088f6ea307fb1572b4c7172ab7cd56cbebed888b1f3209edf97bcf6e7a0e89a"
+                ],
+                "id": "t4",
+                "reason": "",
+                "status": "done",
+                "text": "检查 FY2024 是否被后续说明重述",
+                "tool": "check_restatement"
+              },
+              {
+                "arguments": {
+                  "doc_id": "doc_fy2025_adjusted"
+                },
+                "done_when": "read:doc_fy2025_adjusted",
+                "evidence": [
+                  "e20268fee279e511ed7159c4f50376a03debe88e74245325ec7f327e4d2f30b5"
+                ],
+                "id": "t5",
+                "reason": "",
+                "status": "done",
+                "text": "读取 FY2025 调整后口径补充材料",
+                "tool": "read_document"
+              },
+              {
+                "arguments": {
+                  "doc_id": "doc_fy2025_adjusted"
+                },
+                "done_when": "reconciled:FY2025",
+                "evidence": [
+                  "67b5631481bad9ac2c3f56ef9566ecb463decef256485422fafae4392409f024"
+                ],
+                "id": "t6",
+                "reason": "",
+                "status": "done",
+                "text": "把调整后口径桥接到 IFRS",
+                "tool": "reconcile_basis"
+              },
+              {
+                "arguments": {
+                  "doc_id": "doc_fy2024_restated"
+                },
+                "done_when": "normalised:doc_fy2024_restated",
+                "evidence": [
+                  "5dbb7422f2dbb073b2b777478851815293642ad0da2c39c1e340b0ca5cca74cc"
+                ],
+                "id": "t7",
+                "reason": "",
+                "status": "done",
+                "text": "把 FY2024 重述后金额归一到 CNY",
+                "tool": "normalize_units"
+              },
+              {
+                "arguments": {
+                  "doc_id": "doc_fy2025"
+                },
+                "done_when": "normalised:doc_fy2025",
+                "evidence": [],
+                "id": "t8",
+                "reason": "",
+                "status": "pending",
+                "text": "把 FY2025 金额归一到 CNY",
+                "tool": "normalize_units"
+              },
+              {
+                "arguments": {},
+                "done_when": "computed",
+                "evidence": [],
+                "id": "t9",
+                "reason": "",
+                "status": "pending",
+                "text": "计算并核对两期毛利率",
+                "tool": "calculate_margin"
+              }
+            ]
+          },
+          "round": 7
+        }
+      },
+      "prev_hash": "78c536ff816a32e9c8a1648fb262ebc7ddb6d61b62c9c513ba85f485971f81d0",
+      "hash": "aa78b170778ba4a5e680d99894d605b615463f47a097ffbc04aedc11fa48ac44",
+      "at": "2026-10-19T15:38:10.243Z"
+    },
+    {
+      "sequence": 37,
+      "type": "model_started",
+      "payload": {
+        "body_hash": "237ff6bdb709179e9a9fe4b1e6c883ea509e92b0c58f92a334528809c3259b6b",
+        "detail": {
+          "round": 8
+        }
+      },
+      "prev_hash": "aa78b170778ba4a5e680d99894d605b615463f47a097ffbc04aedc11fa48ac44",
+      "hash": "3b5c7774a6b3000ab1d940093f89a61c1f6f8eb5b13b8cb016b746f8395f4483",
+      "at": "2026-10-19T15:38:10.244Z"
+    },
+    {
+      "sequence": 38,
+      "type": "plan_validated",
+      "payload": {
+        "body_hash": "2c1762774040bae18bf123706ab6437ee5c19d16f997b768345b650ed48d97c5",
+        "detail": {
+          "plan": {
+            "steps": [
+              {
+                "arguments": {
+                  "doc_id": "doc_fy2025"
+                },
+                "attempts": 0,
+                "error_code": null,
+                "id": "t8",
+                "result": null,
+                "result_hash": null,
+                "status": "pending",
+                "tool": "normalize_units"
+              }
+            ],
+            "version": "flowagent.plan/v1"
+          },
+          "round": 8
+        }
+      },
+      "prev_hash": "3b5c7774a6b3000ab1d940093f89a61c1f6f8eb5b13b8cb016b746f8395f4483",
+      "hash": "6e51c6040ba4fa158855fd6ed8f64fbc001106306881c8e27dbcb9a851e9cd41",
+      "at": "2026-10-19T15:38:10.244Z"
+    },
+    {
+      "sequence": 39,
+      "type": "tool_started",
+      "payload": {
+        "body_hash": "95b42459f6151c1e63c875b43d3c9134c23c2628f45ddac28d0048c83d0bdbd5",
+        "detail": {
+          "arguments": {
+            "doc_id": "doc_fy2025"
+          },
+          "round": 8,
+          "tool": "normalize_units"
+        }
+      },
+      "prev_hash": "6e51c6040ba4fa158855fd6ed8f64fbc001106306881c8e27dbcb9a851e9cd41",
+      "hash": "d0ce6da7b75cdfd78a5ca3fdc924b564b3e0455ba3cd44062568a59ebf6e2f8b",
+      "at": "2026-10-19T15:38:10.244Z"
+    },
+    {
+      "sequence": 40,
+      "type": "tool_succeeded",
+      "payload": {
+        "body_hash": "b81b6baad52709f9e53d9cbe6767c42a21d08ad3346e0a8b6e4a5763fc367156",
+        "detail": {
+          "arguments": {
+            "doc_id": "doc_fy2025"
+          },
+          "result": {
+            "factor": 1000000,
+            "gross_profit_cny": 168000000,
+            "id": "doc_fy2025",
+            "period": "FY2025",
+            "revenue_cny": 1120000000,
+            "source_unit": "CNY_1M",
+            "target_unit": "CNY"
+          },
+          "result_hash": "fb9670c1564dbb48513f59c6dc0e6e54a7526c59304e82f21ff87f25fd897aac",
+          "round": 8,
+          "tool": "normalize_units"
+        }
+      },
+      "prev_hash": "d0ce6da7b75cdfd78a5ca3fdc924b564b3e0455ba3cd44062568a59ebf6e2f8b",
+      "hash": "3f0d7700e479318622586c08b53cc7067ab3a9ef51e59328ecd80a2e51b1a36b",
+      "at": "2026-10-19T15:38:10.244Z"
+    },
+    {
+      "sequence": 41,
+      "type": "plan_updated",
+      "payload": {
+        "body_hash": "e447d4440de500a9339dbad0b0bf764707f48b21c04e75337c5a392db0853a29",
+        "detail": {
+          "plan": {
+            "goal": "判断恒星智算 2024 与 2025 两期合并毛利率是否可比，并在可比时给出变化",
+            "revision": 1,
+            "todos": [
+              {
+                "arguments": {},
+                "done_when": "listed",
+                "evidence": [
+                  "8c555e29b41cd382da2f98801d9c73dcf86b58e0cb1f1cef87011badaf7410ee"
+                ],
+                "id": "t1",
+                "reason": "",
+                "status": "done",
+                "text": "列出本次评估可用的资料",
+                "tool": "list_documents"
+              },
+              {
+                "arguments": {
+                  "doc_id": "doc_fy2024"
+                },
+                "done_when": "read:doc_fy2024",
+                "evidence": [
+                  "b8b86c98b83a2b992afecac9a4a399f91437541bb369e3d93297fb373fcf9fb3"
+                ],
+                "id": "t2",
+                "reason": "",
+                "status": "done",
+                "text": "读取 FY2024 年报，确认单位与口径",
+                "tool": "read_document"
+              },
+              {
+                "arguments": {
+                  "doc_id": "doc_fy2025"
+                },
+                "done_when": "read:doc_fy2025",
+                "evidence": [
+                  "f6f9f8dfbfa1056f35fa89e84572c1e65ba38ca0a91b67526af590d6c3fab228"
+                ],
+                "id": "t3",
+                "reason": "",
+                "status": "done",
+                "text": "读取 FY2025 年报，确认单位与口径",
+                "tool": "read_document"
+              },
+              {
+                "arguments": {
+                  "doc_id": "doc_fy2024"
+                },
+                "done_when": "restatement_checked",
+                "evidence": [
+                  "2088f6ea307fb1572b4c7172ab7cd56cbebed888b1f3209edf97bcf6e7a0e89a"
+                ],
+                "id": "t4",
+                "reason": "",
+                "status": "done",
+                "text": "检查 FY2024 是否被后续说明重述",
+                "tool": "check_restatement"
+              },
+              {
+                "arguments": {
+                  "doc_id": "doc_fy2025_adjusted"
+                },
+                "done_when": "read:doc_fy2025_adjusted",
+                "evidence": [
+                  "e20268fee279e511ed7159c4f50376a03debe88e74245325ec7f327e4d2f30b5"
+                ],
+                "id": "t5",
+                "reason": "",
+                "status": "done",
+                "text": "读取 FY2025 调整后口径补充材料",
+                "tool": "read_document"
+              },
+              {
+                "arguments": {
+                  "doc_id": "doc_fy2025_adjusted"
+                },
+                "done_when": "reconciled:FY2025",
+                "evidence": [
+                  "67b5631481bad9ac2c3f56ef9566ecb463decef256485422fafae4392409f024"
+                ],
+                "id": "t6",
+                "reason": "",
+                "status": "done",
+                "text": "把调整后口径桥接到 IFRS",
+                "tool": "reconcile_basis"
+              },
+              {
+                "arguments": {
+                  "doc_id": "doc_fy2024_restated"
+                },
+                "done_when": "normalised:doc_fy2024_restated",
+                "evidence": [
+                  "5dbb7422f2dbb073b2b777478851815293642ad0da2c39c1e340b0ca5cca74cc"
+                ],
+                "id": "t7",
+                "reason": "",
+                "status": "done",
+                "text": "把 FY2024 重述后金额归一到 CNY",
+                "tool": "normalize_units"
+              },
+              {
+                "arguments": {
+                  "doc_id": "doc_fy2025"
+                },
+                "done_when": "normalised:doc_fy2025",
+                "evidence": [
+                  "fb9670c1564dbb48513f59c6dc0e6e54a7526c59304e82f21ff87f25fd897aac"
+                ],
+                "id": "t8",
+                "reason": "",
+                "status": "done",
+                "text": "把 FY2025 金额归一到 CNY",
+                "tool": "normalize_units"
+              },
+              {
+                "arguments": {},
+                "done_when": "computed",
+                "evidence": [],
+                "id": "t9",
+                "reason": "",
+                "status": "pending",
+                "text": "计算并核对两期毛利率",
+                "tool": "calculate_margin"
+              }
+            ]
+          },
+          "round": 8
+        }
+      },
+      "prev_hash": "3f0d7700e479318622586c08b53cc7067ab3a9ef51e59328ecd80a2e51b1a36b",
+      "hash": "a47447c985ab38128cac8b9eaeda3c63538394d9394a5eccb3dc91372581a6ae",
+      "at": "2026-10-19T15:38:10.244Z"
+    },
+    {
+      "sequence": 42,
+      "type": "model_started",
+      "payload": {
+        "body_hash": "2828a4ce1a72e0ceb05acbb9e3dffff4754217ba8e230bdc92acfbf54c557794",
+        "detail": {
+          "round": 9
+        }
+      },
+      "prev_hash": "a47447c985ab38128cac8b9eaeda3c63538394d9394a5eccb3dc91372581a6ae",
+      "hash": "70fd7ad4ab9bf5039bcfe59a4323f4823ddf07d3aa4f819d2203eea00feb45ab",
+      "at": "2026-10-19T15:38:10.245Z"
+    },
+    {
+      "sequence": 43,
+      "type": "plan_validated",
+      "payload": {
+        "body_hash": "25167097d0f902b02cee2165977319b02d6d3db30113df9eaa226b9a390b79ea",
+        "detail": {
+          "plan": {
+            "steps": [
+              {
+                "arguments": {},
+                "attempts": 0,
+                "error_code": null,
+                "id": "t9",
+                "result": null,
+                "result_hash": null,
+                "status": "pending",
+                "tool": "calculate_margin"
+              }
+            ],
+            "version": "flowagent.plan/v1"
+          },
+          "round": 9
+        }
+      },
+      "prev_hash": "70fd7ad4ab9bf5039bcfe59a4323f4823ddf07d3aa4f819d2203eea00feb45ab",
+      "hash": "b5e3599dcd55eac65236480a864ba998d9216d154c964c220ecb13378d9e1e2c",
+      "at": "2026-10-19T15:38:10.245Z"
+    },
+    {
+      "sequence": 44,
+      "type": "tool_started",
+      "payload": {
+        "body_hash": "c9e875e6c5d8da7f8c36bdbbabbbeb8e1b849d07e9b2c61964a8c290d2441d02",
+        "detail": {
+          "arguments": {},
+          "round": 9,
+          "tool": "calculate_margin"
+        }
+      },
+      "prev_hash": "b5e3599dcd55eac65236480a864ba998d9216d154c964c220ecb13378d9e1e2c",
+      "hash": "a543ebcef2a2ea144d2e4768bde025f52ccff6de1d4fa5c695dd5d7f5882b826",
+      "at": "2026-10-19T15:38:10.245Z"
+    },
+    {
+      "sequence": 45,
+      "type": "tool_succeeded",
+      "payload": {
+        "body_hash": "1efca66bcb30f016382cdd6fce9c957a75d80a372c8264ba0fdaa763b19a9791",
+        "detail": {
+          "arguments": {},
+          "result": {
+            "authority": {
+              "FY2024": {
+                "assertion_class": "rejected",
+                "doc_id": "doc_fy2024_restated",
+                "permissions": {
+                  "contextual_calculation": false,
+                  "independent_corroboration": false,
+                  "integrity_veto": false,
+                  "risk_calculation": false,
+                  "scenario_calculation": false
+                },
+                "reasons": [
+                  {
+                    "code": "SUPERSEDED_DOCUMENT",
+                    "message": "this document replaces an earlier one and cannot itself be cited as a source figure"
+                  },
+                  {
+                    "code": "PRIVATE_AUTHORITY_NOT_IMPLEMENTED",
+                    "message": "no authenticated private-source policy exists; risk calculation and integrity veto remain denied"
+                  }
+                ],
+                "risk_eligible": false,
+                "version": "flowagent.evidence-authority/v1",
+                "veto_eligible": false
+              },
+              "FY2025": {
+                "assertion_class": "issuer-assertion",
+                "doc_id": "doc_fy2025",
+                "permissions": {
+                  "contextual_calculation": true,
+                  "independent_corroboration": false,
+                  "integrity_veto": false,
+                  "risk_calculation": false,
+                  "scenario_calculation": false
+                },
+                "reasons": [
+                  {
+                    "code": "CONTEXTUAL_ONLY",
+                    "message": "the figure may support a labelled comparison; it is not an audited fact or a credit conclusion"
+                  },
+                  {
+                    "code": "PRIVATE_AUTHORITY_NOT_IMPLEMENTED",
+                    "message": "no authenticated private-source policy exists; risk calculation and integrity veto remain denied"
+                  }
+                ],
+                "risk_eligible": false,
+                "version": "flowagent.evidence-authority/v1",
+                "veto_eligible": false
+              }
+            },
+            "basis": "IFRS",
+            "change_bp": -250,
+            "citations": [
+              {
+                "doc_id": "doc_fy2024_restated",
+                "period": "FY2024",
+                "value_cny": 151200000
+              },
+              {
+                "doc_id": "doc_fy2025",
+                "period": "FY2025",
+                "value_cny": 168000000
+              }
+            ],
+            "comparable": true,
+            "computed": true,
+            "consolidation": "entity-total",
+            "margin_bp_2024": 1750,
+            "margin_bp_2025": 1500,
+            "periods": [
+              {
+                "basis": "IFRS",
+                "doc_id": "doc_fy2024_restated",
+                "fact_id": "fact:FY2024:gross_profit",
+                "gross_profit_cny": 151200000,
+                "period": "FY2024",
+                "revenue_cny": 864000000
+              },
+              {
+                "basis": "IFRS",
+                "doc_id": "doc_fy2025",
+                "fact_id": "fact:FY2025:gross_profit",
+                "gross_profit_cny": 168000000,
+                "period": "FY2025",
+                "revenue_cny": 1120000000
+              }
+            ],
+            "restatement_applied": true
+          },
+          "result_hash": "e5d54de8d1efec9e489403df48e733eb63c2d1a4e629b4d95f4706e23f5d205d",
+          "round": 9,
+          "tool": "calculate_margin"
+        }
+      },
+      "prev_hash": "a543ebcef2a2ea144d2e4768bde025f52ccff6de1d4fa5c695dd5d7f5882b826",
+      "hash": "afd6a095945e5a8f0c681489251e26452a31e6e3400ec510ebef019704e928f7",
+      "at": "2026-10-19T15:38:10.245Z"
+    },
+    {
+      "sequence": 46,
+      "type": "plan_updated",
+      "payload": {
+        "body_hash": "6ac600d20e641158b5156ee04b3fd1d311cb70d09e16a5d69a1b71b3d62a15e6",
+        "detail": {
+          "plan": {
+            "goal": "判断恒星智算 2024 与 2025 两期合并毛利率是否可比，并在可比时给出变化",
+            "revision": 1,
+            "todos": [
+              {
+                "arguments": {},
+                "done_when": "listed",
+                "evidence": [
+                  "8c555e29b41cd382da2f98801d9c73dcf86b58e0cb1f1cef87011badaf7410ee"
+                ],
+                "id": "t1",
+                "reason": "",
+                "status": "done",
+                "text": "列出本次评估可用的资料",
+                "tool": "list_documents"
+              },
+              {
+                "arguments": {
+                  "doc_id": "doc_fy2024"
+                },
+                "done_when": "read:doc_fy2024",
+                "evidence": [
+                  "b8b86c98b83a2b992afecac9a4a399f91437541bb369e3d93297fb373fcf9fb3"
+                ],
+                "id": "t2",
+                "reason": "",
+                "status": "done",
+                "text": "读取 FY2024 年报，确认单位与口径",
+                "tool": "read_document"
+              },
+              {
+                "arguments": {
+                  "doc_id": "doc_fy2025"
+                },
+                "done_when": "read:doc_fy2025",
+                "evidence": [
+                  "f6f9f8dfbfa1056f35fa89e84572c1e65ba38ca0a91b67526af590d6c3fab228"
+                ],
+                "id": "t3",
+                "reason": "",
+                "status": "done",
+                "text": "读取 FY2025 年报，确认单位与口径",
+                "tool": "read_document"
+              },
+              {
+                "arguments": {
+                  "doc_id": "doc_fy2024"
+                },
+                "done_when": "restatement_checked",
+                "evidence": [
+                  "2088f6ea307fb1572b4c7172ab7cd56cbebed888b1f3209edf97bcf6e7a0e89a"
+                ],
+                "id": "t4",
+                "reason": "",
+                "status": "done",
+                "text": "检查 FY2024 是否被后续说明重述",
+                "tool": "check_restatement"
+              },
+              {
+                "arguments": {
+                  "doc_id": "doc_fy2025_adjusted"
+                },
+                "done_when": "read:doc_fy2025_adjusted",
+                "evidence": [
+                  "e20268fee279e511ed7159c4f50376a03debe88e74245325ec7f327e4d2f30b5"
+                ],
+                "id": "t5",
+                "reason": "",
+                "status": "done",
+                "text": "读取 FY2025 调整后口径补充材料",
+                "tool": "read_document"
+              },
+              {
+                "arguments": {
+                  "doc_id": "doc_fy2025_adjusted"
+                },
+                "done_when": "reconciled:FY2025",
+                "evidence": [
+                  "67b5631481bad9ac2c3f56ef9566ecb463decef256485422fafae4392409f024"
+                ],
+                "id": "t6",
+                "reason": "",
+                "status": "done",
+                "text": "把调整后口径桥接到 IFRS",
+                "tool": "reconcile_basis"
+              },
+              {
+                "arguments": {
+                  "doc_id": "doc_fy2024_restated"
+                },
+                "done_when": "normalised:doc_fy2024_restated",
+                "evidence": [
+                  "5dbb7422f2dbb073b2b777478851815293642ad0da2c39c1e340b0ca5cca74cc"
+                ],
+                "id": "t7",
+                "reason": "",
+                "status": "done",
+                "text": "把 FY2024 重述后金额归一到 CNY",
+                "tool": "normalize_units"
+              },
+              {
+                "arguments": {
+                  "doc_id": "doc_fy2025"
+                },
+                "done_when": "normalised:doc_fy2025",
+                "evidence": [
+                  "fb9670c1564dbb48513f59c6dc0e6e54a7526c59304e82f21ff87f25fd897aac"
+                ],
+                "id": "t8",
+                "reason": "",
+                "status": "done",
+                "text": "把 FY2025 金额归一到 CNY",
+                "tool": "normalize_units"
+              },
+              {
+                "arguments": {},
+                "done_when": "computed",
+                "evidence": [
+                  "e5d54de8d1efec9e489403df48e733eb63c2d1a4e629b4d95f4706e23f5d205d"
+                ],
+                "id": "t9",
+                "reason": "",
+                "status": "done",
+                "text": "计算并核对两期毛利率",
+                "tool": "calculate_margin"
+              }
+            ]
+          },
+          "round": 9
+        }
+      },
+      "prev_hash": "afd6a095945e5a8f0c681489251e26452a31e6e3400ec510ebef019704e928f7",
+      "hash": "fca797c0d697957ab2b7908ca259cd607abb0dc6a5ea452c6f95fc39b888f30c",
+      "at": "2026-10-19T15:38:10.246Z"
+    },
+    {
+      "sequence": 47,
+      "type": "verification_started",
+      "payload": {
+        "body_hash": "ce52bd05c3a84a04251621d82037a93c5f6b60cd2e8734c1b3082053d8140f91",
+        "detail": {}
+      },
+      "prev_hash": "fca797c0d697957ab2b7908ca259cd607abb0dc6a5ea452c6f95fc39b888f30c",
+      "hash": "cb50f68632fa31a1fd62dfc79d9cb58d243a2d3d67f7a57e4496983f3e7311de",
+      "at": "2026-10-19T15:38:10.246Z"
+    },
+    {
+      "sequence": 48,
+      "type": "task_succeeded",
+      "payload": {
+        "body_hash": "edbbc165d6166353c77a5206ea2aaa9f352f6e3efff70234e743355ed6afbe64",
+        "detail": {}
+      },
+      "prev_hash": "cb50f68632fa31a1fd62dfc79d9cb58d243a2d3d67f7a57e4496983f3e7311de",
+      "hash": "c44e114157fadfbfc246e09436e20acad9f635a239d84e758b1b124733ff3325",
+      "at": "2026-10-19T15:38:10.246Z"
+    }
+  ],
+  "chain": {
+    "event_count": 48,
+    "head_hash": "c44e114157fadfbfc246e09436e20acad9f635a239d84e758b1b124733ff3325",
+    "algorithm": "sha256 over canonical json of {sequence,type,payload,prev_hash,at}"
+  },
+  "trace_hash": "44c4eeefa8e3bd6f5779c5e3590ce2f340120d17c0a252dba66f4901e09b333f"
+}

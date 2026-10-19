@@ -3,476 +3,129 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>FlowAgent</title>
-<style>
-  :root {
-    --paper: #f0eee6;
-    --panel: #e9e6da;
-    --ink: #141413;
-    --muted: #7a7568;
-    --line: #d8d4c4;
-    --accent: #c96442;
-    --ok: #3d7a4e;
-    --bad: #b33a3a;
-    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
-  }
-  * { box-sizing: border-box; }
-  html, body { height: 100%; }
-  body {
-    margin: 0; background: var(--paper); color: var(--ink);
-    font: 13px/1.65 var(--mono);
-    -webkit-font-smoothing: antialiased;
-  }
-  .app { display: flex; flex-direction: column; height: 100%; }
-
-  header {
-    display: flex; align-items: baseline; gap: 12px;
-    padding: 14px 18px; border-bottom: 1px solid var(--line);
-  }
-  .mark { color: var(--accent); font-size: 14px; }
-  .title { font-weight: 600; letter-spacing: 0.01em; }
-  .tag { color: var(--muted); font-size: 12px; }
-  header .right { margin-left: auto; display: flex; gap: 14px; align-items: baseline; }
-  .dots { display: flex; gap: 6px; }
-  .dot { width: 7px; height: 7px; border: 1px solid var(--muted); display: inline-block; }
-  .dot.ok { background: var(--ok); border-color: var(--ok); }
-  .dot.bad { background: var(--bad); border-color: var(--bad); }
-  .dot.warn { background: var(--accent); border-color: var(--accent); }
-  .dot.none { background: transparent; }
-
-  .body { display: flex; flex: 1; min-height: 0; }
-
-  nav {
-    width: 208px; border-right: 1px solid var(--line);
-    padding: 14px 0; overflow-y: auto; flex-shrink: 0;
-  }
-  nav .label { color: var(--muted); font-size: 11px; padding: 0 18px 8px; }
-  nav button {
-    display: flex; align-items: baseline; gap: 8px; width: 100%;
-    background: none; border: 0; border-left: 2px solid transparent;
-    color: var(--ink); font: inherit; text-align: left;
-    padding: 5px 16px; cursor: pointer;
-  }
-  nav button:hover { background: var(--panel); }
-  nav button[aria-current="true"] { border-left-color: var(--accent); background: var(--panel); }
-  nav button .k { color: var(--muted); font-size: 12px; }
-  nav button[aria-current="true"] .k { color: var(--accent); }
-  nav .hint { padding: 14px 18px 0; color: var(--muted); font-size: 11px; line-height: 1.9; }
-  nav .hint label { text-decoration: underline; cursor: pointer; }
-
-  main { flex: 1; min-width: 0; overflow-y: auto; padding: 18px 22px 64px; }
-  .empty { color: var(--muted); padding: 40px 0; line-height: 1.9; }
-
-  .runline { display: flex; flex-wrap: wrap; gap: 18px; align-items: baseline; }
-  .runline .id { color: var(--muted); }
-  .state { font-weight: 600; }
-  .state.ok { color: var(--ok); }
-  .state.bad { color: var(--bad); }
-  .state.warn { color: var(--accent); }
-  .rule { border: 0; border-top: 1px solid var(--line); margin: 14px 0 4px; }
-
-  .verify { display: flex; gap: 8px; align-items: baseline; padding: 6px 0 12px; }
-  .verify .g { color: var(--ok); }
-  .verify.bad .g { color: var(--bad); }
-  .verify .txt { color: var(--muted); }
-  .verify code { color: var(--ink); }
-
-  .plan { margin: 6px 0 20px; border: 1px solid var(--line); padding: 10px 12px; }
-  .plan .head { color: var(--muted); font-size: 12px; margin-bottom: 7px; }
-  .todo { display: flex; gap: 8px; align-items: baseline; padding: 1px 0; }
-  .todo .box { width: 12px; flex-shrink: 0; }
-  .todo .tid { color: var(--muted); min-width: 22px; }
-  .todo .ttool { margin-left: auto; color: var(--muted); font-size: 12px; }
-  .todo.done .box { color: var(--ok); }
-  .todo.done .ttext { color: var(--muted); }
-  .todo.blocked .box, .todo.blocked .ttext { color: var(--bad); }
-  .todo.abandoned .ttext { color: var(--muted); text-decoration: line-through; }
-  .round { padding: 9px 0; border-bottom: 1px dotted var(--line); }
-  .round:last-of-type { border-bottom: 0; }
-  .line { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
-  .idx { color: var(--muted); min-width: 18px; }
-  .g { color: var(--accent); }
-  .g.deny { color: var(--bad); }
-  .g.ok { color: var(--ok); }
-  .tool { font-weight: 600; }
-  .args { color: var(--muted); }
-  .verdict { margin-left: auto; font-size: 12px; }
-  .verdict.pass { color: var(--ok); }
-  .verdict.deny { color: var(--bad); }
-  .sub { padding-left: 26px; }
-  .sub .dim { color: var(--muted); }
-  .budget { padding-left: 26px; color: var(--muted); font-size: 12px; }
-  .note { padding-left: 26px; color: var(--bad); font-size: 12px; }
-
-  .term { margin-top: 22px; border: 1px solid var(--line); padding: 12px 14px; }
-  .term .head { display: flex; gap: 10px; align-items: baseline; margin-bottom: 8px; }
-  .kv { display: grid; grid-template-columns: 92px 1fr; gap: 2px 12px; }
-  .kv .k { color: var(--muted); }
-  .kv .v { word-break: break-word; }
-  .big { color: var(--accent); font-weight: 600; }
-
-  details { margin-top: 24px; }
-  summary { color: var(--muted); cursor: pointer; }
-  table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 12px; }
-  th, td { text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--line); }
-  th { color: var(--muted); font-weight: 400; }
-  .hash { color: var(--muted); }
-  pre { white-space: pre-wrap; word-break: break-word; font-size: 11.5px; color: var(--muted); }
-</style>
+<meta name="color-scheme" content="dark">
+<title>Fcode · flowcredit console</title>
+<link rel="stylesheet" href="app.css">
 </head>
 <body>
-<div class="app">
-  <header>
-    <span class="mark">✻</span>
-    <span class="title">FlowAgent</span>
-    <span class="tag">trace viewer</span>
-    <div class="right">
-      <span class="dots" id="dots"></span>
-      <span class="tag" id="clock"></span>
-    </div>
-  </header>
+<div class="shell app rail-open" id="app">
 
-  <div class="body">
-    <nav>
-      <div class="label">scenarios</div>
-      <div id="nav"></div>
-      <div class="hint">
-        拖入任意 trace JSON 也可查看。<br>
-        链哈希在浏览器里重算。<br><br>
-        <label for="pick">选择文件</label>
+  <aside class="sidebar">
+    <div class="side-actions">
+      <button class="icon-btn" id="open-file" title="打开 trace JSON">
+        <svg class="i" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+      </button>
+      <button class="icon-btn" id="export" title="导出原始 JSON">
+        <svg class="i" viewBox="0 0 24 24"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
+      </button>
+      <button class="icon-btn" id="replay-side" title="重放当前场景 (R)">
+        <svg class="i" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/></svg>
+      </button>
+      <button class="kbtn" id="palette-btn" title="命令面板 (⌘K)">⌘K</button>
+    </div>
+
+    <div class="side-list">
+      <div class="side-group" id="run-group" hidden>
+        <svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3 2"/></svg>
+        <span>运行记录</span>
+        <input class="run-search" id="run-search" placeholder="搜索…" spellcheck="false">
       </div>
-    </nav>
-    <main id="main">
-      <div class="empty">选择一个场景，或把 trace JSON 拖进窗口。</div>
-    </main>
+      <nav class="nav" id="run-nav"></nav>
+      <div class="side-group">
+        <svg class="i" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+        <span>演示场景</span>
+      </div>
+      <nav class="nav" id="nav"></nav>
+    </div>
+
+    <div class="side-foot">
+      <span class="avatar">F</span>
+      <div class="who grow">
+        <div class="who-name">Fcode</div>
+        <div class="who-sub" id="foot-text">offline-mock · 只读回放</div>
+      </div>
+      <button class="icon-btn" id="reverify" title="重新验证签名链">
+        <svg class="i" viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 4.4-3 7.6-7 9-4-1.4-7-4.6-7-9V6z"/><path d="m9.5 12 2 2 3.5-4"/></svg>
+      </button>
+    </div>
+  </aside>
+
+  <div class="workspace">
+    <header class="topbar">
+      <div class="tb-title" id="tb-title">—</div>
+      <div class="tb-chips" id="tb-chips"></div>
+      <div class="grow"></div>
+      <div class="chain-pill" id="chain-badge"><span class="dot"></span><span>未加载</span></div>
+      <button class="icon-btn" id="rail-toggle" title="事件面板">
+        <svg class="i" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></svg>
+      </button>
+    </header>
+
+    <div class="content">
+      <div class="center">
+        <main class="main">
+          <div class="main-inner" id="main">
+            <div class="empty">在下方派一个任务，或从左侧选择一条运行记录 / 演示场景。<br><span class="dim">trace JSON 也可以直接拖进窗口。</span></div>
+          </div>
+        </main>
+        <footer class="composer-wrap">
+          <div class="composer">
+            <div class="composer-box" id="composer-box">
+              <div class="tpl-menu" id="tpl-menu" hidden></div>
+              <textarea class="composer-ta" id="composer-ta" rows="1"
+                placeholder="给 agent 派一个任务：判断 2024 与 2025 两期合并毛利率是否可比…"></textarea>
+              <div class="composer-bar">
+                <button class="c-icon" id="composer-open" title="打开 trace JSON">
+                  <svg class="i" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+                </button>
+                <button class="c-btn" id="template-btn" title="选择任务模板（决定授权与预算）">
+                  <svg class="i" viewBox="0 0 24 24"><path d="M4 6h10M4 12h16M4 18h7"/></svg>
+                  <span id="template-label">完整研究</span>
+                  <svg class="i" viewBox="0 0 24 24" style="width:12px;height:12px"><path d="m6 9 6 6 6-6"/></svg>
+                </button>
+                <div class="grow"></div>
+                <span class="c-btn static run-chip" id="run-chip" hidden>
+                  <span class="pdot"></span><span id="run-chip-text">运行中</span>
+                </span>
+                <span class="c-btn static" title="离线确定性 mock 模型">
+                  <svg class="i" viewBox="0 0 24 24"><path d="M12 3l7.5 4.5v9L12 21l-7.5-4.5v-9z"/></svg>
+                  offline-mock
+                </span>
+                <button class="send" id="send" title="发送任务" disabled>
+                  <svg class="i" viewBox="0 0 24 24"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg>
+                </button>
+              </div>
+            </div>
+          </div>
+        </footer>
+      </div>
+
+      <aside class="rail">
+        <div class="rail-head">
+          <div class="seg" id="rail-tabs">
+            <button data-tab="events" class="active">事件</button>
+            <button data-tab="chain">链</button>
+            <button data-tab="raw">原始</button>
+          </div>
+        </div>
+        <div class="rail-body" id="rail-body"></div>
+      </aside>
+    </div>
+  </div>
+
+</div>
+<input type="file" id="pick" hidden accept=".json,application/json">
+
+<div class="palette" id="palette" hidden>
+  <div class="palette-scrim" data-palette-close></div>
+  <div class="palette-box" role="dialog" aria-label="命令面板">
+    <input class="palette-input" id="palette-input" placeholder="输入命令，或搜索运行与场景…" autocomplete="off" spellcheck="false">
+    <div class="palette-list" id="palette-list"></div>
+    <div class="palette-foot"><span>↑↓ 选择</span><span>↵ 执行</span><span>esc 关闭</span><div class="grow"></div><span>⌘K 面板 · ⌘. 停止 · Enter 发送</span></div>
   </div>
 </div>
+<div class="toast" id="toast" hidden></div>
 
-<input type="file" id="pick" accept=".json,application/json" style="display:none">
-
-<script>
-"use strict";
-
-const SCENARIOS = [
-  ["full", "完整研究"],
-  ["tool-denied", "越权工具"],
-  ["budget", "预算耗尽"],
-  ["crash", "崩溃恢复"],
-  ["unknown", "未知对账"],
-];
-
-const cache = new Map();
-
-/* ----------------------------------------------------------- canonical json */
-
-function canonical(value) {
-  if (value === null || typeof value !== "object") return JSON.stringify(value);
-  if (Array.isArray(value)) return "[" + value.map(canonical).join(",") + "]";
-  return "{" + Object.keys(value).sort().map(k => JSON.stringify(k) + ":" + canonical(value[k])).join(",") + "}";
-}
-
-async function sha256Hex(text) {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
-  return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, "0")).join("");
-}
-
-async function verifyChain(trace) {
-  const events = trace.events || [];
-  if (!events.length) return { ok: false, reason: "trace 里没有事件" };
-  let previous = null;
-  for (let i = 0; i < events.length; i++) {
-    const e = events[i];
-    if (e.sequence !== i + 1) return { ok: false, reason: `第 ${i + 1} 个事件序号不连续` };
-    if (e.prev_hash !== previous) return { ok: false, reason: `第 ${i + 1} 个事件没有链接到前一个` };
-    const expected = await sha256Hex(canonical({
-      sequence: e.sequence, type: e.type, payload: e.payload, prev_hash: e.prev_hash, at: e.at
-    }));
-    if (expected !== e.hash) return { ok: false, reason: `第 ${i + 1} 个事件（${e.type}）哈希不匹配` };
-    previous = e.hash;
-  }
-  const chain = trace.chain || {};
-  if (chain.head_hash !== previous) return { ok: false, reason: "链头与最后一个事件不一致" };
-  if (chain.event_count !== events.length) return { ok: false, reason: "事件计数与实际不符" };
-  return { ok: true, events: events.length, head: previous };
-}
-
-/* ------------------------------------------------------------------ helpers */
-
-const esc = value => String(value).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-const pct = bp => (bp / 100).toFixed(2) + "%";
-const pp = bp => (bp >= 0 ? "+" : "") + (bp / 100).toFixed(2) + " pp";
-const num = n => Number(n).toLocaleString("en-US");
-
-function stateClass(status) {
-  if (status === "succeeded") return "ok";
-  if (status === "denied" || status === "failed") return "bad";
-  return "warn";
-}
-
-/* ------------------------------------------------------------------- render */
-
-function describe(observation) {
-  const tool = observation.tool;
-  const r = observation.result || {};
-  switch (tool) {
-    case "list_documents":
-      return [(r.documents || []).map(d => `${d.id}(${d.unit_label}/${d.basis})`).join("  ")];
-    case "read_document":
-      return [`${r.period} · ${r.unit_label} · ${r.basis}`, `<span class="dim">${esc((r.body || "").slice(0, 60))}…</span>`];
-    case "normalize_units":
-      return [`${r.source_unit} → ${r.target_unit} ×${num(r.factor)} · 毛利 ${num(r.gross_profit_cny)} 元`];
-    case "reconcile_basis":
-      if (r.reconciled === false) return [`${r.period} · 无法桥接：${esc(r.reason || "没有公布的桥接说明")}`];
-      return [`${r.period} ${r.from_basis} → ${r.to_basis} · 差异 ${r.delta >= 0 ? "+" : ""}${r.delta}`, `<span class="dim">${esc(r.reason)}</span>`];
-    case "check_restatement":
-      return r.restated
-        ? [`已重述 ${num(r.original_gross_profit)} → ${num(r.restated_gross_profit)}（${r.delta >= 0 ? "+" : ""}${r.delta}）`]
-        : ["无重述"];
-    case "calculate_margin":
-      return r.computed
-        ? [`2024 ${pct(r.margin_bp_2024)} · 2025 ${pct(r.margin_bp_2025)} · ${pp(r.change_bp)}`]
-        : [`无法计算：${esc((r.blockers || []).join("；"))}`];
-    case "report_blocked":
-      return [`声明受阻：${esc(r.reason)}`];
-    default:
-      return [esc(JSON.stringify(r))];
-  }
-}
-
-function renderPlan(plan) {
-  if (!plan || !plan.todos || !plan.todos.length) return "";
-  const done = plan.todos.filter(t => t.status === "done").length;
-  const glyph = { done: "✔", blocked: "✗", abandoned: "–", active: "▸", pending: "·" };
-  return `<div class="plan">
-    <div class="head">plan · revision ${plan.revision} · ${done}/${plan.todos.length} settled</div>
-    ${plan.todos.map(t => `<div class="todo ${t.status}">
-      <span class="box">${glyph[t.status] || "·"}</span>
-      <span class="tid">${esc(t.id)}</span>
-      <span class="ttext">${esc(t.text)}</span>
-      <span class="ttool">${esc(t.tool)}</span>
-    </div>`).join("")}
-  </div>`;
-}
-
-function lastPlan(trace) {
-  const rounds = trace.rounds || [];
-  for (let i = rounds.length - 1; i >= 0; i--) {
-    if (rounds[i].plan_after) return rounds[i].plan_after;
-    if (rounds[i].plan) return rounds[i].plan;
-  }
-  return null;
-}
-
-function renderRound(round) {
-  const step = (round.proposal && round.proposal.steps && round.proposal.steps[0]) || null;
-  const decision = round.decision || {};
-  const denied = decision.allowed === false;
-  const args = step && step.arguments && Object.keys(step.arguments).length
-    ? "(" + Object.entries(step.arguments).map(([k, v]) => `${k}=${v}`).join(", ") + ")"
-    : "()";
-  const verdict = denied
-    ? `<span class="verdict deny">DENIED ${esc(decision.code || "")}</span>`
-    : decision.allowed === true ? `<span class="verdict pass">PASS</span>` : "";
-
-  const lines = [];
-  if (round.observation && round.observation.result) {
-    for (const line of describe(round.observation)) lines.push(`<div class="sub"><span class="g">⎿</span>  ${line}</div>`);
-  }
-  if (denied) lines.push(`<div class="note">⎿  ${esc(decision.reason || "")}</div>`);
-
-  const b = round.budget_after || {};
-  const budget = b.calls_used !== undefined
-    ? `<div class="budget">calls ${b.calls_used}/${b.limits ? b.limits.max_calls : "?"} · reads ${b.reads_used}/${b.limits ? b.limits.max_reads : "?"} · ${num(b.cost_used_microusd || 0)} µUSD</div>`
-    : "";
-
-  return `<div class="round">
-    <div class="line">
-      <span class="idx">${round.index}</span>
-      <span class="g${denied ? " deny" : ""}">⏺</span>
-      <span class="tid">${esc(step ? step.id : "")}</span>
-      <span class="tool">${esc(step ? step.tool : "—")}</span>
-      <span class="args">${esc(args)}</span>
-      ${verdict}
-    </div>
-    ${lines.join("")}
-    ${budget}
-  </div>`;
-}
-
-function renderTerminal(trace) {
-  const terminal = trace.terminal || {};
-  const result = terminal.result || {};
-  const failure = terminal.failure || {};
-  const cls = stateClass(terminal.status || trace.task.status);
-  const glyph = cls === "ok" ? "✔" : cls === "bad" ? "✗" : "✻";
-
-  if (terminal.status === "succeeded" && result.change_bp !== undefined) {
-    return `<div class="term">
-      <div class="head"><span class="g ok">${glyph}</span>
-        <span class="state ok">succeeded</span>
-        <span class="tag">Runtime 独立重算通过</span></div>
-      <div class="kv">
-        <span class="k">2024 毛利率</span><span class="v">${pct(result.margin_bp_2024)}</span>
-        <span class="k">2025 毛利率</span><span class="v">${pct(result.margin_bp_2025)}</span>
-        <span class="k">变化</span><span class="v big">${pp(result.change_bp)}</span>
-        <span class="k">口径</span><span class="v">${esc(result.basis)} / ${esc(result.consolidation)} / 已应用 2024 重述</span>
-        <span class="k">引用</span><span class="v">${(result.citations || []).map(c => `${c.period} ${c.doc_id}`).join(" · ")}</span>
-      </div>
-    </div>`;
-  }
-
-  return `<div class="term">
-    <div class="head"><span class="g deny">${glyph}</span>
-      <span class="state ${cls}">${esc(terminal.status || trace.task.status)}</span></div>
-    <div class="kv">
-      <span class="k">原因</span><span class="v">${esc(failure.code || "—")}</span>
-      <span class="k">说明</span><span class="v">${esc(failure.message || "—")}</span>
-    </div>
-  </div>`;
-}
-
-function renderChain(trace) {
-  const events = trace.events || [];
-  return `<details>
-    <summary>事件链 · ${events.length} 个事件</summary>
-    <table>
-      <thead><tr><th>#</th><th>type</th><th>hash</th><th>prev</th></tr></thead>
-      <tbody>${events.map(e => `<tr>
-        <td>${e.sequence}</td><td>${esc(e.type)}</td>
-        <td class="hash">${esc(String(e.hash).slice(0, 16))}…</td>
-        <td class="hash">${e.prev_hash ? esc(String(e.prev_hash).slice(0, 12)) + "…" : "—"}</td>
-      </tr>`).join("")}</tbody>
-    </table>
-    <details><summary style="margin-top:12px">原始 JSON</summary>
-      <pre>${esc(JSON.stringify(trace, null, 2))}</pre></details>
-  </details>`;
-}
-
-async function render(trace, title) {
-  const main = document.getElementById("main");
-  const check = await verifyChain(trace);
-  const task = trace.task || {};
-  const terminal = trace.terminal || {};
-  const rounds = trace.rounds || [];
-  const cls = stateClass(terminal.status || task.status);
-
-  main.innerHTML = `
-    <div class="runline">
-      <span class="state ${cls}">${esc(terminal.status || task.status || "?")}</span>
-      <span class="id">${esc(title || task.id || "")}</span>
-      <span class="tag">${esc((trace.model || {}).model || "")}</span>
-      <span class="tag">${rounds.length} rounds</span>
-      <span class="tag">seq ${esc(task.sequence)}</span>
-    </div>
-    <hr class="rule">
-    <div class="verify ${check.ok ? "" : "bad"}">
-      <span class="g">${check.ok ? "✔" : "✗"}</span>
-      <span class="txt">${check.ok
-        ? `chain verified · ${check.events} events · head <code>${esc(check.head.slice(0, 16))}…</code>`
-        : `chain broken · ${esc(check.reason)}`}</span>
-    </div>
-    ${renderPlan(lastPlan(trace))}
-    ${rounds.map(renderRound).join("")}
-    ${renderTerminal(trace)}
-    ${renderChain(trace)}
-  `;
-}
-
-/* --------------------------------------------------------------------- nav */
-
-async function loadScenario(key) {
-  if (cache.has(key)) return cache.get(key);
-  const response = await fetch(`../work/demo/${key}.trace.json`, { cache: "no-store" });
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  const trace = await response.json();
-  cache.set(key, trace);
-  return trace;
-}
-
-function paintDots() {
-  document.getElementById("dots").innerHTML = SCENARIOS.map(([key]) => {
-    const trace = cache.get(key);
-    if (!trace) return `<span class="dot none" title="${key}"></span>`;
-    const cls = stateClass((trace.terminal || {}).status);
-    return `<span class="dot ${cls}" title="${key}: ${esc((trace.terminal || {}).status)}"></span>`;
-  }).join("");
-}
-
-function setCurrent(key) {
-  for (const button of document.querySelectorAll("nav button")) {
-    button.setAttribute("aria-current", button.dataset.key === key ? "true" : "false");
-  }
-}
-
-async function select(key, label) {
-  setCurrent(key);
-  const main = document.getElementById("main");
-  try {
-    const trace = await loadScenario(key);
-    await render(trace, `${key} · ${label}`);
-    paintDots();
-  } catch (error) {
-    main.innerHTML = `<div class="empty">
-      ${esc(key)} 还没有 trace（${esc(error.message)}）。<br><br>
-      先运行 <code>python demo.py ${esc(key)}</code>，或 <code>python demo.py all</code> 一次生成全部。
-    </div>`;
-  }
-}
-
-function buildNav() {
-  const nav = document.getElementById("nav");
-  nav.innerHTML = SCENARIOS.map(([key, label]) =>
-    `<button data-key="${key}"><span class="k">⏺</span><span>${label}</span></button>`
-  ).join("");
-  for (const button of nav.querySelectorAll("button")) {
-    button.addEventListener("click", () => {
-      const label = button.querySelector("span:last-child").textContent;
-      select(button.dataset.key, label);
-    });
-  }
-}
-
-async function fromFile(file) {
-  try {
-    const trace = JSON.parse(await file.text());
-    setCurrent("");
-    await render(trace, file.name);
-  } catch (error) {
-    document.getElementById("main").innerHTML =
-      `<div class="empty">无法解析 ${esc(file.name)}：${esc(error.message)}</div>`;
-  }
-}
-
-document.addEventListener("DOMContentLoaded", () => {
-  buildNav();
-  paintDots();
-  document.getElementById("clock").textContent = new Date().toISOString().slice(0, 10);
-
-  document.getElementById("pick").addEventListener("change", event => {
-    if (event.target.files[0]) fromFile(event.target.files[0]);
-  });
-
-  document.addEventListener("dragenter", event => event.preventDefault());
-  document.addEventListener("dragover", event => event.preventDefault());
-  document.addEventListener("drop", event => {
-    event.preventDefault();
-    const file = event.dataTransfer && event.dataTransfer.files[0];
-    if (file) fromFile(file);
-  });
-
-  const param = new URLSearchParams(location.search).get("trace");
-  if (param) {
-    fetch(param)
-      .then(response => response.ok ? response.json() : Promise.reject(new Error(`HTTP ${response.status}`)))
-      .then(trace => { setCurrent(""); return render(trace, param.split("/").pop()); })
-      .catch(error => {
-        document.getElementById("main").innerHTML =
-          `<div class="empty">无法加载 ${esc(param)}：${esc(error.message)}</div>`;
-      });
-  } else {
-    select("full", "完整研究");
-  }
-});
-</script>
+<script src="app.js"></script>
 </body>
 </html>

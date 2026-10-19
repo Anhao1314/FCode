@@ -1,0 +1,309 @@
+{
+  "version": "flowagent.trace/v1",
+  "task": {
+    "id": "task-tool-denied-0001",
+    "objective": "判断恒星智算 2024 与 2025 两期合并毛利率是否可比，并在可比时给出变化",
+    "principal": "demo-researcher",
+    "binding": {
+      "corpus": "synthetic-authored-v1",
+      "scenario": "tool-denied"
+    },
+    "allowed_tools": [
+      "list_documents",
+      "read_document",
+      "normalize_units",
+      "reconcile_basis",
+      "check_restatement",
+      "calculate_margin",
+      "report_blocked"
+    ],
+    "model_grant": {
+      "allowed_tools": [
+        "list_documents",
+        "read_document",
+        "normalize_units",
+        "reconcile_basis",
+        "check_restatement",
+        "calculate_margin",
+        "report_blocked"
+      ],
+      "grant_id": "demo-host-grant",
+      "max_calls": 12,
+      "max_cost_microusd": 20000,
+      "max_reads": 20,
+      "max_tokens": 20000,
+      "revision": 1
+    },
+    "status": "denied",
+    "sequence": 4,
+    "failure": {
+      "code": "TOOL_NOT_REGISTERED",
+      "message": "'write_document' is not a registered tool",
+      "retryable": false
+    }
+  },
+  "model": {
+    "provider": "offline-mock",
+    "model": "offline-deterministic-mock-v1",
+    "note": "offline deterministic mock; no network, no credentials, no paid call"
+  },
+  "rounds": [
+    {
+      "index": 1,
+      "budget_before": {
+        "calls_used": 0,
+        "reads_used": 0,
+        "cost_used_microusd": 0,
+        "tokens_used": 0,
+        "calls_remaining": 12,
+        "reads_remaining": 20,
+        "cost_remaining_microusd": 20000,
+        "limits": {
+          "max_calls": 12,
+          "max_reads": 20,
+          "max_cost_microusd": 20000,
+          "max_tokens": 20000
+        }
+      },
+      "proposal": {
+        "version": "flowagent.plan/v1",
+        "steps": [
+          {
+            "id": "s9",
+            "tool": "write_document",
+            "arguments": {
+              "doc_id": "doc_fy2024"
+            }
+          }
+        ]
+      },
+      "receipt": {
+        "provider": "offline-mock",
+        "model": "offline-deterministic-mock-v1",
+        "tokens": 880,
+        "cost_microusd": 420,
+        "latency_ms": 0,
+        "external_billing": "not-verified",
+        "todo_id": null,
+        "metadata": {
+          "policy": "escalate",
+          "round": 1
+        }
+      },
+      "decision": {
+        "allowed": false,
+        "code": "TOOL_NOT_REGISTERED",
+        "reason": "'write_document' is not a registered tool",
+        "tool": "write_document"
+      },
+      "observation": null,
+      "budget_after": {},
+      "plan": {
+        "goal": "判断恒星智算 2024 与 2025 两期合并毛利率是否可比，并在可比时给出变化",
+        "revision": 1,
+        "todos": [
+          {
+            "id": "t1",
+            "text": "列出本次评估可用的资料",
+            "tool": "list_documents",
+            "done_when": "listed",
+            "arguments": {},
+            "status": "pending",
+            "evidence": [],
+            "reason": ""
+          },
+          {
+            "id": "t2",
+            "text": "读取 FY2024 年报，确认单位与口径",
+            "tool": "read_document",
+            "done_when": "read:doc_fy2024",
+            "arguments": {
+              "doc_id": "doc_fy2024"
+            },
+            "status": "pending",
+            "evidence": [],
+            "reason": ""
+          },
+          {
+            "id": "t3",
+            "text": "读取 FY2025 年报，确认单位与口径",
+            "tool": "read_document",
+            "done_when": "read:doc_fy2025",
+            "arguments": {
+              "doc_id": "doc_fy2025"
+            },
+            "status": "pending",
+            "evidence": [],
+            "reason": ""
+          },
+          {
+            "id": "t4",
+            "text": "检查 FY2024 是否被后续说明重述",
+            "tool": "check_restatement",
+            "done_when": "restatement_checked",
+            "arguments": {
+              "doc_id": "doc_fy2024"
+            },
+            "status": "pending",
+            "evidence": [],
+            "reason": ""
+          },
+          {
+            "id": "t5",
+            "text": "读取 FY2025 调整后口径补充材料",
+            "tool": "read_document",
+            "done_when": "read:doc_fy2025_adjusted",
+            "arguments": {
+              "doc_id": "doc_fy2025_adjusted"
+            },
+            "status": "pending",
+            "evidence": [],
+            "reason": ""
+          },
+          {
+            "id": "t6",
+            "text": "把调整后口径桥接到 IFRS",
+            "tool": "reconcile_basis",
+            "done_when": "reconciled:FY2025",
+            "arguments": {
+              "doc_id": "doc_fy2025_adjusted"
+            },
+            "status": "pending",
+            "evidence": [],
+            "reason": ""
+          },
+          {
+            "id": "t7",
+            "text": "把 FY2024 重述后金额归一到 CNY",
+            "tool": "normalize_units",
+            "done_when": "normalised:doc_fy2024_restated",
+            "arguments": {
+              "doc_id": "doc_fy2024_restated"
+            },
+            "status": "pending",
+            "evidence": [],
+            "reason": ""
+          },
+          {
+            "id": "t8",
+            "text": "把 FY2025 金额归一到 CNY",
+            "tool": "normalize_units",
+            "done_when": "normalised:doc_fy2025",
+            "arguments": {
+              "doc_id": "doc_fy2025"
+            },
+            "status": "pending",
+            "evidence": [],
+            "reason": ""
+          },
+          {
+            "id": "t9",
+            "text": "计算并核对两期毛利率",
+            "tool": "calculate_margin",
+            "done_when": "computed",
+            "arguments": {},
+            "status": "pending",
+            "evidence": [],
+            "reason": ""
+          }
+        ]
+      },
+      "plan_after": null
+    }
+  ],
+  "terminal": {
+    "status": "denied",
+    "failure": {
+      "code": "TOOL_NOT_REGISTERED",
+      "message": "'write_document' is not a registered tool",
+      "retryable": false
+    },
+    "result": null,
+    "sequence": 4
+  },
+  "events": [
+    {
+      "sequence": 1,
+      "type": "task_created",
+      "payload": {
+        "body_hash": "ce1db6ef1a5d89418bc009e1fdb4ccb8057a0e3f50d5be304fd5bbe0e6b91c51",
+        "detail": {}
+      },
+      "prev_hash": null,
+      "hash": "2ff4f470fc4828c84eba225cd6c5ca22513f92d2fa495fb5779f390ae06ea5c1",
+      "at": "2026-10-19T15:38:10.197Z"
+    },
+    {
+      "sequence": 2,
+      "type": "model_started",
+      "payload": {
+        "body_hash": "8ff1b47fa5b635369a5bb4009cae291addf305fe0ffd0ed2a4aeafaf3b54d580",
+        "detail": {
+          "round": 1
+        }
+      },
+      "prev_hash": "2ff4f470fc4828c84eba225cd6c5ca22513f92d2fa495fb5779f390ae06ea5c1",
+      "hash": "382cf8cfd8ace58f9ee0804bc003ef6a6369f266d8cd5f204ad92b05b963ac00",
+      "at": "2026-10-19T15:38:10.197Z"
+    },
+    {
+      "sequence": 3,
+      "type": "plan_validated",
+      "payload": {
+        "body_hash": "2f28b4c098a93d6c4caec28c87a9d8a2e79872e2c28ec19b49ef7e864d3126a8",
+        "detail": {
+          "plan": {
+            "steps": [
+              {
+                "arguments": {
+                  "doc_id": "doc_fy2024"
+                },
+                "attempts": 0,
+                "error_code": null,
+                "id": "s9",
+                "result": null,
+                "result_hash": null,
+                "status": "pending",
+                "tool": "write_document"
+              }
+            ],
+            "version": "flowagent.plan/v1"
+          },
+          "round": 1
+        }
+      },
+      "prev_hash": "382cf8cfd8ace58f9ee0804bc003ef6a6369f266d8cd5f204ad92b05b963ac00",
+      "hash": "54a9093dff4168470887728322450599790ff36fd9c16a16bb182897996fb470",
+      "at": "2026-10-19T15:38:10.198Z"
+    },
+    {
+      "sequence": 4,
+      "type": "tool_denied",
+      "payload": {
+        "body_hash": "b33048b50f3e697c3ca0b3f0f67fde1661adcc4e96623114598422bef96cac22",
+        "detail": {
+          "code": "TOOL_NOT_REGISTERED",
+          "plan": {
+            "abandoned": 0,
+            "active": 0,
+            "blocked": 0,
+            "done": 0,
+            "pending": 9,
+            "revision": 1,
+            "total": 9
+          },
+          "tool": "write_document"
+        }
+      },
+      "prev_hash": "54a9093dff4168470887728322450599790ff36fd9c16a16bb182897996fb470",
+      "hash": "7f58cf9b838bcbed1bf67fd339aa00e48676cbd4687243dd7c7e2cc2bdaa4991",
+      "at": "2026-10-19T15:38:10.198Z"
+    }
+  ],
+  "chain": {
+    "event_count": 4,
+    "head_hash": "7f58cf9b838bcbed1bf67fd339aa00e48676cbd4687243dd7c7e2cc2bdaa4991",
+    "algorithm": "sha256 over canonical json of {sequence,type,payload,prev_hash,at}"
+  },
+  "trace_hash": "f0ec87230903a16cff5d1e8a232cec602270d765c690c35a94e1e3300facdb91"
+}
