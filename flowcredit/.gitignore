@@ -1,0 +1,7 @@
+# 本地运行产物
+work/
+__pycache__/
+*.py[cod]
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm

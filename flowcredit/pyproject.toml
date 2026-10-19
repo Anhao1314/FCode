@@ -1,0 +1,25 @@
+[build-system]
+# Only needed if someone chooses to `pip install .`. The demo never requires it:
+# `python demo.py` runs straight from the source tree.
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "flowagent"
+version = "0.1.0"
+description = "Host-governed, durable, auditable agent runtime with an offline finance demo"
+readme = "README.md"
+requires-python = ">=3.11"
+# Deliberately empty. The runtime is standard library only; adding a dependency
+# here would mean a fresh clone could no longer run without a network.
+dependencies = []
+license = { text = "UNLICENSED" }
+
+[project.scripts]
+flowagent-demo = "flowagent.demo.__main__:main"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
