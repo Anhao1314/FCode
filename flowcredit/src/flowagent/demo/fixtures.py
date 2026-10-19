@@ -30,6 +30,7 @@ class Scenario:
     reconcile: bool = False
     crash_at: str | None = None
     crash_at_count: int = 1
+    partial_corpus: bool = False
     expected_status: str = "succeeded"
     available: bool = True
 
@@ -121,6 +122,22 @@ SCENARIOS: dict[str, Scenario] = {
         max_rounds=12,
         fail_at_call=3,
         reconcile=True,
+    ),
+    "open-ended": Scenario(
+        key="open-ended",
+        title="目标无法完成：计划被卡住，诚实停止",
+        objective=_OBJECTIVE,
+        story=(
+            "这家公司同样公布了调整后口径的补充材料，但没有公布桥接说明。"
+            "调整后的毛利无法还原成 IFRS，两期口径就此对不上。"
+            "Agent 必须停在这里报告，而不是拿一个算不动的数字出来。"
+        ),
+        allowed_tools=_ALL_TOOLS,
+        grant=_grant(),
+        limits=BudgetLimits(12, 20, 20_000, 20_000),
+        max_rounds=12,
+        partial_corpus=True,
+        expected_status="failed",
     ),
 }
 

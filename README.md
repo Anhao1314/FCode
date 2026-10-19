@@ -78,6 +78,7 @@ python demo.py tool-denied   # 越权工具：主机拒绝，工具从未执行
 python demo.py budget        # 预算耗尽：发送前拦住，已占用不退
 python demo.py crash         # 进程被 SIGKILL，重启续跑不重复
 python demo.py unknown       # 供应商超时：不重发，凭签名收据对账
+python demo.py open-ended    # 计划被卡住：诚实停止，不给算不出的数字
 python demo.py all           # 顺序跑完并打印汇总表
 python demo.py --serve       # 打开 Trace 查看器
 ```
@@ -89,6 +90,7 @@ python demo.py --serve       # 打开 Trace 查看器
  budget       failed                  5    4    4      2000   ok
  crash        succeeded               9    9    9      4500   ok
  unknown      succeeded               9    9    9      4500   ok
+ open-ended   failed                  9    9    9      4500   ok
 ```
 
 四个可靠性场景都不改 Runtime 代码——它们是不同的主机策略与故障注入。这一点本身就是设计主张：可靠性不是特判出来的。
@@ -102,6 +104,7 @@ python demo.py --serve       # 打开 Trace 查看器
 | 持久任务（sqlite WAL、`BEGIN IMMEDIATE`、序列号 CAS） | 已实现 |
 | 事件哈希链（写入校验 + 读取重算 + 链头锚定） | 已实现 |
 | 崩溃恢复（从事件日志重建工作记忆，不重放已完成轮次） | 已实现 |
+| 计划驱动的多轮执行（目标 → 可修订的计划 → todo 推进） | 已实现（确定性，无 LLM） |
 | 未知结果（不重发 / 不退费 / 签名收据显式对账） | 已实现 |
 | 独立验证（Runtime 重算，模型不能自报完成） | 已实现 |
 | Evidence Authority（区分可用与不可用证据） | 已实现（金融域） |
@@ -121,7 +124,7 @@ python demo.py --serve       # 打开 Trace 查看器
 ```
 flowcredit/          Python Runtime 与 Demo
   src/flowagent/
-    core/            canonical JSON、契约与状态机、sqlite + 哈希链、签名收据
+    core/            canonical JSON、契约与状态机、计划层、sqlite + 哈希链、签名收据
     runtime/         门控、预算、单轮 harness、多轮 loop（含恢复）
     tools/           封闭注册表；finance/ 只读工具与 Evidence Authority
     providers/       离线确定性 mock（三种策略）

@@ -77,6 +77,16 @@
   .verify .txt { color: var(--muted); }
   .verify code { color: var(--ink); }
 
+  .plan { margin: 6px 0 20px; border: 1px solid var(--line); padding: 10px 12px; }
+  .plan .head { color: var(--muted); font-size: 12px; margin-bottom: 7px; }
+  .todo { display: flex; gap: 8px; align-items: baseline; padding: 1px 0; }
+  .todo .box { width: 12px; flex-shrink: 0; }
+  .todo .tid { color: var(--muted); min-width: 22px; }
+  .todo .ttool { margin-left: auto; color: var(--muted); font-size: 12px; }
+  .todo.done .box { color: var(--ok); }
+  .todo.done .ttext { color: var(--muted); }
+  .todo.blocked .box, .todo.blocked .ttext { color: var(--bad); }
+  .todo.abandoned .ttext { color: var(--muted); text-decoration: line-through; }
   .round { padding: 9px 0; border-bottom: 1px dotted var(--line); }
   .round:last-of-type { border-bottom: 0; }
   .line { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
@@ -212,6 +222,7 @@ function describe(observation) {
     case "normalize_units":
       return [`${r.source_unit} → ${r.target_unit} ×${num(r.factor)} · 毛利 ${num(r.gross_profit_cny)} 元`];
     case "reconcile_basis":
+      if (r.reconciled === false) return [`${r.period} · 无法桥接：${esc(r.reason || "没有公布的桥接说明")}`];
       return [`${r.period} ${r.from_basis} → ${r.to_basis} · 差异 ${r.delta >= 0 ? "+" : ""}${r.delta}`, `<span class="dim">${esc(r.reason)}</span>`];
     case "check_restatement":
       return r.restated
@@ -226,6 +237,30 @@ function describe(observation) {
     default:
       return [esc(JSON.stringify(r))];
   }
+}
+
+function renderPlan(plan) {
+  if (!plan || !plan.todos || !plan.todos.length) return "";
+  const done = plan.todos.filter(t => t.status === "done").length;
+  const glyph = { done: "✔", blocked: "✗", abandoned: "–", active: "▸", pending: "·" };
+  return `<div class="plan">
+    <div class="head">plan · revision ${plan.revision} · ${done}/${plan.todos.length} settled</div>
+    ${plan.todos.map(t => `<div class="todo ${t.status}">
+      <span class="box">${glyph[t.status] || "·"}</span>
+      <span class="tid">${esc(t.id)}</span>
+      <span class="ttext">${esc(t.text)}</span>
+      <span class="ttool">${esc(t.tool)}</span>
+    </div>`).join("")}
+  </div>`;
+}
+
+function lastPlan(trace) {
+  const rounds = trace.rounds || [];
+  for (let i = rounds.length - 1; i >= 0; i--) {
+    if (rounds[i].plan_after) return rounds[i].plan_after;
+    if (rounds[i].plan) return rounds[i].plan;
+  }
+  return null;
 }
 
 function renderRound(round) {
@@ -254,6 +289,7 @@ function renderRound(round) {
     <div class="line">
       <span class="idx">${round.index}</span>
       <span class="g${denied ? " deny" : ""}">⏺</span>
+      <span class="tid">${esc(step ? step.id : "")}</span>
       <span class="tool">${esc(step ? step.tool : "—")}</span>
       <span class="args">${esc(args)}</span>
       ${verdict}
@@ -335,6 +371,7 @@ async function render(trace, title) {
         ? `chain verified · ${check.events} events · head <code>${esc(check.head.slice(0, 16))}…</code>`
         : `chain broken · ${esc(check.reason)}`}</span>
     </div>
+    ${renderPlan(lastPlan(trace))}
     ${rounds.map(renderRound).join("")}
     ${renderTerminal(trace)}
     ${renderChain(trace)}

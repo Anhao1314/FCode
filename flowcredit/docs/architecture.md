@@ -77,6 +77,23 @@ created ──▶ planning ──▶ planned ──▶ running ──▶ verifyi
 
 模型侧：`not_started → started → validated / unknown / failed`，且 `validated → started` 允许，因为每一轮都是一次新调用。
 
+## 计划层
+
+目标是可修订的对象，不是散落在策略里的步骤表。
+
+```
+Goal（objective + 成功判据）
+  └─ Plan（revision，持久化）
+       └─ Todo（text / tool / arguments / done_when / status / evidence）
+```
+
+四个规则：
+
+1. **计划是派生视图。** 每次运行时，`Loop.rebuild_plan()` 都会把已提交的观测重放回规划器，而不是信任任务体里存的那份快照。进程在「观测已提交、计划未更新」之间崩溃，快照会落后一步，重放永远是对的。
+2. **todo 的完成必须带证据。** `evidence` 存的是观测结果的哈希，可以一路回溯到事件链。没有证据的 `done` 是不被允许的。
+3. **规划器是域代码。** `tools/finance/planner.py` 提供蓝图和判据，`core/plan.py` 只管状态机。换领域不动内核。
+4. **拒绝也是一种结果。** 工具跑完并报告「做不了」，对应 todo 是 `blocked` 而不是 `pending` 或 `failed`。`open-ended` 场景就是这条：公司没有公布桥接说明，`t6` 被 blocked，最后以 `INSUFFICIENT_EVIDENCE` 收尾，报告里带着领域原因。
+
 ## 持久层
 
 单文件 SQLite，WAL 模式，`synchronous=FULL`。
@@ -123,6 +140,7 @@ hash_n = sha256(canonical_json({sequence, type, payload, prev_hash, at}))
 | 文件 | 职责 | 关键不变量 |
 | --- | --- | --- |
 | `core/hashing.py` | canonical JSON + sha256 | 拒绝 float；键排序；UTF-8 |
+| `core/plan.py` | Goal / Plan / Todo 状态机 | done 不可逆；evidence 必填 |
 | `core/contracts.py` | 版本、异常、Task/Plan/Step、迁移表 | 未知键一律拒绝 |
 | `core/store.py` | sqlite、事务、哈希链、CAS | 序列号由 store 独占 |
 | `core/receipts.py` | HMAC 收据 | 签名不符即 `UNTRUSTED` |

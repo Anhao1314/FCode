@@ -77,7 +77,7 @@ class Renderer:
         self._p(f" 预算   {self._budget_text(budget)}")
         self._p(self._c(self.DIM, line))
 
-    def round_start(self, round_no: int, budget: dict[str, Any]) -> None:
+    def round_start(self, round_no: int, budget: dict[str, Any], plan: Any = None) -> None:
         if self.quiet:
             return
         self._p()
@@ -105,7 +105,7 @@ class Renderer:
         for line in self._describe(observation):
             self._p(f"  工具返回  {line}")
 
-    def round_end(self, round_no: int, budget: dict[str, Any]) -> None:
+    def round_end(self, round_no: int, budget: dict[str, Any], plan: Any = None) -> None:
         if self.quiet:
             return
         self._p(self._c(self.DIM, f"  预算扣减  {self._budget_text(budget)}"))
@@ -186,6 +186,8 @@ class Renderer:
         if tool == "normalize_units":
             return [f"{result['id']}  {result['source_unit']} → CNY  ×{result['factor']:,}  毛利 {result['gross_profit_cny']:,} 元"]
         if tool == "reconcile_basis":
+            if result.get("reconciled") is False:
+                return [f"{result['period']}  无法桥接：{result.get('reason', '没有公布的桥接说明')}"]
             return [
                 f"{result['period']}  {result['from_basis']} → {result['to_basis']}  差异 {result['delta']:+d} 百万元",
                 f"{self._c(self.DIM, result['reason'])}",

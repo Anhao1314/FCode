@@ -33,6 +33,8 @@ class RoundRecord:
     decision: dict[str, Any] | None = None
     observation: dict[str, Any] | None = None
     budget_after: dict[str, Any] = field(default_factory=dict)
+    plan: dict[str, Any] | None = None
+    plan_after: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -43,6 +45,8 @@ class RoundRecord:
             "decision": self.decision,
             "observation": self.observation,
             "budget_after": self.budget_after,
+            "plan": self.plan,
+            "plan_after": self.plan_after,
         }
 
 
@@ -58,8 +62,10 @@ class TraceRecorder:
 
     # ------------------------------------------------------------- observer API
 
-    def round_start(self, round_no: int, budget: dict[str, Any]) -> None:
-        self._rounds.append(RoundRecord(index=round_no, budget_before=dict(budget)))
+    def round_start(self, round_no: int, budget: dict[str, Any], plan: Any = None) -> None:
+        record = RoundRecord(index=round_no, budget_before=dict(budget))
+        record.plan = plan.to_dict() if plan is not None else None
+        self._rounds.append(record)
 
     def proposal(self, round_no: int, proposal: Any) -> None:
         record = self._current(round_no)
@@ -72,8 +78,11 @@ class TraceRecorder:
     def observation(self, round_no: int, observation: Observation) -> None:
         self._current(round_no).observation = observation.to_dict()
 
-    def round_end(self, round_no: int, budget: dict[str, Any]) -> None:
-        self._current(round_no).budget_after = dict(budget)
+    def round_end(self, round_no: int, budget: dict[str, Any], plan: Any = None) -> None:
+        record = self._current(round_no)
+        record.budget_after = dict(budget)
+        if plan is not None:
+            record.plan_after = plan.to_dict()
 
     def terminal(self, task: Task, result: dict[str, Any] | None) -> None:
         self._terminal = {

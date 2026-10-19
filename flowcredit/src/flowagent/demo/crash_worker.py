@@ -23,6 +23,7 @@ from ..runtime.budget import BudgetLimits
 from ..runtime.harness import Harness
 from ..runtime.loop import Loop
 from ..tools.finance.fixtures import FinanceWorld
+from ..tools.finance.planner import FinancePlanner
 from ..tools.finance.tools import build_finance_tools
 from ..tools.registry import ToolRegistry
 
@@ -54,7 +55,7 @@ def main() -> int:
     TaskStore.save = patched_save  # type: ignore[method-assign]
 
     store = TaskStore(Path(db))
-    world = FinanceWorld()
+    world = FinanceWorld()  # the crash scenario uses the complete corpus
     registry = ToolRegistry(build_finance_tools(world))
     receipts = ReceiptStore(store)
     provider = MockProvider()
@@ -66,7 +67,7 @@ def main() -> int:
         limits=BudgetLimits(12, 20, 20_000, 20_000),
         receipts=receipts,
     )
-    Loop(harness, max_rounds=max_rounds).run(task_id)
+    Loop(harness, planner=FinancePlanner(), max_rounds=max_rounds).run(task_id)
     return 0
 
 

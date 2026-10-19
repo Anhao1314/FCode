@@ -27,6 +27,7 @@ from ..providers.mock import MockProvider
 from ..runtime.harness import Harness
 from ..runtime.loop import Loop
 from ..tools.finance.fixtures import FinanceWorld
+from ..tools.finance.planner import FinancePlanner
 from ..tools.finance.tools import build_finance_tools
 from ..tools.registry import ToolRegistry
 from ..trajectory.exporter import export_trace, verify_trace
@@ -77,6 +78,7 @@ class Stack:
     receipts: ReceiptStore
     provider: MockProvider
     harness: Harness
+    planner: FinancePlanner
     issued: dict[str, str] = field(default_factory=dict)
 
 
@@ -86,9 +88,9 @@ class _Tee:
     def __init__(self, *observers: Any) -> None:
         self._observers = observers
 
-    def round_start(self, round_no: int, budget: dict[str, Any]) -> None:
+    def round_start(self, round_no: int, budget: dict[str, Any], plan: Any = None) -> None:
         for observer in self._observers:
-            observer.round_start(round_no, budget)
+            observer.round_start(round_no, budget, plan)
 
     def proposal(self, round_no: int, proposal: Any) -> None:
         for observer in self._observers:
@@ -102,9 +104,9 @@ class _Tee:
         for observer in self._observers:
             observer.observation(round_no, observation)
 
-    def round_end(self, round_no: int, budget: dict[str, Any]) -> None:
+    def round_end(self, round_no: int, budget: dict[str, Any], plan: Any = None) -> None:
         for observer in self._observers:
-            observer.round_end(round_no, budget)
+            observer.round_end(round_no, budget, plan)
 
     def terminal(self, task: Any, result: Any) -> None:
         for observer in self._observers:
@@ -133,7 +135,7 @@ def _fresh_database(path: Path) -> None:
 def build_stack(db_path: Path, scenario: Scenario) -> Stack:
     """Assemble store, world, registry, provider and harness for one scenario."""
     store = TaskStore(db_path)
-    world = FinanceWorld()
+    world = FinanceWorld(partial=scenario.partial_corpus)
     registry = ToolRegistry(build_finance_tools(world))
     receipts = ReceiptStore(store)
     issued: dict[str, str] = {}
@@ -156,7 +158,7 @@ def build_stack(db_path: Path, scenario: Scenario) -> Stack:
         limits=scenario.limits,
         receipts=receipts,
     )
-    return Stack(store, world, registry, receipts, provider, harness, issued)
+    return Stack(store, world, registry, receipts, provider, harness, FinancePlanner(), issued)
 
 
 def _count(store: TaskStore, task_id: str, event_type: str) -> int:
@@ -222,7 +224,7 @@ def run_scenario(
     if scenario.crash_at:
         task, recovered = _run_crash(stack, scenario, task, observer, renderer)
     else:
-        task = Loop(stack.harness, max_rounds=scenario.max_rounds, observer=observer).run(task.id)
+        task = Loop(stack.harness, planner=stack.planner, max_rounds=scenario.max_rounds, observer=observer).run(task.id)
 
         if scenario.reconcile and task.status == "recovery_required":
             renderer.event("UNKNOWN", "模型结果未知：不重发、不退费，等待显式对账", colour=Renderer.YELLOW)
@@ -234,7 +236,7 @@ def run_scenario(
             task = stack.harness.reconcile(task, ref)
             reconciled = True
             renderer.event("RECONCILED", f"签名收据匹配 round {task.model.attempts}，继续执行", colour=Renderer.GREEN)
-            task = Loop(stack.harness, max_rounds=scenario.max_rounds, observer=observer).run(task.id)
+            task = Loop(stack.harness, planner=stack.planner, max_rounds=scenario.max_rounds, observer=observer).run(task.id)
 
     path, verified = _finish(stack, scenario, task, recorder, renderer, trace_out=trace_out)
     budget = stack.harness.budget(task).snapshot()
@@ -293,7 +295,7 @@ def _run_crash(
         renderer.event("WARNING", f"worker 未按预期崩溃：{completed.stderr.strip()[:120]}", colour=Renderer.YELLOW)
 
     resumed = stack.store.load(task.id)
-    memory = Loop(stack.harness).restore(resumed)
+    memory = Loop(stack.harness, planner=stack.planner).restore(resumed)
     stack.world.apply_state(memory.state())
     renderer.event(
         "RECOVERED",
@@ -302,7 +304,7 @@ def _run_crash(
         colour=Renderer.GREEN,
     )
 
-    task = Loop(stack.harness, max_rounds=scenario.max_rounds, observer=observer).run(resumed.id)
+    task = Loop(stack.harness, planner=stack.planner, max_rounds=scenario.max_rounds, observer=observer).run(resumed.id)
 
     # The property that matters is not "the counter went up by the right amount"
     # but "no round was proposed twice". Duplicates would mean a paid call was

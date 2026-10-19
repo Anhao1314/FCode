@@ -273,6 +273,10 @@ class Task:
     model_grant: dict[str, Any] = field(default_factory=dict)
     model: ModelState = field(default_factory=ModelState)
     plan: Plan | None = None
+    #: Durable snapshot of the agent's current plan (see core/plan.py). Kept as
+    #: a plain dict so the contract layer does not import the plan module and
+    #: create a cycle; the loop owns the typed view.
+    plan_state: dict[str, Any] | None = None
     steps: list[Step] = field(default_factory=list)
     failure: dict[str, Any] | None = None
     result: dict[str, Any] | None = None
@@ -290,6 +294,7 @@ class Task:
             "model_grant": self.model_grant,
             "model": self.model.to_dict(),
             "plan": self.plan.to_dict() if self.plan else None,
+            "plan_state": self.plan_state,
             "steps": [step.to_dict() for step in self.steps],
             "failure": self.failure,
             "result": self.result,
@@ -310,6 +315,7 @@ class Task:
             model_grant=dict(data.get("model_grant") or {}),
             model=ModelState.from_dict(data.get("model") or {}),
             plan=plan,
+            plan_state=data.get("plan_state"),
             steps=[Step.from_dict(item) for item in data.get("steps") or []],
             failure=data.get("failure"),
             result=data.get("result"),

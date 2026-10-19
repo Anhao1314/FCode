@@ -124,12 +124,22 @@ class WorkingMemory:
 
     # ----------------------------------------------------------------- context
 
-    def build(self, round_no: int, budget_snapshot: dict[str, Any]) -> dict[str, Any]:
-        """Return the context object handed to the provider this round."""
+    def build(
+        self,
+        round_no: int,
+        budget_snapshot: dict[str, Any],
+        plan: Any | None = None,
+    ) -> dict[str, Any]:
+        """Return the context object handed to the provider this round.
+
+        ``plan`` is the open-todo view, not the whole plan: the model needs to
+        know what is left, not the history of how it got there.
+        """
         return {
             "objective": self.objective,
             "round": round_no,
             "tools": self.tool_catalog,
+            "plan": plan.to_context() if plan is not None else [],
             "state": self.state(),
             "observations": [
                 {

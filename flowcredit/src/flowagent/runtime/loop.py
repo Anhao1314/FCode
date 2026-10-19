@@ -1,15 +1,20 @@
-"""Multi-round driver: one action per round, termination owned by the runtime.
+"""Multi-round driver: follow a plan, one action per round.
 
-Two properties are implemented here rather than in the harness.
+Three properties are implemented here rather than in the harness.
 
-**Resumption.** The loop rebuilds its working memory from the event log instead
-of keeping it in a Python object. A process that dies after a tool call can
-therefore restart and know what it already read, which is what makes "recovery
-does not repeat work" true rather than aspirational.
+**The plan is derived, not trusted.** On every run the plan is rebuilt by
+replaying the committed observations through the domain planner. The snapshot in
+the task body is for display and for resuming quickly; the log is what decides.
+A crash between "observation committed" and "plan updated" therefore costs
+nothing — the replay catches up on its own.
 
-**No duplicate dispatch after reconciliation.** If the last committed event is a
+**Resumption does not repeat work.** If the last committed event is a
 reconciliation, the loop executes the already-approved proposal instead of asking
 the model again. Asking again would be a second paid call for the same round.
+
+**Termination is the plan's, then the verifier's.** The loop stops when nothing
+is open. It only reports success when the runtime recomputes the answer and
+agrees, and only reports failure when the plan says a todo is genuinely blocked.
 """
 
 from __future__ import annotations
@@ -17,6 +22,7 @@ from __future__ import annotations
 from typing import Any
 
 from ..core.contracts import AgentError, Task
+from ..core.plan import Plan
 from ..memory.context import WorkingMemory
 from ..tools.base import Observation
 from .harness import Harness, TraceObserver
@@ -27,36 +33,44 @@ __all__ = ["Loop", "NullObserver"]
 class NullObserver:
     """A do-nothing observer, so the loop can run headless."""
 
-    def round_start(self, round_no: int, budget: dict[str, Any]) -> None: ...
+    def round_start(self, round_no: int, budget: dict[str, Any], plan: Any = None) -> None: ...
     def proposal(self, round_no: int, proposal: Any) -> None: ...
     def gate(self, round_no: int, decision: Any) -> None: ...
     def observation(self, round_no: int, observation: Observation) -> None: ...
-    def round_end(self, round_no: int, budget: dict[str, Any]) -> None: ...
+    def round_end(self, round_no: int, budget: dict[str, Any], plan: Any = None) -> None: ...
     def terminal(self, task: Task, result: dict[str, Any] | None) -> None: ...
 
 
 class Loop:
-    """Runs rounds until the runtime can prove an answer or must stop."""
+    """Runs rounds until the plan is settled or the runtime must stop."""
 
     def __init__(
         self,
         harness: Harness,
         *,
+        planner: Any = None,
         max_rounds: int = 12,
         observer: TraceObserver | None = None,
     ) -> None:
         self.harness = harness
+        self.planner = planner
         self.max_rounds = max_rounds
         self.observer: TraceObserver = observer or NullObserver()
 
     def run(self, task_id: str) -> Task:
         task = self.harness.store.load(task_id)
         memory = self.restore(task)
+        plan = self.rebuild_plan(task, memory)
         pending = self.pending_step(task)
 
         while True:
-            if pending is None and task.model.attempts >= self.max_rounds:
-                return self._abort(task_id, AgentError("ROUND_LIMIT", f"no verified result after {self.max_rounds} rounds"))
+            if pending is None:
+                if plan.is_blocked():
+                    return self._stop(task, plan, "PLAN_BLOCKED")
+                if plan.is_complete() or plan.next_open() is None:
+                    return self._stop(task, plan, "PLAN_EXHAUSTED")
+                if task.model.attempts >= self.max_rounds:
+                    return self._abort(task_id, AgentError("ROUND_LIMIT", f"no verified result after {self.max_rounds} rounds"))
 
             budget_snapshot = self.harness.budget(task).snapshot()
 
@@ -66,17 +80,16 @@ class Loop:
                 step = pending
                 pending = None
                 round_no = task.model.attempts
-                self.observer.round_start(round_no, budget_snapshot)
+                self.observer.round_start(round_no, budget_snapshot, plan)
             else:
                 round_no = task.model.attempts + 1
-                self.observer.round_start(round_no, budget_snapshot)
-                context = memory.build(round_no, budget_snapshot)
+                self.observer.round_start(round_no, budget_snapshot, plan)
+                context = memory.build(round_no, budget_snapshot, plan)
                 try:
                     task, proposal = self.harness.propose(task, context)
                 except AgentError as error:
                     return self._abort(task_id, error)
                 if proposal is None:
-                    # propose() already committed a terminal state.
                     self.observer.terminal(task, None)
                     return task
                 self.observer.proposal(round_no, proposal)
@@ -85,7 +98,7 @@ class Loop:
             decision = self.harness.gate(task, step)
             self.observer.gate(round_no, decision)
             if not decision.allowed:
-                return self._deny(task, decision)
+                return self._deny(task, decision, plan)
 
             try:
                 task, observation = self.harness.execute(task, step, round_no=round_no)
@@ -93,18 +106,15 @@ class Loop:
                 return self._abort(task_id, error)
 
             memory.record(round_no, observation)
+            plan = self.planner.advance(plan, observation) if self.planner else plan
+            task = self._persist_plan(task, plan, round_no)
+
             self.observer.observation(round_no, observation)
-            self.observer.round_end(round_no, self.harness.budget(task).snapshot())
+            self.observer.round_end(round_no, self.harness.budget(task).snapshot(), plan)
 
             if observation.tool == "calculate_margin" and observation.result.get("computed"):
                 verified = self.harness.verify(observation)
-                return self._succeed(task, verified)
-
-            if observation.tool == "report_blocked":
-                # The model asked to stop. The runtime checks whether the world
-                # agrees that no further read could resolve the gap.
-                if not self.harness.world.calculate_margin().get("computed"):
-                    return self._stop_insufficient(task, observation)
+                return self._succeed(task, verified, plan)
 
     # -------------------------------------------------------------- resumption
 
@@ -129,6 +139,28 @@ class Loop:
             )
         return memory
 
+    def rebuild_plan(self, task: Task, memory: WorkingMemory) -> Plan:
+        """Derive the current plan by replaying observations through the planner.
+
+        The stored snapshot is not trusted here. If a process died between
+        committing an observation and updating the plan, the snapshot is one
+        step behind; the replay is always right.
+        """
+        if self.planner is None:
+            return Plan(goal=task.objective)
+        base = Plan.from_dict(task.plan_state) if task.plan_state else self.planner.decompose(task.objective)
+        for record in memory.records:
+            base = self.planner.advance(
+                base,
+                Observation(
+                    tool=record.tool,
+                    arguments=record.arguments,
+                    result=record.result,
+                    result_hash=record.result_hash,
+                ),
+            )
+        return base
+
     def pending_step(self, task: Task) -> dict[str, Any] | None:
         """Return an approved-but-unexecuted step, if reconciliation left one."""
         if task.model.status != "validated" or not task.model.proposal:
@@ -140,33 +172,42 @@ class Loop:
 
     # --------------------------------------------------------------- terminals
 
-    def _succeed(self, task: Task, verified: dict[str, Any]) -> Task:
+    def _persist_plan(self, task: Task, plan: Plan, round_no: int) -> Task:
+        task.plan_state = plan.to_dict()
+        return self.harness.record(task, "plan_updated", {"round": round_no, "plan": plan.to_dict()})
+
+    def _succeed(self, task: Task, verified: dict[str, Any], plan: Plan) -> Task:
         result = dict(verified["result"])
         result["verification"] = verified["verification"]
+        result["plan"] = plan.progress()
         task = self.harness.finalize(task, "verifying", result=None, event="verification_started")
         task = self.harness.finalize(task, "succeeded", result=result, event="task_succeeded")
         self.observer.terminal(task, result)
         return task
 
-    def _deny(self, task: Task, decision: Any) -> Task:
+    def _deny(self, task: Task, decision: Any, plan: Plan) -> Task:
         task = self.harness.finalize(
             task,
             "denied",
             failure={"code": decision.code, "message": decision.reason, "retryable": False},
             event="tool_denied",
-            detail={"tool": decision.tool, "code": decision.code},
+            detail={"tool": decision.tool, "code": decision.code, "plan": plan.progress()},
         )
         self.observer.terminal(task, None)
         return task
 
-    def _stop_insufficient(self, task: Task, observation: Observation) -> Task:
-        reason = observation.result.get("reason", "insufficient_evidence")
+    def _stop(self, task: Task, plan: Plan, code: str) -> Task:
+        blocked = [todo.to_dict() for todo in plan.todos if todo.status == "blocked"]
         task = self.harness.finalize(
             task,
             "failed",
-            failure={"code": "INSUFFICIENT_EVIDENCE", "message": reason, "retryable": False},
-            event="task_stopped_insufficient",
-            detail={"reason": reason},
+            failure={
+                "code": "INSUFFICIENT_EVIDENCE" if code == "PLAN_BLOCKED" else "PLAN_INCOMPLETE",
+                "message": "; ".join(item["reason"] for item in blocked if item["reason"]) or "the plan has no remaining action",
+                "retryable": False,
+            },
+            event="task_stopped",
+            detail={"code": code, "plan": plan.progress(), "blocked": blocked},
         )
         self.observer.terminal(task, None)
         return task

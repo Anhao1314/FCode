@@ -263,6 +263,14 @@ class Harness:
 
     # ------------------------------------------------------------------ helper
 
+    def record(self, task: Task, event: str, detail: dict[str, Any] | None = None) -> Task:
+        """Persist a non-terminal change (a plan revision, say) as its own event.
+
+        The plan is state the agent acts on, so it belongs in the chain rather
+        than in a side table: a revision that is not recorded cannot be audited.
+        """
+        return self._commit(task, task, event, detail or {})
+
     def finalize(
         self,
         task: Task,

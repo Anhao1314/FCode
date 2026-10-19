@@ -29,6 +29,9 @@ class Proposal:
     tokens: int
     cost_microusd: int
     latency_ms: int = 0
+    #: Which todo the model claims this action advances. Recorded in the trace so
+    #: an action that advances nothing is visible rather than absorbed.
+    todo_id: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def receipt(self) -> dict[str, Any]:
@@ -39,6 +42,7 @@ class Proposal:
             "cost_microusd": self.cost_microusd,
             "latency_ms": self.latency_ms,
             "external_billing": "not-verified",
+            "todo_id": self.todo_id,
             "metadata": dict(self.metadata),
         }
 

@@ -33,6 +33,7 @@ python demo.py tool-denied   # 越权工具：主机拒绝，工具从未执行
 python demo.py budget        # 预算耗尽：发送前拦住，已占用不退
 python demo.py crash         # 进程被 SIGKILL，重启续跑不重复
 python demo.py unknown       # 供应商超时：不重发，凭签名收据对账
+python demo.py open-ended    # 计划被卡住：诚实停止，不给算不出的数字
 python demo.py all           # 顺序跑完并打印汇总表
 ```
 
@@ -76,7 +77,7 @@ python demo.py --serve
 python -m unittest discover -s tests -v
 ```
 
-23 项，覆盖权限门控（未注册 / 越权 / 超 grant / 参数非法）、预算三个维度、状态机非法迁移、并发写 CAS、事件篡改、收据伪造、独立重算拒绝伪造观测、trace 篡改，以及五个场景的端到端断言（其中崩溃场景用真实 SIGKILL，断言"没有任何一轮被重复提议"）。
+35 项，覆盖计划层与权限门控（未注册 / 越权 / 超 grant / 参数非法）、预算三个维度、状态机非法迁移、并发写 CAS、事件篡改、收据伪造、独立重算拒绝伪造观测、trace 篡改，以及五个场景的端到端断言（其中崩溃场景用真实 SIGKILL，断言"没有任何一轮被重复提议"）。
 
 CI 在 Ubuntu 与 macOS 上跑 Python 3.11 与 3.13，包含 `python demo.py all` 与零配置入口冒烟。
 
@@ -84,7 +85,7 @@ CI 在 Ubuntu 与 macOS 上跑 Python 3.11 与 3.13，包含 `python demo.py all
 
 ```
 src/flowagent/
-  core/        hashing（canonical JSON）、contracts（状态与校验）、store（sqlite + 哈希链）、receipts（签名收据）
+  core/        hashing（canonical JSON）、contracts（状态与校验）、plan（目标/计划/todo）、store（sqlite + 哈希链）、receipts（签名收据）
   runtime/     state_machine、permissions（主机门控）、budget、harness（单轮）、loop（多轮 + 恢复）
   tools/       base/registry，finance/（只读工具 + Evidence Authority）
   providers/   base、mock（离线确定性，三种策略）

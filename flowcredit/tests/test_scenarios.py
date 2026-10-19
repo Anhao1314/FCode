@@ -92,5 +92,29 @@ class TraceFileTest(unittest.TestCase):
                 self.assertGreater(summary["events"], 3)
 
 
+class RenderedOutputTest(unittest.TestCase):
+    """Render every scenario, not just run it.
+
+    Added after a real escape: the open-ended scenario failed only in the
+    rendering path, because the other tests run with ``quiet=True`` and never
+    exercise ``Renderer._describe``. A suite that only exercises the quiet path
+    cannot see the demo break.
+    """
+
+    def test_every_scenario_renders_without_raising(self) -> None:
+        import contextlib
+        import io
+
+        from flowagent.demo.fixtures import SCENARIOS
+
+        for key, scenario in SCENARIOS.items():
+            with self.subTest(scenario=key):
+                buffer = io.StringIO()
+                with contextlib.redirect_stdout(buffer):
+                    result = run_scenario(key, fast=True, quiet=False)
+                self.assertEqual(result.status, scenario.expected_status)
+                self.assertIn("终态", buffer.getvalue())
+
+
 if __name__ == "__main__":
     unittest.main()

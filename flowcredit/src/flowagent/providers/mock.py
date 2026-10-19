@@ -1,19 +1,20 @@
-"""A deterministic offline model with a few switchable policies.
+"""A deterministic offline model that follows the plan it is given.
 
 This is not a stand-in for a language model; it is a stand-in for *the shape of a
-model's output*. It reads only the context it is given — the same observation
-summary a real model would see — and it never looks at the world directly. That
-restriction is what makes the demo honest: if the mock can decide the next action
-from the observations alone, then the observation design is sufficient, and the
-question of whether a real model helps becomes an empirical one rather than a
-structural one.
+model's output*. Two properties matter and are both load-bearing:
+
+**It reads only the context.** Observations, the plan, the tool catalogue. It
+never looks at the world directly. If the next action can be decided from the
+context alone, then the context design is sufficient, and "would a real model do
+better" becomes an empirical question rather than a structural one.
+
+**It does not decide the sequence.** Earlier versions hardcoded the nine steps.
+Now the plan decides what is left, and the policy only picks the first open todo.
+That is the difference between a workflow and an agent: the order lives in a
+revisable object, not in a policy function.
 
 Policies exist so the reliability scenarios can provoke a specific failure without
-touching the runtime:
-
-``research``  the nine-round story used by the main demo
-``escalate``  propose a tool that was never registered, to exercise the gate
-``loop``      repeat one harmless read until the call budget runs out
+touching the runtime.
 """
 
 from __future__ import annotations
@@ -51,9 +52,9 @@ class MockProvider:
         self.calls = 0
 
     def propose(self, context: dict[str, Any]) -> Proposal:
-        """Choose exactly one next action from the observation summary."""
+        """Choose one action, and say which todo it is meant to advance."""
         self.calls += 1
-        step = self._next_step(context["state"])
+        step, todo_id = self._next_step(context)
         plan = {"version": PLAN_VERSION, "steps": [step]}
 
         if self.fail_at_call is not None and self.fail_at_call == self.calls:
@@ -75,17 +76,18 @@ class MockProvider:
             tokens=self.TOKENS_PER_CALL,
             cost_microusd=self.COST_PER_CALL_MICROUSD,
             latency_ms=0,
+            todo_id=todo_id,
             metadata={"policy": self.policy, "round": context.get("round", 0)},
         )
 
     # ------------------------------------------------------------------ policy
 
-    def _next_step(self, state: dict[str, Any]) -> dict[str, Any]:
+    def _next_step(self, context: dict[str, Any]) -> tuple[dict[str, Any], str | None]:
         if self.policy == "escalate":
-            return self._escalate()
+            return self._escalate(), None
         if self.policy == "loop":
-            return self._step("s1", "list_documents", {})
-        return self._research(state)
+            return self._step("s1", "list_documents", {}), None
+        return self._follow_plan(context)
 
     @staticmethod
     def _escalate() -> dict[str, Any]:
@@ -96,31 +98,20 @@ class MockProvider:
         """
         return {"id": "s9", "tool": "write_document", "arguments": {"doc_id": "doc_fy2024"}}
 
-    def _research(self, state: dict[str, Any]) -> dict[str, Any]:
-        read = set(state.get("read_documents", []))
-        normalised = set(state.get("normalised_documents", []))
-        reconciled_periods = set(state.get("reconciled_periods", []))
-        computed = bool(state.get("computed"))
+    def _follow_plan(self, context: dict[str, Any]) -> tuple[dict[str, Any], str | None]:
+        """Take the first open todo and turn it into an action.
 
-        if not state.get("listed_documents"):
-            return self._step("s1", "list_documents", {})
-        if "doc_fy2024" not in read:
-            return self._step("s2", "read_document", {"doc_id": "doc_fy2024"})
-        if "doc_fy2025" not in read:
-            return self._step("s3", "read_document", {"doc_id": "doc_fy2025"})
-        if not state.get("restatement_checked"):
-            return self._step("s4", "check_restatement", {"doc_id": "doc_fy2024"})
-        if "doc_fy2025_adjusted" not in read:
-            return self._step("s5", "read_document", {"doc_id": "doc_fy2025_adjusted"})
-        if "FY2025" not in reconciled_periods:
-            return self._step("s6", "reconcile_basis", {"doc_id": "doc_fy2025_adjusted"})
-        if "doc_fy2024_restated" not in normalised:
-            return self._step("s7", "normalize_units", {"doc_id": "doc_fy2024_restated"})
-        if "doc_fy2025" not in normalised:
-            return self._step("s8", "normalize_units", {"doc_id": "doc_fy2025"})
-        if not computed:
-            return self._step("s9", "calculate_margin", {})
-        return self._step("s10", "report_blocked", {"reason": "insufficient_evidence"})
+        When the plan is exhausted the agent does not invent work: it reports
+        that it cannot proceed, and the runtime decides whether that is true.
+        """
+        open_todos = [
+            todo for todo in (context.get("plan") or [])
+            if todo.get("status") in ("pending", "active")
+        ]
+        if not open_todos:
+            return self._step("stop", "report_blocked", {"reason": "insufficient_evidence"}), None
+        todo = open_todos[0]
+        return self._step(todo["id"], todo["tool"], todo.get("arguments") or {}), todo["id"]
 
     @staticmethod
     def _step(step_id: str, tool: str, arguments: dict[str, Any]) -> dict[str, Any]:

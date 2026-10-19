@@ -68,7 +68,15 @@ class FinanceWorld:
     is ready".
     """
 
-    def __init__(self) -> None:
+    def __init__(self, *, partial: bool = False) -> None:
+        """Build the corpus.
+
+        ``partial`` drops the reconciliation bridge, which is the honest version
+        of this demo: the company published an adjusted figure and never
+        explained the difference to IFRS. An agent that computes anyway is
+        producing a number nobody can check.
+        """
+        self.partial = partial
         self.documents: dict[str, Document] = {}
         self.read_documents: set[str] = set()
         self.normalised: set[str] = set()
@@ -156,6 +164,7 @@ class FinanceWorld:
                 ),
             ),
         ]
+        docs = [doc for doc in docs if not (self.partial and doc.kind == "basis_bridge")]
         self.documents = {doc.id: doc for doc in docs}
 
     # ------------------------------------------------------------------ reads
@@ -216,7 +225,9 @@ class FinanceWorld:
             None,
         )
         if bridge is None:
-            raise ValueError(f"no bridge available for {doc_id}")
+            # No published bridge. Report it rather than raising: a missing
+            # explanation is a fact about the world, not an error in the agent.
+            return {"period": doc.period, "reconciled": False, "reason": "该公司没有公布该期间的桥接说明"}
         self.reconciled.add(doc.period)
         return {
             "period": doc.period,
