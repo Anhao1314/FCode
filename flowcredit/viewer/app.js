@@ -788,6 +788,37 @@ function alertDetail(kind, title, sub) {
   return `<div class="t-detail"><div class="alert ${kind}"><div class="a-title">${esc(title)}</div>${sub ? `<div class="a-sub">${esc(sub)}</div>` : ""}</div></div>`;
 }
 
+/* 逐帧工具小人：只在正在执行的那一轮播放，完成后定格回静态图标。
+   每个场景两帧（CSS steps(2)），对应喜茶式的手绘逐帧节奏。 */
+const TOOL_DOODLE = {
+  list_documents: `<svg class="i doodle-tool" viewBox="0 0 24 24" aria-hidden="true">
+    <circle cx="7" cy="6.6" r="2.5"/><path d="M7 9.1v6.6M5 15.7h4"/>
+    <path class="dm-rock" d="M13.2 8.2h5.6v9.4h-5.6z"/>
+    <path class="dm-rock2" d="M14.6 6.4h5.6v9.4h-5.6z"/></svg>`,
+  read_document: `<svg class="i doodle-tool" viewBox="0 0 24 24" aria-hidden="true">
+    <circle cx="8" cy="6.8" r="2.6"/><path d="M8 9.4v6.4M6 15.8h4"/>
+    <path class="dm-rock" d="M12.4 9.6l5.2-.8 1.2 7.6-5.2.8z"/></svg>`,
+  normalize_units: `<svg class="i doodle-tool" viewBox="0 0 24 24" aria-hidden="true">
+    <circle cx="7" cy="7" r="2.6"/><path d="M7 9.6v6M5 15.6h4"/>
+    <path d="M13 7.4h6v4.6h-6z"/>
+    <path class="dm-flip" d="M14.2 14.2h6v4.6h-6z"/></svg>`,
+  reconcile_basis: `<svg class="i doodle-tool" viewBox="0 0 24 24" aria-hidden="true">
+    <circle cx="6.4" cy="6.6" r="2.4"/><path d="M6.4 9v6.8M4.4 15.8h4"/>
+    <path d="M10.6 16h3M15.4 16h3"/>
+    <path class="dm-rock" d="M10.8 12.2h8.4"/></svg>`,
+  check_restatement: `<svg class="i doodle-tool" viewBox="0 0 24 24" aria-hidden="true">
+    <circle cx="7.4" cy="6.4" r="2.4"/><path d="M7.4 8.8v6.4M5.4 15.2h4"/>
+    <path d="M11.6 9.2h6.4v8.2h-6.4z"/>
+    <g class="dm-scan"><circle cx="16.4" cy="11.6" r="2.2"/><path d="M18 13.2l1.6 2"/></g></svg>`,
+  calculate_margin: `<svg class="i doodle-tool" viewBox="0 0 24 24" aria-hidden="true">
+    <circle cx="8" cy="6.6" r="2.5"/><path d="M8 9.1v6.5M6 15.6h4"/>
+    <path d="M12 10.4h6v6.4h-6z"/>
+    <path class="dm-crank" d="M18 12.4l2-1.3"/></svg>`,
+  report_blocked: `<svg class="i doodle-tool" viewBox="0 0 24 24" aria-hidden="true">
+    <circle cx="8" cy="6.6" r="2.5"/><path d="M8 9.1v6.5M6 15.6h4"/>
+    <g class="dm-wave"><path d="M14 15.4V8"/><path d="M14 8h5v3.6h-5z"/></g></svg>`,
+};
+
 /* 工具渲染注册表：已知工具给专属视图，未知工具走通用兜底 */
 const TOOL_RENDERERS = {
   list_documents(obs) {
@@ -966,7 +997,9 @@ function renderRound(round, index, ann = {}) {
 
   const raw = { proposal: round.proposal, decision: round.decision, receipt: round.receipt, observation: round.observation };
   const lines = obs.result ? describe(obs).map(line => `<span class="grn">⎿</span>  ${line}`) : [];
-  const icon = TOOL_ICON[tool] || ICON.term;
+  const icon = (!round.observation && !denied && TOOL_DOODLE[tool])
+    ? TOOL_DOODLE[tool]
+    : (TOOL_ICON[tool] || ICON.term);
 
   return `<div class="card round${!round.observation && !denied ? " live" : ""}" data-open="${denied ? "true" : "false"}">
     <div class="card-head click" data-toggle>

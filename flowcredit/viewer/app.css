@@ -1089,3 +1089,26 @@ body { background: #ffffff; }
 /* 滚动条回到纸面感 */
 ::-webkit-scrollbar-thumb { background: rgba(23, 23, 23, .16); border-color: #ffffff; }
 ::selection { background: rgba(23, 23, 23, .12); }
+
+/* ======================================================== 逐帧工具小人
+   两帧循环，steps(2) 模拟逐帧；只在当前执行轮播放。 */
+.doodle-tool {
+  width: 17px; height: 17px;
+  stroke: currentColor; fill: none;
+  stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round;
+  overflow: visible;
+}
+.doodle-tool * { transform-box: fill-box; transform-origin: center; }
+.doodle-tool .dm-rock  { animation: dmRock .9s steps(2, end) infinite; }
+.doodle-tool .dm-rock2 { animation: dmRock2 .9s steps(2, end) infinite; }
+.doodle-tool .dm-flip  { animation: dmFlip .9s steps(2, end) infinite; }
+.doodle-tool .dm-scan  { animation: dmScan .9s steps(2, end) infinite; }
+.doodle-tool .dm-crank { animation: dmCrank .9s steps(2, end) infinite; transform-origin: 18px 12.4px; }
+.doodle-tool .dm-wave  { animation: dmWave .9s steps(2, end) infinite; transform-origin: 14px 15.4px; }
+
+@keyframes dmRock  { 0%, 100% { transform: rotate(-3deg); } 50% { transform: rotate(3deg); } }
+@keyframes dmRock2 { 0%, 100% { transform: rotate(2deg) translateY(0); } 50% { transform: rotate(-2deg) translateY(-1px); } }
+@keyframes dmFlip  { 0%, 100% { transform: scaleX(1); } 50% { transform: scaleX(.62); } }
+@keyframes dmScan  { 0%, 100% { transform: translateY(-2px); } 50% { transform: translateY(2.5px); } }
+@keyframes dmCrank { 0%, 100% { transform: rotate(-18deg); } 50% { transform: rotate(34deg); } }
+@keyframes dmWave  { 0%, 100% { transform: rotate(-7deg); } 50% { transform: rotate(7deg); } }
