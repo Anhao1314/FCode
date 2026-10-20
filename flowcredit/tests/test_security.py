@@ -28,6 +28,7 @@ from flowagent.tools.finance.fixtures import FinanceWorld  # noqa: E402
 from flowagent.tools.finance.tools import build_finance_tools  # noqa: E402
 from flowagent.tools.registry import ToolRegistry  # noqa: E402
 from flowagent.trajectory.exporter import TraceTampered, verify_trace  # noqa: E402
+from flowagent.domains.finance import verify_observation as verify_finance
 
 
 class _Base(unittest.TestCase):
@@ -149,6 +150,7 @@ class IndependentVerificationTest(_Base):
             registry=self.registry,
             provider=MockProvider(),
             world=self.world,
+            verifier=lambda observation: verify_finance(self.world, observation),
             limits=BudgetLimits(10, 20, 20_000, 20_000),
             receipts=self.receipts,
         )

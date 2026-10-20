@@ -13,7 +13,7 @@ budget and in the verifier's refusal to accept an unproven result.
 from __future__ import annotations
 
 from dataclasses import replace
-from typing import Any, Protocol
+from typing import Any, Callable, Protocol
 
 from ..core.contracts import AgentError, Task, validate_plan
 from ..core.receipts import ReceiptStore
@@ -54,6 +54,7 @@ class Harness:
         world: Any,
         limits: BudgetLimits,
         receipts: ReceiptStore,
+        verifier: Callable[[Observation], dict[str, Any]] | None = None,
     ) -> None:
         self.store = store
         self.registry = registry
@@ -61,6 +62,7 @@ class Harness:
         self.world = world
         self.limits = limits
         self.receipts = receipts
+        self.verifier = verifier
 
     # ------------------------------------------------------------------ setup
 
@@ -261,28 +263,15 @@ class Harness:
         return self._commit(task, task, "tool_succeeded", detail), observation
 
     def verify(self, observation: Observation) -> dict[str, Any]:
-        """Recompute the answer from the world and compare it with the model's.
+        """Delegate independent recomputation to the domain module.
 
-        The model never produced these numbers; it only asked for them. This
-        method is what turns "the tool returned something" into "the runtime
-        independently agrees", and it is the only path to ``succeeded``.
+        The kernel does not know how to check a margin, a sample or a backtest;
+        it only knows that a result is not accepted on the model's word. The
+        module supplies the recomputation.
         """
-        if observation.tool != "calculate_margin" or not observation.result.get("computed"):
-            raise AgentError("RESULT_INCOMPLETE", "no computed margin to verify")
-        recomputed = self.world.calculate_margin()
-        if not recomputed.get("computed"):
-            raise AgentError("RESULT_INCOMPLETE", "the world refuses to recompute the margin")
-        for key in ("margin_bp_2024", "margin_bp_2025", "change_bp"):
-            if recomputed[key] != observation.result[key]:
-                raise AgentError(
-                    "RESULT_VERIFICATION_FAILED",
-                    f"{key} differs: recorded {observation.result[key]} vs recomputed {recomputed[key]}",
-                )
-        return {
-            "verified": True,
-            "verification": "runtime-recomputed",
-            "result": recomputed,
-        }
+        if self.verifier is None:
+            raise AgentError("RESULT_INCOMPLETE", "no verifier is configured for this harness")
+        return self.verifier(observation)
 
     # ------------------------------------------------------------------ helper
 

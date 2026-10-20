@@ -34,6 +34,7 @@ from ..trajectory.exporter import export_trace, verify_trace
 from ..trajectory.recorder import TraceRecorder
 from .fixtures import SCENARIOS, Scenario, get_scenario
 from .render import Renderer
+from ..domains.finance import verify_observation as verify_finance
 
 __all__ = ["PROJECT_ROOT", "WORK_DIR", "RunResult", "run_scenario", "run_all"]
 
@@ -157,6 +158,7 @@ def build_stack(db_path: Path, scenario: Scenario) -> Stack:
         world=world,
         limits=scenario.limits,
         receipts=receipts,
+        verifier=lambda observation: verify_finance(world, observation),
     )
     return Stack(store, world, registry, receipts, provider, harness, FinancePlanner(), issued)
 

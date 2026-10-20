@@ -96,6 +96,8 @@ class Runtime:
         self.TaskStore = m.TaskStore
         m = imp("flowagent.core.plan")
         self.Plan = m.Plan
+        m = imp("flowagent.domains.finance")
+        self.verify_observation = m.verify_observation
         m = imp("flowagent.demo.fixtures")
         self.SCENARIOS = m.SCENARIOS
         self.AVAILABLE = m.AVAILABLE
@@ -403,6 +405,7 @@ class RunManager:
                 world=world,
                 limits=limits,
                 receipts=receipts,
+                verifier=lambda observation: rt.verify_observation(world, observation),
             )
             recorder = rt.TraceRecorder(
                 store, provider_name=provider.name, model_name=provider.model

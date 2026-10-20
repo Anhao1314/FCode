@@ -43,6 +43,7 @@ from flowagent.tools.finance.tools import build_finance_tools  # noqa: E402
 from flowagent.tools.registry import ToolRegistry  # noqa: E402
 from flowagent.trajectory.exporter import export_trace  # noqa: E402
 from flowagent.trajectory.recorder import TraceRecorder  # noqa: E402
+from flowagent.domains.finance import verify_observation as verify_finance
 
 
 def run_episode(scenario_key: str, tmp: Path) -> tuple[dict, list, list]:
@@ -59,6 +60,7 @@ def run_episode(scenario_key: str, tmp: Path) -> tuple[dict, list, list]:
         registry=registry,
         provider=provider,
         world=world,
+        verifier=lambda observation: verify_finance(world, observation),
         limits=scenario.limits,
         receipts=receipts,
     )

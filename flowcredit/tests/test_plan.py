@@ -30,6 +30,7 @@ from flowagent.tools.finance.fixtures import FinanceWorld  # noqa: E402
 from flowagent.tools.finance.planner import BLUEPRINT, FinancePlanner  # noqa: E402
 from flowagent.tools.finance.tools import build_finance_tools  # noqa: E402
 from flowagent.tools.registry import ToolRegistry  # noqa: E402
+from flowagent.domains.finance import verify_observation as verify_finance
 
 
 def observation(tool: str, result: dict, arguments: dict | None = None, *, digest: str = "h") -> Observation:
@@ -145,6 +146,7 @@ class ReplayTest(unittest.TestCase):
             registry=registry,
             provider=MockProvider(),
             world=world,
+            verifier=lambda observation: verify_finance(world, observation),
             limits=BudgetLimits(12, 20, 20_000, 20_000),
             receipts=receipts,
         )

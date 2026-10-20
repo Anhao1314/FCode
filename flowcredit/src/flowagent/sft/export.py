@@ -44,6 +44,7 @@ from ..tools.finance.fixtures import FinanceWorld
 from ..tools.finance.planner import FinancePlanner
 from ..tools.finance.tools import build_finance_tools
 from ..tools.registry import ToolRegistry
+from ..domains.finance import verify_observation as verify_finance
 
 __all__ = ["reconstruct_trace", "generate_episodes", "samples_to_sharegpt", "export_main"]
 
@@ -194,6 +195,7 @@ def generate_episodes(episodes_per_scenario: int) -> list[dict[str, Any]]:
                     world=world,
                     limits=scenario.limits,
                     receipts=receipts,
+                    verifier=lambda observation: verify_finance(world, observation),
                 )
                 task = harness.create(
                     task_id=f"sft-{scenario_key}-{episode}",
