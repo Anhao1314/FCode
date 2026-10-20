@@ -638,6 +638,11 @@ function renderTools(trace, check) {
     if (receipt.latency_ms !== undefined) stat.latency += Number(receipt.latency_ms) || 0;
   }
   if (!toolContracts) return `<div class="rail-empty">正在加载工具契约…</div>`;
+  const activeRound = [...(trace.rounds || [])].reverse().find(round =>
+    !round.observation && (round.decision || {}).allowed !== false);
+  const activeTool = activeRound
+    ? (((activeRound.proposal || {}).steps || [])[0] || {}).tool || (activeRound.decision || {}).tool
+    : null;
   const rows = toolContracts
     .slice()
     .sort((a, b) => {
@@ -656,7 +661,9 @@ function renderTools(trace, check) {
         : "未使用";
       const still = (window.DOODLE_ICONS && window.DOODLE_ICONS.still) || {};
       const iconName = TOOL_DOODLE_ICON[contract.name];
-      const icon = iconName && still[iconName] ? `<span class="tr-ic">${still[iconName]}</span>` : "";
+      const icon = iconName
+        ? `<span class="tr-ic">${doodleSvg(iconName, contract.name === activeTool)}</span>`
+        : "";
       return `<div class="tool-row${inScope ? "" : " out-of-scope"}">
         <div class="tr-head">
           ${icon}
@@ -716,7 +723,7 @@ function renderPlan(plan, opts = {}) {
   const editing = editable && !!opts.editing;
   return `<div class="card plan${editing ? " editing" : ""}">
     <div class="card-head">
-      <span class="card-title">${ICON.file} Plan</span>
+      <span class="card-title">${doodleSvg("clipboard-list", opts.editable ? "draw" : false)} Plan</span>
       <span class="grow"></span>
       <span class="card-meta">revision ${esc(plan.revision)} · <span style="color:var(--green)">${done}/${plan.todos.length}</span> 已完成</span>
       ${editable ? `<button class="p-edit${editing ? " active" : ""}" data-plan-edit>${editing ? "完成" : "调整"}</button>` : ""}
@@ -1068,7 +1075,7 @@ function renderResult(trace) {
     return `<div class="card result">
       <div class="card-head">
         <span class="card-title">${ICON.inkTick} 结论</span>
-        <span class="badge pass" style="margin-left:2px"><span class="dot"></span>已验证</span>
+        <span class="badge pass" style="margin-left:2px">${doodleSvg("shield-check", "draw")}<span>已验证</span></span>
         <span class="grow"></span>
         <span class="card-meta">succeeded · runtime-recomputed</span>
       </div>
@@ -1093,7 +1100,7 @@ function renderResult(trace) {
     return `<div class="card result">
       <div class="card-head">
         <span class="card-title">${ICON.inkTick} 结论</span>
-        <span class="badge pass" style="margin-left:2px"><span class="dot"></span>已验证</span>
+        <span class="badge pass" style="margin-left:2px">${doodleSvg("shield-check", "draw")}<span>已验证</span></span>
         <span class="grow"></span>
         <span class="card-meta">succeeded</span>
       </div>
@@ -1571,7 +1578,7 @@ function renderApproval(pending, deciding) {
     : `<span class="apv-count" data-countdown>${fmtCountdown(pending.expiresIn)}</span>`;
   return `<div class="card approval" data-approval="${esc(pending.id)}">
     <div class="card-head">
-      <span class="card-title">${ICON.lock} 需要你的决定</span>
+      <span class="card-title">${doodleSvg("key", true)} 需要你的决定</span>
       <span class="grow"></span>
       <span class="badge warn"><span class="dot"></span>${deciding ? "已提交" : "等待授权"}</span>
     </div>
@@ -3005,6 +3012,18 @@ function pushHistory(text) {
   while (promptHistory.length > 50) promptHistory.shift();
   try { localStorage.setItem("fa.history", JSON.stringify(promptHistory)); } catch { /* quota */ }
   historyIndex = -1;
+}
+
+/* 取手绘图标：mode=false 静止 / true 动画 / "draw" 只描边一次（不沸腾） */
+function doodleSvg(name, mode = false) {
+  if (!name) return "";
+  const set = window.DOODLE_ICONS || {};
+  const animated = set.animated && set.animated[name];
+  if (mode === "draw" && animated) {
+    return animated.replace('class="d-icon d-icon-anim ', 'class="d-icon d-icon-anim draw-only ');
+  }
+  if (mode && animated) return animated;
+  return (set.still && set.still[name]) || "";
 }
 
 /* 内联手绘图标：data-doodle 槽位在启动/重绘后填充 */
