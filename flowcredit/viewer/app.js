@@ -460,12 +460,22 @@ function runRowHtml(run) {
   const cls = running ? "live" : stateClass(run.status);
   const meta = running ? "运行中" : runTimeText(run.created);
   const pinMark = run.pinned ? `<span class="pin-mark" title="已固定">${doodleSvg("star")}</span>` : "";
+  const bits = [tplTitle(run.template)];
+  if (running) bits.push(`第 ${run.rounds || 0} 轮`);
+  else if (run.rounds) bits.push(`${run.rounds} 轮`);
+  if (!running && run.cost && run.cost.costMicrousd !== undefined) {
+    bits.push(`${num(run.cost.costMicrousd)} µ`);
+  }
+  const sub = bits.filter(Boolean).join(" · ");
   return `<div class="session run-row${active ? " active" : ""}${run.pinned ? " pinned" : ""}" data-run="${esc(run.id)}" tabindex="0" title="${esc(run.objective)}${run.rounds ? " · " + run.rounds + " 轮" : ""}">
-    <span class="sdot ${cls}"></span>
-    <span class="slabel" data-name>${esc(runLabel(run))}</span>
-    ${pinMark}
-    <span class="smeta">${meta}</span>
-    <button class="row-more" data-more="${esc(run.id)}" title="更多">${doodleSvg("ellipsis")}</button>
+    <div class="r-top">
+      <span class="sdot ${cls}"></span>
+      <span class="slabel" data-name>${esc(runLabel(run))}</span>
+      ${pinMark}
+      <span class="smeta">${meta}</span>
+      <button class="row-more" data-more="${esc(run.id)}" title="更多">${doodleSvg("ellipsis")}</button>
+    </div>
+    <div class="r-sub">${esc(sub)}</div>
     <div class="row-menu" data-menu="${esc(run.id)}" hidden>
       <button data-row-act="pin">${run.pinned ? "取消固定" : "固定"}</button>
       <button data-row-act="rename">重命名</button>
@@ -510,7 +520,7 @@ function renderRuns() {
   } else {
     const pinned = runs.filter(run => run.pinned);
     if (pinned.length) {
-      html += `<div class="side-head-label">已固定</div>`;
+      html += `<div class="side-head-label"><span>${doodleSvg("star")}已固定</span><span class="grp-count">${pinned.length}</span></div>`;
       html += pinned.map(runRowHtml).join("");
     }
     const groups = [
@@ -524,7 +534,7 @@ function renderRuns() {
     }
     for (const group of groups) {
       if (!group.items.length) continue;
-      html += `<div class="side-head-label">${group.label}</div>`;
+      html += `<div class="side-head-label"><span>${group.label}</span><span class="grp-count">${group.items.length}</span></div>`;
       const visible = group.label === "更早" && !olderOpen ? group.items.slice(0, 5) : group.items;
       html += visible.map(runRowHtml).join("");
       if (group.label === "更早" && group.items.length > 5) {

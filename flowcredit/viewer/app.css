@@ -1235,3 +1235,26 @@ body { background: #ffffff; }
 .side-empty-search .d-icon { width: 30px; height: 30px; opacity: .6; }
 .side-scenes { margin-top: 8px; padding-top: 4px; border-top: 1px dashed var(--border-soft); }
 .scene-toggle { display: flex; align-items: center; gap: 6px; }
+
+/* ==================================================== 委托记录的条目化
+   两行条目：名称/时间 + 模板/轮次/成本。分组标题带计数与虚线。 */
+.run-row { display: block; min-height: 40px; padding: 5px 8px 6px; }
+.r-top {
+  display: flex; align-items: center; gap: 7px; min-height: 19px;
+}
+.r-top .slabel { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.r-top .smeta { flex: none; }
+.r-sub {
+  margin: 1px 0 0 13px; font: 10px/1.4 var(--mono); color: var(--text-3);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.run-row.active .r-sub { color: var(--text-2); }
+.run-row:hover .r-sub, .run-row:focus-within .r-sub { color: var(--text-2); }
+.pin-mark .d-icon { width: 11px; height: 11px; }
+
+.side-head-label { display: flex; align-items: center; gap: 5px; }
+.side-head-label .d-icon { width: 11px; height: 11px; }
+.side-head-label .grp-count {
+  margin-left: auto; font: 10px var(--mono); color: var(--text-3);
+  letter-spacing: 0;
+}
