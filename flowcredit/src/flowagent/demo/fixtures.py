@@ -51,6 +51,8 @@ _ALL_TOOLS = (
     "search_corpus",
     "read_slice",
     "working_paper_append",
+    "search_cases",
+    "read_case",
     "fetch_source",
 )
 

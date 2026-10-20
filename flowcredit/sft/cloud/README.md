@@ -6,8 +6,8 @@
 ## 0. 数据已就绪（本机生成）
 
 ```
-sft/data/train_smoke.jsonl   200 条   （126 条来自真实轨迹 + 74 条生成）
-sft/data/train_full.jsonl   2346 条   （126 条来自真实轨迹 + 2220 条生成）
+sft/data/train_smoke.jsonl   218 条   （144 条来自真实轨迹 + 74 条生成）
+sft/data/train_full.jsonl   2364 条   （144 条来自真实轨迹 + 2220 条生成）
 sft/data/stats_*.json        生成统计（prompt_version 与来源计数）
 ```
 

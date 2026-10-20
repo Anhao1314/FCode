@@ -798,6 +798,8 @@ const TOOL_DOODLE_ICON = {
   read_slice: "file-text",
   working_paper_append: "pen",
   fetch_source: "globe",
+  search_cases: "search",
+  read_case: "file-text",
 };
 
 function renderTools(trace, check) {

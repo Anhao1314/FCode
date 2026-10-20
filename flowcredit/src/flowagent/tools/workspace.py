@@ -18,6 +18,8 @@ from .artifacts import ArtifactStore
 from .base import EFFECT_NETWORK, EFFECT_READ, EFFECT_WRITE, Param, ToolSpec
 from .connectors import ConnectorRegistry
 from .evidence import EvidenceStore
+from ..core.contracts import AgentError
+from ..memory.cases import CaseIndex
 
 __all__ = ["build_workspace_tools"]
 
@@ -26,6 +28,7 @@ def build_workspace_tools(
     evidence: EvidenceStore,
     artifacts: ArtifactStore,
     connectors: ConnectorRegistry,
+    cases: CaseIndex | None = None,
 ) -> list[ToolSpec]:
     """Compose the shared tools bound to their stores."""
 
@@ -51,6 +54,21 @@ def build_workspace_tools(
 
     def fetch_source(arguments: dict[str, Any]) -> dict[str, Any]:
         return connectors.fetch(arguments["source"], arguments.get("key"))
+
+    index = cases or CaseIndex()
+
+    def search_cases(arguments: dict[str, Any]) -> dict[str, Any]:
+        hits = index.search(
+            arguments["query"],
+            limit=int(arguments.get("limit") or 5),
+        )
+        return {"query": arguments["query"], "hits": hits, "count": len(hits)}
+
+    def read_case(arguments: dict[str, Any]) -> dict[str, Any]:
+        case = index.get(arguments["run_id"], include_archived=True)
+        if case is None:
+            raise AgentError("CASE_NOT_FOUND", f"no case indexed for {arguments['run_id']!r}")
+        return case
 
     return [
         ToolSpec(
@@ -137,6 +155,50 @@ def build_workspace_tools(
                 Param.output("bytes", "integer"),
                 Param.output("section", "string"),
                 Param.output("citations", "integer"),
+            ),
+            version="1.0",
+        ),
+        ToolSpec(
+            name="search_cases",
+            summary="Search past delegations for similar work; returns explainable scores",
+            effect=EFFECT_READ,
+            params=(
+                Param(name="query", kind="string", required=True, description="keywords or an objective"),
+                Param(name="limit", kind="integer", required=False, minimum=1, maximum=20, description="max cases (default 5)"),
+            ),
+            handler=search_cases,
+            outputs=(
+                Param.output("query", "string"),
+                Param.output("hits", "array"),
+                Param.output("count", "integer"),
+            ),
+            version="1.0",
+        ),
+        ToolSpec(
+            name="read_case",
+            summary="Read one indexed case: summary, citations, artifacts and chain head",
+            effect=EFFECT_READ,
+            params=(
+                Param(name="run_id", kind="string", required=True, description="run id from search_cases"),
+            ),
+            handler=read_case,
+            outputs=(
+                Param.output("run_id", "string"),
+                Param.output("chain_head", "string"),
+                Param.output("module", "string"),
+                Param.output("template", "string"),
+                Param.output("objective", "string"),
+                Param.output("outcome", "string"),
+                Param.output("verification", "string"),
+                Param.output("rounds", "integer"),
+                Param.output("cost_microusd", "integer"),
+                Param.output("human_decisions", "integer"),
+                Param.output("key_citations", "array"),
+                Param.output("artifacts", "array"),
+                Param.output("tags", "array"),
+                Param.output("summary", "string"),
+                Param.output("created_at", "string"),
+                Param.output("archived", "boolean"),
             ),
             version="1.0",
         ),

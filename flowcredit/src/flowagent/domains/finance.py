@@ -31,8 +31,9 @@ def build_tools(
     evidence: Any = None,
     artifacts: Any = None,
     connectors: Any = None,
+    cases: Any = None,
 ) -> list[ToolSpec]:
-    return build_finance_tools(world, evidence, artifacts, connectors)
+    return build_finance_tools(world, evidence, artifacts, connectors, cases)
 
 
 def make_planner() -> FinancePlanner:

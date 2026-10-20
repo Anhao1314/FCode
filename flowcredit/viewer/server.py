@@ -62,6 +62,7 @@ VIEWER_DIR = Path(__file__).resolve().parent
 #: The desktop shell points this at the user's Application Support directory:
 #: a packaged .app bundle is read-only, and run records belong to the user.
 RUNS_DIR = Path(os.environ.get("FCODE_RUNS_DIR") or (VIEWER_DIR / "runs"))
+os.environ.setdefault("FCODE_MEMORY_DB", str(RUNS_DIR.parent / "memory" / "cases.sqlite"))
 
 TERMINAL_STATUS = ("succeeded", "failed", "denied", "recovery_required")
 
@@ -100,6 +101,8 @@ class Runtime:
         self.TaskStore = m.TaskStore
         m = imp("flowagent.core.plan")
         self.Plan = m.Plan
+        m = imp("flowagent.memory.cases")
+        self.CaseIndex = m.CaseIndex
         m = imp("flowagent.domains")
         self.get_domain = m.get_domain
         self.list_domains = m.list_domains
@@ -257,6 +260,7 @@ class RunManager:
         self.approval_timeout = approval_timeout
         self.runs: dict[str, Run] = {}
         self.order: list[str] = []
+        self.case_index = runtime.CaseIndex() if runtime is not None else None
         self._lock = threading.Lock()
         self._seq = 0
         RUNS_DIR.mkdir(exist_ok=True)
@@ -323,6 +327,11 @@ class RunManager:
             if run_id in self.order:
                 self.order.remove(run_id)
         shutil.rmtree(RUNS_DIR / run_id, ignore_errors=True)
+        if self.case_index is not None:
+            try:
+                self.case_index.tombstone(run_id)
+            except Exception:  # noqa: BLE001
+                traceback.print_exc()
         return True, ""
 
     def create(self, objective: str, template: str, approval: str = "consequential") -> Run:
@@ -395,7 +404,7 @@ class RunManager:
             store = rt.TaskStore(db)
             module = rt.get_domain(DOMAIN_KEY)
             world = module.create_world(partial=scenario.partial_corpus)
-            registry = rt.ToolRegistry(module.build_tools(world))
+            registry = rt.ToolRegistry(module.build_tools(world, cases=self.case_index))
             receipts = rt.ReceiptStore(store)
             issued: dict[str, str] = {}
 
@@ -535,6 +544,11 @@ class RunManager:
                 status = "error"
 
             final = recorder.build(store.load(task.id))
+            if self.case_index is not None:
+                try:
+                    self.case_index.upsert(final, run_id=run.id)
+                except Exception:  # noqa: BLE001 — memory must never kill a run
+                    traceback.print_exc()
             trace_path = run_dir / "trace.json"
             rt.export_trace(final, trace_path)
             try:
