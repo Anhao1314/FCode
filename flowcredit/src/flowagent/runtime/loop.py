@@ -21,10 +21,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..core.contracts import AgentError, Task
+from ..core.contracts import PLAN_VERSION, AgentError, Task
 from ..core.plan import Plan
 from ..memory.context import WorkingMemory
+from ..providers.base import Proposal
 from ..tools.base import Observation
+from .policy import PacketProvider, compile_packet
 from .control import Control, Denial
 from .harness import Harness, TraceObserver
 
@@ -53,12 +55,16 @@ class Loop:
         max_rounds: int = 12,
         observer: TraceObserver | None = None,
         control: Control | None = None,
+        policy: Any = None,
+        compiler: Any = None,
     ) -> None:
         self.harness = harness
         self.planner = planner
         self.max_rounds = max_rounds
         self.observer: TraceObserver = observer or NullObserver()
         self.control = control
+        self.policy = policy
+        self.compiler = compiler or compile_packet
 
     def run(self, task_id: str) -> Task:
         task = self.harness.store.load(task_id)
@@ -69,7 +75,7 @@ class Loop:
         while True:
             if pending is None and self.control is not None:
                 controlled = self.control.before_round(
-                    round_no=task.model.attempts + 1,
+                    round_no=self._decisions(task) + 1,
                     task=task,
                     plan=plan,
                 )
@@ -80,7 +86,7 @@ class Loop:
                     return self._stop(task, plan, "PLAN_BLOCKED")
                 if plan.is_complete() or plan.next_open() is None:
                     return self._stop(task, plan, "PLAN_EXHAUSTED")
-                if task.model.attempts >= self.max_rounds:
+                if self._decisions(task) >= self.max_rounds:
                     return self._abort(task_id, AgentError("ROUND_LIMIT", f"no verified result after {self.max_rounds} rounds"))
 
             budget_snapshot = self.harness.budget(task).snapshot()
@@ -93,18 +99,75 @@ class Loop:
                 round_no = task.model.attempts
                 self.observer.round_start(round_no, budget_snapshot, plan)
             else:
-                round_no = task.model.attempts + 1
+                round_no = self._decisions(task) + 1
                 self.observer.round_start(round_no, budget_snapshot, plan)
-                context = memory.build(round_no, budget_snapshot, plan)
-                try:
-                    task, proposal = self.harness.propose(task, context)
-                except AgentError as error:
-                    return self._abort(task_id, error)
-                if proposal is None:
-                    self.observer.terminal(task, None)
-                    return task
-                self.observer.proposal(round_no, proposal)
-                step = proposal.plan["steps"][0]
+                if self.policy is not None:
+                    packet = self.compiler(
+                        objective=task.objective,
+                        round_no=round_no,
+                        plan=plan,
+                        memory=memory,
+                        registry=self.harness.registry,
+                        budget=budget_snapshot,
+                    )
+                    task = self.harness.record(task, "policy_requested", {
+                        "round": round_no,
+                        "packet": packet.to_dict(),
+                        "packet_hash": packet.packet_hash,
+                    })
+                    if not packet.candidates:
+                        return self._abort(task_id, AgentError(
+                            "POLICY_NO_ACTIONS", "the action compiler produced no legal action",
+                        ))
+                    if len(packet.candidates) == 1:
+                        candidate = packet.candidates[0]
+                        step = {"tool": candidate.tool, "arguments": dict(candidate.arguments)}
+                        task = self.harness.auto_step(
+                            task, step, round_no=round_no,
+                            candidate_id=candidate.id, packet_hash=packet.packet_hash,
+                        )
+                        proposal = Proposal(
+                            plan={"version": PLAN_VERSION, "steps": [{
+                                "id": candidate.todo_id or "stop",
+                                "tool": candidate.tool,
+                                "arguments": dict(candidate.arguments),
+                            }]},
+                            provider="host-auto",
+                            model="deterministic-auto",
+                            tokens=0,
+                            cost_microusd=0,
+                            todo_id=candidate.todo_id or None,
+                            metadata={"packet_hash": packet.packet_hash, "candidate_id": candidate.id},
+                        )
+                    else:
+                        provider = PacketProvider(packet, self.policy)
+                        try:
+                            task, proposal = self.harness.propose_with(
+                                task, {"round": round_no, "packet": packet, "state": packet.state}, provider,
+                            )
+                        except AgentError as error:
+                            return self._abort(task_id, error)
+                        if proposal is None:
+                            self.observer.terminal(task, None)
+                            return task
+                        task = self.harness.record(task, "policy_decided", {
+                            "round": round_no,
+                            "candidate_id": proposal.metadata.get("candidate_id", ""),
+                            "packet_hash": packet.packet_hash,
+                        })
+                    self.observer.proposal(round_no, proposal)
+                    step = proposal.plan["steps"][0]
+                else:
+                    context = memory.build(round_no, budget_snapshot, plan)
+                    try:
+                        task, proposal = self.harness.propose(task, context)
+                    except AgentError as error:
+                        return self._abort(task_id, error)
+                    if proposal is None:
+                        self.observer.terminal(task, None)
+                        return task
+                    self.observer.proposal(round_no, proposal)
+                    step = proposal.plan["steps"][0]
 
             decision = self.harness.gate(task, step)
             self.observer.gate(round_no, decision)
@@ -152,6 +215,14 @@ class Loop:
                 return self._succeed(task, verified, plan)
 
     # -------------------------------------------------------------- resumption
+
+    def _decisions(self, task: Task) -> int:
+        """Model calls plus host auto-actions: the true round count."""
+        auto = sum(
+            1 for event in self.harness.store.events(task.id)
+            if event["type"] == "auto_action"
+        )
+        return task.model.attempts + auto
 
     def restore(self, task: Task) -> WorkingMemory:
         """Rebuild working memory from committed observations."""

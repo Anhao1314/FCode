@@ -20,6 +20,7 @@ const EVENT_DOT = {
   approval_requested: "warn", approval_granted: "ok", approval_denied: "bad", approval_aborted: "warn",
   plan_steered: "info", budget_adjusted: "info", control_rejected: "bad", task_resumed: "info",
   operator_message: "you", memory_recalled: "info",
+  policy_requested: "info", policy_decided: "info", auto_action: "ok",
 };
 
 /* 人的决定：审批、计划修订、预算调整、续跑、运行中消息 */
@@ -609,6 +610,7 @@ function renderRuns() {
 
 const MACHINE_EVENTS = new Set([
   "model_started", "plan_validated", "plan_updated", "execution_started",
+  "policy_requested", "policy_decided", "auto_action",
   "execution_resumed", "tool_started",
 ]);
 
@@ -879,6 +881,9 @@ function summariseEvent(e) {
   if (!d || Object.keys(d).length === 0) return "";
   if (e.type === "tool_started" || e.type === "tool_succeeded") return `${esc(d.tool || "")} ${d.arguments && Object.keys(d.arguments).length ? "(" + Object.entries(d.arguments).map(([k, v]) => `${esc(k)}=${esc(v)}`).join(", ") + ")" : "()"}`;
   if (e.type === "model_started") return `round ${esc(d.round)}`;
+  if (e.type === "policy_requested") return `${esc((d.packet && d.packet.candidates || []).length)} 个候选 · packet ${esc(shortHash(d.packet_hash))}…`;
+  if (e.type === "policy_decided") return `选择 ${esc(d.candidate_id || "—")} · packet ${esc(shortHash(d.packet_hash))}…`;
+  if (e.type === "auto_action") return `${esc((d.step || {}).tool || "")} · 无需模型调用`;
   if (e.type === "memory_recalled") return `参考 ${esc(d.count || (d.hits || []).length)} 则旧案 · ${esc(((d.hits || [])[0] || {}).run_id || "")}`;
   if (e.type === "model_unknown") return esc(d.cause || "");
   if (e.type === "model_reconciled") return `receipt ${esc(shortHash(d.receipt_ref))}…`;

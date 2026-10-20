@@ -111,6 +111,29 @@ class Harness:
     # -------------------------------------------------------------- mechanics
 
     def propose(self, task: Task, context: dict[str, Any]) -> tuple[Task, Proposal | None]:
+        """Ask the configured provider for one proposal."""
+        return self._propose(task, context, self.provider)
+
+    def propose_with(
+        self,
+        task: Task,
+        context: dict[str, Any],
+        provider: Provider,
+    ) -> tuple[Task, Proposal | None]:
+        """Ask a specific policy adapter for one proposal.
+
+        Packet mode needs a provider constructed per round (it carries the
+        candidate menu). The state-machine, budget and receipt semantics are
+        identical to :meth:`propose`.
+        """
+        return self._propose(task, context, provider)
+
+    def _propose(
+        self,
+        task: Task,
+        context: dict[str, Any],
+        provider: Provider,
+    ) -> tuple[Task, Proposal | None]:
         """Ask the model for one proposal and commit it as a plan-less round.
 
         The plan is *not* written into ``task.plan``: in loop mode each round is
@@ -147,7 +170,7 @@ class Harness:
 
         intent = self._intent(task, context)
         try:
-            proposal = self.provider.propose({**context, "intent": intent})
+            proposal = provider.propose({**context, "intent": intent})
         except AgentError as error:
             return self._unknown(task, intent, error), None
 
@@ -168,6 +191,35 @@ class Harness:
         if first:
             updated = updated.advance("planned")
         return self._commit(task, updated, "plan_validated", {"plan": plan.to_dict(), "round": context["round"]}), proposal
+
+    def auto_step(
+        self,
+        task: Task,
+        step: dict[str, Any],
+        *,
+        round_no: int,
+        candidate_id: str = "",
+        packet_hash: str = "",
+    ) -> Task:
+        """Commit a host-selected action without a model call.
+
+        Only legal when the Action Compiler found exactly one candidate. It
+        still advances the task state machine and writes an ``auto_action``
+        event, so replay and audit see why no model was asked.
+        """
+        detail = {
+            "round": round_no,
+            "candidate_id": candidate_id,
+            "packet_hash": packet_hash,
+            "step": dict(step),
+        }
+        if task.status == "created":
+            task = self._commit(task, task.advance("planning"), "auto_planning", detail)
+        if task.status == "planning":
+            return self._commit(task, task.advance("planned"), "auto_action", detail)
+        if task.status in ("planned", "running"):
+            return self._commit(task, task, "auto_action", detail)
+        raise AgentError("AUTO_STEP_BLOCKED", f"cannot auto-step from {task.status}")
 
     def reconcile(self, task: Task, receipt_ref: str) -> Task:
         """Resolve an unknown outcome with a signed, matching receipt.

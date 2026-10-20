@@ -131,6 +131,18 @@ class WorkingMemory:
 
     # ----------------------------------------------------------------- context
 
+    def last_evidence(self) -> dict[str, Any] | None:
+        """One compressed card for the policy packet, not the whole history."""
+        if not self.records:
+            return None
+        record = self.records[-1]
+        return {
+            "round": record.round,
+            "tool": record.tool,
+            "arguments": dict(record.arguments),
+            "summary": self._summarise(record),
+        }
+
     def build(
         self,
         round_no: int,

@@ -119,6 +119,7 @@ python3 flowcredit/viewer/server.py --repo .   # 打开 http://127.0.0.1:8642/
 - 本机偏好：左下角状态行右侧的齿轮（`⌘,`）让主区切到设置页——外观、委托默认、模型与工具、记忆统计、通知与快捷键、安全与关于；偏好只存本机，不影响签名链。
 - LLM 层实验：真实模型训练期间，用文件式 oracle 坐进 Provider 位置；协议与结果见 [oracle-lab.md](flowcredit/docs/oracle-lab.md)。
 - 数据采集：`FCODE_SOURCES` 配置主机源后，模型可用 `collect_source` 抓取并把结果变成可检索证据；配置与安全边界见 [data-collection.md](flowcredit/docs/data-collection.md)。
+- Executive–Policy：决策包 + 候选动作 + fast path 的 P1 实验见 [executive-policy.md](flowcredit/docs/executive-policy.md)；控制台默认仍走旧 Provider。
 - 运行中插话：composer 直接输入消息，排队后在下一轮写入同一条哈希链；后台会话与新建委托各占一个标签，切换不丢画面。
 - 人工控制：审批门（关键步骤 / 逐步 / 自动）、计划跳过与提前、预算调高；失败于预算或轮次上限时可「追加预算并继续」，从事件日志续跑且不重发已付读取。
 - 审计报告：运行结束后「签发报告」生成一份自包含 HTML 工作底稿（结论、账单、证据、人工决定、链附录），可打印、下载或离线转发。
@@ -180,12 +181,13 @@ open desktop/dist/FCode.app
 | SFT 数据管线（轨迹 → 训练样本，训练与推理 prompt 逐字节一致） | 已实现（2271 条样本） |
 | LLM 层实验装置（文件式 oracle，复用真实 prompt / 门控 / 验证） | 已实现（实验） |
 | 澄清式委托（消息 → 理解摘要 → 选项 → TaskSpec → 任务卡） | 已实现（确定性 clarifier） |
+| Executive–Policy 决策包（候选动作 + fast path + 可控上下文） | 已实现（P1 lab：上下文降 79.8%） |
 | 本地模型供应商（Qwen3-4B LoRA · OpenAI 兼容 · 零依赖） | **骨架就绪**，门控关闭 |
 | 真实供应商（一次性传输授权 + 凭证提供者 + 价格快照） | **门控关闭**，仅骨架 |
 
 ## 数字
 
-- **136** 项单元与场景测试，全部离线
+- **140** 项单元与场景测试，全部离线
 - **7** 个可复现场景，其中崩溃场景用真实 `SIGKILL`
 - **0** 个第三方运行时依赖（只用标准库）
 - **9** 轮完成一次完整研究，**4500 µUSD** 合成预算
@@ -205,7 +207,7 @@ flowcredit/          Python Runtime 与 Demo
     trajectory/      记录、导出、独立重算
     demo/            CLI、终端渲染、七个场景、崩溃 worker
   viewer/            实时控制台 + Trace 回放（零依赖零构建）
-  tests/             136 项 unittest
+  tests/             140 项 unittest
   docs/              架构、设计决策、框架对照、JD 映射
 archive/             v1：Node.js 研究原型（保留，不参与 CI）
 ```
