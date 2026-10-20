@@ -47,6 +47,7 @@ const ICON = {
   circle:  '<svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7.5"/></svg>',
   lock:    '<svg class="i" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>',
   thought: '<svg class="i" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="19" cy="12" r="1.4"/></svg>',
+  inkTick: '<svg class="i ink-tick" viewBox="0 0 24 24"><path d="M4.5 12.8c2.2 1.4 4 3.1 5.6 5.1 2.9-4.4 6-7.6 9.4-9.8" /></svg>',
 };
 
 /* 失败原因的用户语言；代码仍保留在结果卡下方，方便审计 */
@@ -1014,7 +1015,7 @@ function renderResult(trace) {
     const chg = result.change_bp;
     return `<div class="card result">
       <div class="card-head">
-        <span class="card-title">${ICON.check} 结论</span>
+        <span class="card-title">${ICON.inkTick} 结论</span>
         <span class="badge pass" style="margin-left:2px"><span class="dot"></span>已验证</span>
         <span class="grow"></span>
         <span class="card-meta">succeeded · runtime-recomputed</span>
@@ -1039,7 +1040,7 @@ function renderResult(trace) {
   if (terminal.status === "succeeded") {
     return `<div class="card result">
       <div class="card-head">
-        <span class="card-title">${ICON.check} 结论</span>
+        <span class="card-title">${ICON.inkTick} 结论</span>
         <span class="badge pass" style="margin-left:2px"><span class="dot"></span>已验证</span>
         <span class="grow"></span>
         <span class="card-meta">succeeded</span>

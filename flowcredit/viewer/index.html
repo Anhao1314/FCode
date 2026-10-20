@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light">
 <title>Fcode · flowcredit console</title>
-<link rel="stylesheet" href="app.css?v=18">
+<link rel="stylesheet" href="app.css?v=19">
 </head>
 <body>
 <div class="shell app rail-open" id="app">
@@ -67,8 +67,18 @@
       <div class="center">
         <main class="main">
           <div class="main-inner" id="main">
-            <div class="empty">给 agent 派一个工作委托，或从左侧打开运行记录 / 示例场景。<br>
-              <span class="dim">每个数字有来源，每次计算被复算，每份底稿不可篡改。</span><br>
+            <div class="empty empty-doodle">
+              <svg class="hdoodle" viewBox="0 0 120 90" aria-hidden="true">
+                <circle cx="34" cy="26" r="12"/>
+                <path d="M34 38v26"/>
+                <path d="M24 64h20"/>
+                <path d="M56 22h34l-6 22H62z"/>
+                <path d="M90 28h7a6 6 0 0 1 0 12h-5"/>
+                <path d="M60 52c4 6 10 8 16 6"/>
+                <path d="M24 12c3-3 7-4 11-2"/>
+              </svg>
+              <p>给 agent 派一个工作委托，或从左侧打开运行记录。</p>
+              <p class="dim">每个数字有来源，每次计算被复算，每份底稿不可篡改。</p>
               <button class="a-btn strong" data-wizard-open style="margin-top:14px">创建第一个委托</button>
             </div>
           </div>
@@ -96,7 +106,16 @@
                 </button>
                 <div class="grow"></div>
                 <button class="c-btn static run-chip" id="run-chip" hidden title="在轮次边界停止运行（⌘.）">
-                  <span class="pdot"></span><span id="run-chip-text" aria-live="polite">运行中</span>
+                  <span class="pdot"></span>
+                  <svg class="i run-doodle" viewBox="0 0 24 24" aria-hidden="true">
+                    <circle cx="8.6" cy="6.8" r="3.1"/>
+                    <path d="M8.6 9.9v6.6"/>
+                    <path d="M5.9 16.5h5.4"/>
+                    <path d="M14.2 10.4h4.9l-1 4.3h-2.9z"/>
+                    <path d="M19.1 11.4h1.3a1.5 1.5 0 0 1 0 3h-1"/>
+                    <path d="M13.1 7.9c1.2-.5 2.1-.3 2.8.2"/>
+                  </svg>
+                  <span id="run-chip-text" aria-live="polite">运行中</span>
                 </button>
                 <span class="c-btn static" title="离线确定性 mock 模型">
                   <svg class="i" viewBox="0 0 24 24"><path d="M12 3l7.5 4.5v9L12 21l-7.5-4.5v-9z"/></svg>
@@ -166,7 +185,7 @@
   </div>
 </div>
 
-<script src="report.js?v=18"></script>
-<script src="app.js?v=18"></script>
+<script src="report.js?v=19"></script>
+<script src="app.js?v=19"></script>
 </body>
 </html>
