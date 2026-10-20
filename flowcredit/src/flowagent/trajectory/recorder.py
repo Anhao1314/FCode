@@ -62,6 +62,16 @@ class TraceRecorder:
 
     # ------------------------------------------------------------- observer API
 
+    def seed(self, rounds: list[dict[str, Any]]) -> None:
+        """Prepend rounds recorded before this process started (resume).
+
+        The event chain is enough to verify a run, but not enough to rebuild the
+        signed proposals and receipts the round cards show. The previous trace
+        already holds them; carrying it forward keeps the resumed run one story
+        instead of two unrelated fragments.
+        """
+        self._rounds = [RoundRecord(**round) for round in rounds] + self._rounds
+
     def round_start(self, round_no: int, budget: dict[str, Any], plan: Any = None) -> None:
         record = RoundRecord(index=round_no, budget_before=dict(budget))
         record.plan = plan.to_dict() if plan is not None else None

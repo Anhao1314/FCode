@@ -21,7 +21,7 @@ Python 3.11+，零第三方依赖，零配置，离线。在终端里给出场�
   2024 毛利率  17.50%
   2025 毛利率  15.00%
   变化        -2.50 pp
- 轨迹自检  通过：40 个事件，链头 75cd9f247c70…
+ 轨迹自检  通过：49 个事件，链头 d2043725c7d3…
 ```
 
 ## 三个卖点
@@ -69,13 +69,14 @@ flowchart TB
 
 一次调用穿过四道关：**门控 → 预算 → 执行 → 独立重算**。任何一道不过，任务都不会被标记为成功。
 
-## 五个场景
+## 七个场景
 
 ```sh
 cd flowcredit
 python demo.py full          # 完整研究，9 轮
 python demo.py tool-denied   # 越权工具：主机拒绝，工具从未执行
 python demo.py budget        # 预算耗尽：发送前拦住，已占用不退
+python demo.py budget-resume # 预算追加：失败后续跑，已付的读取不重发
 python demo.py crash         # 进程被 SIGKILL，重启续跑不重复
 python demo.py unknown       # 供应商超时：不重发，凭签名收据对账
 python demo.py open-ended    # 计划被卡住：诚实停止，不给算不出的数字
@@ -88,12 +89,13 @@ python demo.py --serve       # 打开只读回放控制台
  full         succeeded               9    9    9      4500   ok
  tool-denied  denied                  1    1    0       500   ok
  budget       failed                  5    4    4      2000   ok
+ budget-resume failed                  7    6    6      3000   ok
  crash        succeeded               9    9    9      4500   ok
  unknown      succeeded               9    9    9      4500   ok
  open-ended   failed                  9    9    9      4500   ok
 ```
 
-四个可靠性场景都不改 Runtime 代码——它们是不同的主机策略与故障注入。这一点本身就是设计主张：可靠性不是特判出来的。
+其余六个场景都不改 Runtime 代码——它们是不同的主机策略与故障注入。这一点本身就是设计主张：可靠性不是特判出来的。
 
 ## 控制台
 
@@ -105,8 +107,9 @@ python3 flowcredit/viewer/server.py --repo .   # 打开 http://127.0.0.1:8642/
 
 ![console](flowcredit/viewer/docs/console-live.png)
 
-- 左侧：运行记录（搜索 / 双击重命名 / ☆ 固定）与 6 个演示场景；右侧：常驻证据栏（事件 / 链 / 原始）。
+- 左侧：运行记录（搜索 / 双击重命名 / ☆ 固定）与 7 个演示场景；右侧：常驻证据栏（事件 / 链 / 原始，可只看人工决定）。
 - 真实运行：输入任务 → Enter，Runtime 现场执行，Plan、预算、逐轮工具卡与哈希链边产生边渲染；`⌘.` 在轮次边界停止。
+- 人工控制：审批门（关键步骤 / 逐步 / 自动）、计划跳过与提前、预算调高；失败于预算或轮次上限时可「追加预算并继续」，从事件日志续跑且不重发已付读取。
 - 只读回放：`cd flowcredit && python demo.py --serve`；页面加载时用 `crypto.subtle` 重算全链，改一个字节就变红。
 - 设计：颜色只表达状态语义，层级靠间距与字重，内容默认折叠——「简洁可以让人用的很久」。
 
@@ -122,6 +125,8 @@ python3 flowcredit/viewer/server.py --repo .   # 打开 http://127.0.0.1:8642/
 | 计划驱动的多轮执行（目标 → 可修订的计划 → todo 推进） | 已实现（确定性，无 LLM） |
 | 未知结果（不重发 / 不退费 / 签名收据显式对账） | 已实现 |
 | 独立验证（Runtime 重算，模型不能自报完成） | 已实现 |
+| 人工审批门（关键步骤 / 逐步 / 自动、超时拒绝、本次运行免询） | 已实现 |
+| 运行时人工控制（计划跳过 / 提前、预算调高、失败续跑） | 已实现 |
 | Evidence Authority（区分可用与不可用证据） | 已实现（金融域） |
 | Trace 导出与可视化重算 | 已实现 |
 | 实时控制台（SSE 直播 / 运行记录 / 只读回放） | 已实现 |
@@ -129,11 +134,11 @@ python3 flowcredit/viewer/server.py --repo .   # 打开 http://127.0.0.1:8642/
 
 ## 数字
 
-- **35** 项单元与场景测试，全部离线
-- **5** 个可复现场景，其中崩溃场景用真实 `SIGKILL`
+- **41** 项单元与场景测试，全部离线
+- **7** 个可复现场景，其中崩溃场景用真实 `SIGKILL`
 - **0** 个第三方运行时依赖（只用标准库）
 - **9** 轮完成一次完整研究，**4500 µUSD** 合成预算
-- 哈希链 **40** 个事件，读取时全量重算
+- 哈希链 **49** 个事件，读取时全量重算
 - 控制台 **3** 个静态文件 + **1** 个标准库 server，零构建、可离线
 
 ## 目录
@@ -147,9 +152,9 @@ flowcredit/          Python Runtime 与 Demo
     providers/       离线确定性 mock（三种策略）
     memory/          模型可见的观测摘要（从事件日志重建）
     trajectory/      记录、导出、独立重算
-    demo/            CLI、终端渲染、五个场景、崩溃 worker
+    demo/            CLI、终端渲染、七个场景、崩溃 worker
   viewer/            实时控制台 + Trace 回放（零依赖零构建）
-  tests/             35 项 unittest
+  tests/             41 项 unittest
   docs/              架构、设计决策、框架对照、JD 映射
 archive/             v1：Node.js 研究原型（保留，不参与 CI）
 ```

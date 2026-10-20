@@ -3,12 +3,13 @@
 /* ------------------------------------------------------------------- data */
 
 const SCENARIOS = [
-  ["full",        "完整研究"],
-  ["tool-denied", "越权工具"],
-  ["budget",      "预算耗尽"],
-  ["crash",       "崩溃恢复"],
-  ["unknown",     "未知对账"],
-  ["open-ended",  "开放问题"],
+  ["full",          "完整研究"],
+  ["tool-denied",   "越权工具"],
+  ["budget",        "预算耗尽"],
+  ["budget-resume", "预算追加"],
+  ["crash",         "崩溃恢复"],
+  ["unknown",       "未知对账"],
+  ["open-ended",    "开放问题"],
 ];
 
 const EVENT_DOT = {
@@ -16,7 +17,22 @@ const EVENT_DOT = {
   plan_validated: "", plan_updated: "", execution_started: "", tool_started: "info",
   tool_denied: "bad", tool_succeeded: "ok", verification_started: "info",
   task_succeeded: "ok", task_failed: "bad", task_stopped: "warn",
+  approval_requested: "warn", approval_granted: "ok", approval_denied: "bad", approval_aborted: "warn",
+  plan_steered: "info", budget_adjusted: "info", control_rejected: "bad", task_resumed: "info",
 };
+
+/* 人的决定：审批、计划修订、预算调整、续跑 */
+const HUMAN_EVENTS = new Set([
+  "approval_requested", "approval_granted", "approval_denied", "approval_aborted",
+  "plan_steered", "budget_adjusted", "control_rejected", "task_resumed",
+]);
+
+const APPROVAL_MODES = [
+  ["consequential", "关键审批", "只在会改变结论或宣告受阻的动作前暂停"],
+  ["all", "逐步审批", "每次工具调用都等你确认"],
+  ["off", "自动", "不暂停；权限门控与预算仍然生效"],
+];
+
 
 const ICON = {
   folder:  '<svg class="i" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>',
@@ -38,9 +54,12 @@ let currentTrace = null;
 let currentCheck = null;
 let railTab = "events";
 let railOpen = true;
+let railHumanOnly = false;
+let approvalMode = localStorage.getItem("fa.approval") || "consequential";
+if (!APPROVAL_MODES.some(([key]) => key === approvalMode)) approvalMode = "consequential";
 
 /* live console state */
-const TPL_FALLBACK = { full: "完整研究", "tool-denied": "越权工具", budget: "预算耗尽", crash: "崩溃恢复", unknown: "未知对账", "open-ended": "开放问题" };
+const TPL_FALLBACK = { full: "完整研究", "tool-denied": "越权工具", budget: "预算耗尽", "budget-resume": "预算追加", crash: "崩溃恢复", unknown: "未知对账", "open-ended": "开放问题" };
 let health = null;      // /api/health payload
 let templates = [];     // /api/templates
 let tplKey = "full";    // selected template
@@ -220,8 +239,13 @@ function renderRail(trace, check) {
   }
 
   if (railTab === "events") {
-    const events = trace.events || [];
-    body.innerHTML = events.map(e => `<div class="ev-item">
+    const all = trace.events || [];
+    const humans = all.filter(e => HUMAN_EVENTS.has(e.type));
+    const events = railHumanOnly ? humans : all;
+    body.innerHTML = `<div class="rail-tools">
+      <button class="rf${railHumanOnly ? " active" : ""}" data-rail-human>${railHumanOnly ? "只看人工" : "人工"} · ${humans.length}</button>
+      <span class="rf-hint">审批 / 修订 / 预算 / 续跑</span>
+    </div>` + (events.length ? events.map(e => `<div class="ev-item">
       <div class="ev-line">
         <span class="ev-seq">#${e.sequence}</span>
         ${dot(EVENT_DOT[e.type] || "")}
@@ -229,7 +253,14 @@ function renderRail(trace, check) {
         <span class="ev-hash">${esc(shortHash(e.hash))}</span>
       </div>
       ${summariseEvent(e) ? `<div class="ev-detail">${summariseEvent(e)}</div>` : ""}
-    </div>`).join("");
+    </div>`).join("") : `<div class="rail-empty">这条轨迹里还没有人工决定</div>`);
+    const toggle = body.querySelector("[data-rail-human]");
+    if (toggle) {
+      toggle.addEventListener("click", () => {
+        railHumanOnly = !railHumanOnly;
+        renderRail(trace, check || { ok: false, reason: "" });
+      });
+    }
     return;
   }
 
@@ -266,44 +297,80 @@ function summariseEvent(e) {
   if (e.type === "model_reconciled") return `receipt ${esc(shortHash(d.receipt_ref))}…`;
   if (e.type === "plan_updated") { const p = d.plan || {}; const done = (p.todos || []).filter(t => t.status === "done").length; return `revision ${esc(p.revision)} · ${done}/${(p.todos || []).length} settled`; }
   if (e.type === "plan_validated") return d.plan && d.plan.steps ? esc(d.plan.steps.map(s => s.id + ":" + s.tool).join(" ")) : "";
+  if (e.type === "approval_requested") {
+    const args = d.arguments && Object.keys(d.arguments).length
+      ? "(" + Object.entries(d.arguments).map(([k, v]) => `${esc(k)}=${esc(v)}`).join(", ") + ")" : "";
+    return `${esc(d.tool)} ${args} · ${esc(d.policy)}`;
+  }
+  if (e.type === "approval_granted") return `${esc(d.tool)} · ${esc(d.by || "operator")}${d.remember ? " · 本运行免询" : ""}`;
+  if (e.type === "approval_denied") return `${esc(d.tool)} · ${esc(d.code || "OPERATOR_DENIED")}`;
+  if (e.type === "approval_aborted") return `${esc(d.tool)} · ${esc(d.code || "ABORTED")}`;
+  if (e.type === "plan_steered") {
+    const p = d.plan || {};
+    return `revision ${esc(p.revision)} · ${esc(d.action)} ${esc(d.todo_id)}${d.note ? " · " + esc(d.note) : ""}`;
+  }
+  if (e.type === "budget_adjusted") {
+    const before = d.before || {}, after = d.after || {};
+    return `calls ${esc(before.max_calls)}→${esc(after.max_calls)} · µUSD ${esc(before.max_cost_microusd)}→${esc(after.max_cost_microusd)}`;
+  }
+  if (e.type === "control_rejected") return `${esc(d.kind)} · ${esc(d.reason)}`;
+  if (e.type === "task_resumed") return `by ${esc(d.by || "operator")}${d.limits ? " · calls " + esc(d.limits.max_calls) : ""}`;
   return esc(JSON.stringify(d).slice(0, 120));
 }
 
 /* ------------------------------------------------------------ main render */
 
-function renderPlan(plan) {
+function renderPlan(plan, opts = {}) {
   if (!plan || !plan.todos || !plan.todos.length) return "";
   const done = plan.todos.filter(t => t.status === "done").length;
   const glyph = { done: "✓", blocked: "✕", abandoned: "–", active: "◐", pending: "○" };
-  return `<div class="card">
+  const editable = !!opts.editable;
+  const editing = editable && !!opts.editing;
+  return `<div class="card plan${editing ? " editing" : ""}">
     <div class="card-head">
       <span class="card-title">${ICON.file} Plan</span>
       <span class="grow"></span>
       <span class="card-meta">revision ${esc(plan.revision)} · <span style="color:var(--green)">${done}/${plan.todos.length}</span> 已完成</span>
+      ${editable ? `<button class="p-edit${editing ? " active" : ""}" data-plan-edit>${editing ? "完成" : "调整"}</button>` : ""}
     </div>
     <div class="card-rows">
       ${plan.todos.map(t => `<div class="row ${esc(t.status)}">
         <span class="r-icon">${glyph[t.status] || "○"}</span>
         <span class="r-text">${esc(t.text)}</span>
         <span class="r-meta">${esc(t.tool)}</span>
+        ${editing && (t.status === "pending" || t.status === "active") ? planActions(t, opts.confirmId) : ""}
       </div>`).join("")}
     </div>
+    ${opts.queued ? `<div class="plan-foot">${esc(opts.queued)}</div>` : ""}
   </div>`;
 }
 
-function renderMeters(trace) {
+function planActions(todo, confirmId) {
+  if (confirmId === todo.id) {
+    return `<span class="r-act confirm"><span class="q">跳过？</span><button data-plan-action="skip-confirm" data-todo="${esc(todo.id)}">是</button><button data-plan-action="cancel">否</button></span>`;
+  }
+  return `<span class="r-act">
+    <button data-plan-action="promote" data-todo="${esc(todo.id)}" title="提前：下一轮先做这一步">↑</button>
+    <button data-plan-action="skip" data-todo="${esc(todo.id)}" title="跳过：不再执行（不可撤销）">–</button>
+  </span>`;
+}
+
+function renderMeters(trace, opts = {}) {
   const b = lastBudget(trace);
   if (!b) return "";
   const lim = b.limits || {};
+  const editable = !!opts.editable;
+  const editing = editable && !!opts.editing;
   const meters = [
     ["calls", b.calls_used, lim.max_calls, ""],
     ["reads", b.reads_used, lim.max_reads, ""],
     ["µUSD", b.cost_used_microusd, lim.max_cost_microusd, ""],
     ["tokens", b.tokens_used, lim.max_tokens, "m-tokens"],
   ];
-  return `<div class="card meters">
+  return `<div class="card meters${editing ? " editing" : ""}">
     <div class="card-head">
       <span class="card-title">${ICON.lock} 预算</span>
+      ${opts.queued ? `<span class="m-queued">已排队 · 下一轮生效</span>` : ""}
       <span class="grow"></span>
       ${meters.map(([label, used, max, cls]) => {
         const ratio = max ? Math.min(1, (used || 0) / max) : 0;
@@ -314,7 +381,21 @@ function renderMeters(trace) {
           <span class="m-v">${num(used || 0)}/${num(max || 0)}</span>
         </span>`;
       }).join("")}
+      ${editable ? `<button class="p-edit${editing ? " active" : ""}" data-budget-edit>${editing ? "取消" : "调整"}</button>` : ""}
     </div>
+    ${editing ? budgetForm(lim) : ""}
+  </div>`;
+}
+
+function budgetForm(lim) {
+  return `<div class="budget-edit">
+    <label>calls <input type="number" data-budget="maxCalls" min="${lim.max_calls}" value="${lim.max_calls}" inputmode="numeric"></label>
+    <label>reads <input type="number" data-budget="maxReads" min="${lim.max_reads}" value="${lim.max_reads}" inputmode="numeric"></label>
+    <label>µUSD <input type="number" data-budget="maxCostMicrousd" min="${lim.max_cost_microusd}" value="${lim.max_cost_microusd}" inputmode="numeric"></label>
+    <span class="hint">只允许调高 · 下一轮生效</span>
+    <span class="grow"></span>
+    <button class="a-btn" data-budget-cancel>取消</button>
+    <button class="a-btn strong" data-budget-apply>提交调整</button>
   </div>`;
 }
 
@@ -688,6 +769,7 @@ function liveShell(trace) {
     <div id="plan-slot"></div>
     <div id="budget-slot"></div>
     <div id="rounds-slot"></div>
+    <div id="approval-slot"></div>
     <div id="result-slot"></div>`;
 }
 
@@ -703,7 +785,8 @@ function liveNote(trace) {
     `${rounds.length} 轮 · ${events.length} 事件`,
     `终态 <span style="color:${statusColor}">${esc(status)}</span>`,
   ];
-  if (last) bits.push(`最近 <span style="font-family:var(--mono)">${esc(last.type)}</span>`);
+  if (live && live.pending) bits.push(`<span class="yel">等待你的决定 · ${esc(live.pending.tool)}</span>`);
+  else if (last) bits.push(`最近 <span style="font-family:var(--mono)">${esc(last.type)}</span>`);
   return bits.join(" · ");
 }
 
@@ -712,6 +795,7 @@ function liveApply(data) {
   if (!trace) return;
   const stick = nearMainBottom();
   const first = !live.trace;
+  const running = !data.finished && !live.finished;
   live.trace = trace;
   currentTrace = trace;
   currentKey = "run:" + live.id;
@@ -729,14 +813,55 @@ function liveApply(data) {
     live.eventCount = 0;
   }
 
-  const planHtml = renderPlan(lastPlan(trace));
+  const eventList = trace.events || [];
+  const events = eventList.length;
+
+  const pending = data.pending || null;
+  if (pending && (!live.pending || live.pending.id !== pending.id)) {
+    live.pendingDeadline = Date.now() + (Number(pending.expiresIn) || 0) * 1000;
+    live.deciding = null;
+  }
+  if (!pending) live.deciding = null;
+  live.pending = pending;
+
+  if (live.planQueued && events > live.planQueued.events) {
+    const added = eventList.slice(live.planQueued.events);
+    if (added.some(e => e.type === "plan_steered")) {
+      live.planQueued = null;
+      toast("计划已修订");
+    } else if (added.some(e => e.type === "control_rejected" && ((e.payload || {}).detail || {}).kind === "plan")) {
+      live.planQueued = null;
+      toast("计划指令被拒绝");
+    }
+  }
+  if (live.budgetQueued && events > live.budgetQueued.events) {
+    const added = eventList.slice(live.budgetQueued.events);
+    if (added.some(e => e.type === "budget_adjusted")) {
+      live.budgetQueued = null;
+      toast("预算已生效");
+    } else if (added.some(e => e.type === "control_rejected" && ((e.payload || {}).detail || {}).kind === "budget")) {
+      live.budgetQueued = null;
+      toast("预算调整被拒绝");
+    }
+  }
+
+  const planHtml = renderPlan(lastPlan(trace), {
+    editable: running,
+    editing: live.planEditing,
+    confirmId: live.planConfirm,
+    queued: live.planQueued ? live.planQueued.label : "",
+  });
   if (planHtml !== live.planHtml) {
     const slot = document.getElementById("plan-slot");
     if (slot) slot.innerHTML = planHtml;
     live.planHtml = planHtml;
   }
 
-  const budgetHtml = renderMeters(trace);
+  const budgetHtml = renderMeters(trace, {
+    editable: running,
+    editing: live.budgetEditing,
+    queued: !!live.budgetQueued,
+  });
   if (budgetHtml !== live.budgetHtml) {
     const slot = document.getElementById("budget-slot");
     if (slot) slot.innerHTML = budgetHtml;
@@ -744,6 +869,14 @@ function liveApply(data) {
   }
 
   syncLiveRounds(trace);
+
+  const approvalKey = pending
+    ? `${pending.id}:${live.deciding ? (live.deciding.allow ? "allow" : "deny") : ""}`
+    : "";
+  if (approvalKey !== live.approvalKey) {
+    live.approvalKey = approvalKey;
+    paintApproval();
+  }
 
   const resultHtml = trace.terminal && trace.terminal.status ? renderResult(trace) : "";
   if (resultHtml !== live.resultHtml) {
@@ -755,7 +888,6 @@ function liveApply(data) {
   const note = document.getElementById("live-note");
   if (note) note.innerHTML = liveNote(trace);
 
-  const events = (trace.events || []).length;
   if (events !== live.eventCount) {
     live.eventCount = events;
     const railBody = document.getElementById("rail-body");
@@ -779,7 +911,12 @@ function liveApply(data) {
   }
 
   const chip = document.getElementById("run-chip-text");
-  if (chip) chip.textContent = (trace.rounds || []).length ? `运行中 · 第 ${(trace.rounds || []).length} 轮` : "运行中";
+  if (chip) {
+    const rounds = (trace.rounds || []).length;
+    chip.textContent = pending
+      ? `等待授权${rounds ? " · 第 " + rounds + " 轮" : ""}`
+      : (rounds ? `运行中 · 第 ${rounds} 轮` : "运行中");
+  }
 
   if (stick) scrollMainBottom();
 }
@@ -838,11 +975,174 @@ function setComposerRunning(running) {
     : (health && health.live ? "offline-mock · 可运行" : "offline-mock · 只读回放");
 }
 
+/* ------------------------------------------------------------- 审批 */
+
+function fmtCountdown(seconds) {
+  const total = Math.max(0, Math.round(seconds));
+  return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
+}
+
+function renderApproval(pending, deciding) {
+  if (!pending) return "";
+  const argsObj = pending.arguments || {};
+  const args = Object.keys(argsObj).length
+    ? "(" + Object.entries(argsObj).map(([k, v]) => `${k}=${v}`).join(", ") + ")"
+    : "";
+  const why = pending.policy === "every-step"
+    ? "逐步审批：本次运行的每次工具调用都需要你确认。"
+    : "关键步骤：这个动作会改变结论或宣告任务受阻，执行前需要你确认。";
+  const busy = deciding
+    ? `<span class="apv-count">${deciding.allow ? "已允许 · 等待 Runtime 继续…" : "已拒绝 · 运行将终止…"}</span>`
+    : `<span class="apv-count" data-countdown>${fmtCountdown(pending.expiresIn)}</span>`;
+  return `<div class="card approval" data-approval="${esc(pending.id)}">
+    <div class="card-head">
+      <span class="card-title">${ICON.lock} 需要你的决定</span>
+      <span class="grow"></span>
+      <span class="badge warn"><span class="dot"></span>${deciding ? "已提交" : "等待授权"}</span>
+    </div>
+    <div class="approval-body">
+      <div class="apv-line">
+        <span class="rno">#${esc(pending.round)}</span>
+        <span class="tool">${esc(pending.tool)}</span>
+        ${args ? `<span class="args">${esc(args)}</span>` : ""}
+      </div>
+      <div class="apv-why">${esc(why)}</div>
+      <div class="apv-foot">
+        ${busy}
+        <label class="apv-remember"><input type="checkbox" data-remember${deciding ? " disabled" : ""}> 本次运行内不再询问该工具</label>
+        <span class="grow"></span>
+        <button class="a-btn" data-decision="deny"${deciding ? " disabled" : ""}>拒绝</button>
+        <button class="a-btn strong" data-decision="allow"${deciding ? " disabled" : ""}>允许</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function paintApproval() {
+  const slot = document.getElementById("approval-slot");
+  if (!slot) return;
+  slot.innerHTML = live && live.pending ? renderApproval(live.pending, live.deciding) : "";
+}
+
+async function decideApproval(allow) {
+  if (!live || !live.pending || live.deciding) return;
+  const pending = live.pending;
+  const rememberEl = document.querySelector("[data-remember]");
+  const remember = !!(rememberEl && rememberEl.checked && allow);
+  live.deciding = { allow };
+  paintApproval();
+  try {
+    const response = await fetch(`/api/runs/${encodeURIComponent(live.id)}/decision`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ approvalId: pending.id, allow, remember }),
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.error || `HTTP ${response.status}`);
+    }
+    toast(allow ? "已允许 · 运行继续" : "已拒绝 · 运行将终止");
+  } catch (error) {
+    live.deciding = null;
+    paintApproval();
+    toast("决定未送达：" + error.message);
+  }
+}
+
+/* ------------------------------------------------------- 计划与预算指令 */
+
+function paintPlan() {
+  const slot = document.getElementById("plan-slot");
+  if (!slot || !live || !live.trace) return;
+  const html = renderPlan(lastPlan(live.trace), {
+    editable: live.running && !live.finished,
+    editing: live.planEditing,
+    confirmId: live.planConfirm,
+    queued: live.planQueued ? live.planQueued.label : "",
+  });
+  slot.innerHTML = html;
+  live.planHtml = html;
+}
+
+function paintBudget() {
+  const slot = document.getElementById("budget-slot");
+  if (!slot || !live || !live.trace) return;
+  const html = renderMeters(live.trace, {
+    editable: live.running && !live.finished,
+    editing: live.budgetEditing,
+    queued: !!live.budgetQueued,
+  });
+  slot.innerHTML = html;
+  live.budgetHtml = html;
+}
+
+async function queuePlan(action, todoId) {
+  if (!live || !live.running) return;
+  const note = action === "skip" ? "操作员跳过" : "操作员提前";
+  try {
+    const response = await fetch(`/api/runs/${encodeURIComponent(live.id)}/plan`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action, todoId, note }),
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.error || `HTTP ${response.status}`);
+    }
+    const label = action === "skip" ? `已排队：跳过 ${todoId}` : `已排队：提前 ${todoId}`;
+    live.planQueued = { label, events: (live.trace.events || []).length };
+    live.planConfirm = null;
+    paintPlan();
+    toast(label + " · 下一轮生效");
+  } catch (error) {
+    toast("计划指令未送达：" + error.message);
+  }
+}
+
+async function queueBudget() {
+  if (!live || !live.running) return;
+  const read = key => Number((document.querySelector(`[data-budget="${key}"]`) || {}).value || 0);
+  const limits = lastBudget(live.trace) ? lastBudget(live.trace).limits : {};
+  const payload = {
+    maxCalls: read("maxCalls"),
+    maxReads: read("maxReads"),
+    maxCostMicrousd: read("maxCostMicrousd"),
+  };
+  if (
+    !payload.maxCalls || payload.maxCalls < (limits.max_calls || 0) ||
+    !payload.maxReads || payload.maxReads < (limits.max_reads || 0) ||
+    !payload.maxCostMicrousd || payload.maxCostMicrousd < (limits.max_cost_microusd || 0)
+  ) {
+    toast("上限只能调高，且必须是整数");
+    return;
+  }
+  try {
+    const response = await fetch(`/api/runs/${encodeURIComponent(live.id)}/budget`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.error || `HTTP ${response.status}`);
+    }
+    live.budgetEditing = false;
+    live.budgetQueued = { events: (live.trace.events || []).length };
+    paintBudget();
+    toast("预算调整已排队 · 下一轮生效");
+  } catch (error) {
+    toast("预算调整未送达：" + error.message);
+  }
+}
+
 function openLive(id, objective, template) {
   detachLive();
   live = {
     id, es: null, trace: null, objective, template, running: true, finished: false,
     planHtml: "", budgetHtml: "", resultHtml: "", roundHtml: [], eventCount: 0,
+    pending: null, pendingDeadline: 0, deciding: null, approvalKey: "",
+    planEditing: false, planConfirm: null, planQueued: null,
+    budgetEditing: false, budgetQueued: null,
   };
   currentKey = "run:" + id;
   renderNav();
@@ -891,10 +1191,20 @@ function finishLive(data) {
   const runId = live.id;
   live.finished = true;
   live.running = false;
+  live.pending = null;
+  live.deciding = null;
+  live.approvalKey = "";
+  paintApproval();
   if (live.es) { live.es.close(); live.es = null; }
   setComposerRunning(false);
   const trace = live.trace;
   if (trace) {
+    if (trace.terminal && trace.terminal.status) {
+      const html = renderResult(trace);
+      const slot = document.getElementById("result-slot");
+      if (slot) slot.innerHTML = html;
+      live.resultHtml = html;
+    }
     cache.set("run:" + runId, trace);
     verifyChain(trace).then(check => {
       if (!live || live.id !== runId) return;
@@ -932,7 +1242,7 @@ async function sendTask() {
     const response = await fetch("/api/runs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ objective, template: tplKey }),
+      body: JSON.stringify({ objective, template: tplKey, approval: approvalMode }),
     });
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
@@ -980,6 +1290,37 @@ function setTemplate(key) {
   renderTemplateMenu();
 }
 
+function approvalTitle(mode = approvalMode) {
+  const found = APPROVAL_MODES.find(([key]) => key === mode);
+  return found ? found[1] : "关键审批";
+}
+
+function setApprovalMode(mode) {
+  if (!APPROVAL_MODES.some(([key]) => key === mode)) return;
+  approvalMode = mode;
+  localStorage.setItem("fa.approval", mode);
+  const label = document.getElementById("approval-label");
+  if (label) label.textContent = approvalTitle();
+  renderApprovalMenu();
+}
+
+function renderApprovalMenu() {
+  const menu = document.getElementById("approval-menu");
+  if (!menu) return;
+  menu.innerHTML = APPROVAL_MODES.map(([key, title, desc]) => `<button class="tpl-item${key === approvalMode ? " active" : ""}" data-approval-mode="${esc(key)}">
+    <span class="t"><span>${esc(title)}</span><span class="m">${esc(key)}</span></span>
+    <span class="d">${esc(desc)}</span>
+  </button>`).join("") + `<div class="tpl-note">审批只发生在轮次边界，不打断工具执行；拒绝会终止运行并写入签名链。档位对新任务生效。</div>`;
+  for (const button of menu.querySelectorAll("[data-approval-mode]")) {
+    button.addEventListener("click", () => {
+      const changed = button.dataset.approvalMode !== approvalMode;
+      setApprovalMode(button.dataset.approvalMode);
+      menu.hidden = true;
+      if (changed && live && live.running) toast("已切换 · 下一个任务生效");
+    });
+  }
+}
+
 function renderTemplateMenu() {
   const menu = document.getElementById("tpl-menu");
   if (!menu) return;
@@ -996,6 +1337,7 @@ function renderTemplateMenu() {
 }
 
 async function initLive() {
+  setApprovalMode(approvalMode);
   try {
     health = await fetch("/api/health", { cache: "no-store" }).then(r => r.json());
   } catch {
@@ -1013,6 +1355,7 @@ async function initLive() {
     const ta = document.getElementById("composer-ta");
     ta.placeholder = "静态回放模式 — 用 python3 server.py --repo … 启动控制台即可真实运行任务";
     document.getElementById("template-btn").disabled = true;
+    document.getElementById("approval-btn").disabled = true;
     document.getElementById("send").disabled = true;
     document.getElementById("foot-text").textContent = "offline-mock · 只读回放";
     const group = document.getElementById("run-group");
@@ -1193,10 +1536,97 @@ function startRename(id, labelEl) {
 
 function runActionsHtml(trace) {
   if (!(currentKey && currentKey.startsWith("run:"))) return "";
-  const status = (trace.terminal || {}).status || "";
+  const terminal = trace.terminal || {};
+  const status = terminal.status || "";
+  const failure = terminal.failure || {};
+  const run = currentRun();
+  const liveId = live && live.id;
+  const canResume = !run || !!run.taskId || (liveId && liveId === run.id);
+  const resumable = (failure.code === "BUDGET_EXCEEDED" || failure.code === "ROUND_LIMIT")
+    && !(live && live.running)
+    && canResume;
+  const resume = resumable ? `<button class="a-btn strong" data-act="resume">追加预算并继续</button>` : "";
   const retry = status && status !== "succeeded"
     ? `<button class="a-btn" data-act="retry">重试</button>` : "";
-  return `<div class="actions">${retry}<button class="a-btn" data-act="diag">复制诊断</button></div>`;
+  return `<div class="actions">${resume}${retry}<button class="a-btn" data-act="diag">复制诊断</button></div>`;
+}
+
+function openResumeForm() {
+  const trace = currentTrace || {};
+  const budget = lastBudget(trace);
+  const lim = (budget && budget.limits) || {};
+  const card = document.querySelector("#result-slot .result") || document.querySelector(".main .result");
+  if (!card) return;
+  const foot = card.querySelector(".result-foot");
+  if (!foot || foot.querySelector(".resume-form")) return;
+  const calls = (lim.max_calls || 0) + 6;
+  const reads = (lim.max_reads || 0) + 10;
+  const cost = (lim.max_cost_microusd || 0) + 20000;
+  const form = document.createElement("div");
+  form.className = "resume-form";
+  form.innerHTML = `
+    <div class="rf-title">追加预算并继续</div>
+    <div class="rf-grid">
+      <label>calls <input type="number" data-resume="maxCalls" min="${lim.max_calls || 0}" value="${calls}" inputmode="numeric"></label>
+      <label>reads <input type="number" data-resume="maxReads" min="${lim.max_reads || 0}" value="${reads}" inputmode="numeric"></label>
+      <label>µUSD <input type="number" data-resume="maxCostMicrousd" min="${lim.max_cost_microusd || 0}" value="${cost}" inputmode="numeric"></label>
+    </div>
+    <div class="rf-foot">
+      <span class="hint">从事件日志续跑，已读资料不重发 · 轮次上限 +6</span>
+      <span class="grow"></span>
+      <button class="a-btn" data-resume-cancel>取消</button>
+      <button class="a-btn strong" data-resume-apply>继续运行</button>
+    </div>
+    <div class="rf-error" hidden></div>`;
+  foot.appendChild(form);
+  const first = form.querySelector("input");
+  if (first) first.focus();
+}
+
+async function resumeRun() {
+  const form = document.querySelector(".resume-form");
+  if (!form) return;
+  const id = currentKey && currentKey.startsWith("run:") ? currentKey.slice(4) : null;
+  if (!id) { toast("没有可续跑的运行"); return; }
+  const saved = runHistory.find(item => item.id === id);
+  if (saved && !saved.taskId && !(live && live.id === id)) { toast("这条运行没有可续跑的持久任务"); return; }
+  const read = key => Number((form.querySelector(`[data-resume="${key}"]`) || {}).value || 0);
+  const payload = {
+    maxCalls: read("maxCalls"),
+    maxReads: read("maxReads"),
+    maxCostMicrousd: read("maxCostMicrousd"),
+    extraRounds: 6,
+  };
+  if (payload.maxCalls < 1 || payload.maxReads < 1 || payload.maxCostMicrousd < 1) {
+    toast("预算上限必须是正整数");
+    return;
+  }
+  const button = form.querySelector("[data-resume-apply]");
+  if (button) button.disabled = true;
+  try {
+    const response = await fetch(`/api/runs/${encodeURIComponent(id)}/resume`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.error || `HTTP ${response.status}`);
+    }
+    const run = runHistory.find(item => item.id === id) || (live && live.id === id ? live : null);
+    const objective = (run && run.objective) || (currentTrace && currentTrace.task && currentTrace.task.objective) || "";
+    const template = (run && run.template) || ((currentTrace && currentTrace.task && currentTrace.task.binding || {}).scenario) || "full";
+    toast("预算已追加 · 从事件日志续跑");
+    openLive(id, objective, template);
+    refreshRuns();
+  } catch (error) {
+    if (button) button.disabled = false;
+    const line = form.querySelector(".rf-error");
+    if (line) {
+      line.hidden = false;
+      line.textContent = error.message;
+    }
+  }
 }
 
 async function retryRun(objective, template) {
@@ -1204,7 +1634,7 @@ async function retryRun(objective, template) {
     const response = await fetch("/api/runs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ objective, template }),
+      body: JSON.stringify({ objective, template, approval: approvalMode }),
     });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const run = await response.json();
@@ -1480,12 +1910,21 @@ function bind() {
   document.getElementById("send").addEventListener("click", sendTask);
   const tplBtn = document.getElementById("template-btn");
   const tplMenu = document.getElementById("tpl-menu");
+  const apvBtn = document.getElementById("approval-btn");
+  const apvMenu = document.getElementById("approval-menu");
   tplBtn.addEventListener("click", event => {
     event.stopPropagation();
+    apvMenu.hidden = true;
     tplMenu.hidden = !tplMenu.hidden;
+  });
+  apvBtn.addEventListener("click", event => {
+    event.stopPropagation();
+    tplMenu.hidden = true;
+    apvMenu.hidden = !apvMenu.hidden;
   });
   document.addEventListener("click", event => {
     if (!tplMenu.hidden && !tplBtn.contains(event.target) && !tplMenu.contains(event.target)) tplMenu.hidden = true;
+    if (!apvMenu.hidden && !apvBtn.contains(event.target) && !apvMenu.contains(event.target)) apvMenu.hidden = true;
   });
   document.getElementById("export").addEventListener("click", exportTrace);
   document.getElementById("reverify").addEventListener("click", reverify);
@@ -1504,10 +1943,60 @@ function bind() {
     else if (event.key === "Escape") { event.preventDefault(); closePalette(); }
   });
   document.getElementById("main").addEventListener("click", event => {
+    const decision = event.target.closest("[data-decision]");
+    if (decision) { decideApproval(decision.dataset.decision === "allow"); return; }
+    const planEdit = event.target.closest("[data-plan-edit]");
+    if (planEdit) {
+      if (!live) return;
+      live.planEditing = !live.planEditing;
+      live.planConfirm = null;
+      paintPlan();
+      return;
+    }
+    const planAction = event.target.closest("[data-plan-action]");
+    if (planAction && live) {
+      const action = planAction.dataset.planAction;
+      if (action === "cancel") {
+        live.planConfirm = null;
+        paintPlan();
+      } else if (action === "skip") {
+        live.planConfirm = planAction.dataset.todo;
+        live.planEditing = true;
+        paintPlan();
+      } else if (action === "skip-confirm") {
+        queuePlan("skip", planAction.dataset.todo);
+      } else if (action === "promote") {
+        queuePlan("promote", planAction.dataset.todo);
+      }
+      return;
+    }
+    const budgetEdit = event.target.closest("[data-budget-edit]");
+    if (budgetEdit) {
+      if (!live) return;
+      live.budgetEditing = !live.budgetEditing;
+      paintBudget();
+      return;
+    }
+    const budgetCancel = event.target.closest("[data-budget-cancel]");
+    if (budgetCancel) {
+      if (!live) return;
+      live.budgetEditing = false;
+      paintBudget();
+      return;
+    }
+    if (event.target.closest("[data-budget-apply]")) { queueBudget(); return; }
+    if (event.target.closest("[data-resume-apply]")) { resumeRun(); return; }
+    const resumeCancel = event.target.closest("[data-resume-cancel]");
+    if (resumeCancel) {
+      const form = resumeCancel.closest(".resume-form");
+      if (form) form.remove();
+      return;
+    }
     const button = event.target.closest("[data-act]");
     if (!button) return;
     if (button.dataset.act === "retry") retryCurrent();
     else if (button.dataset.act === "diag") copyDiagnostics();
+    else if (button.dataset.act === "resume") openResumeForm();
   });
   document.getElementById("rail-toggle").addEventListener("click", () => {
     railOpen = !railOpen;
@@ -1534,12 +2023,21 @@ function bind() {
     const mod = e.metaKey || e.ctrlKey;
     if (mod && e.key.toLowerCase() === "k") { e.preventDefault(); togglePalette(); return; }
     if (mod && e.key === ".") { e.preventDefault(); if (live && live.running) stopRun(); return; }
+    if (mod && live && live.pending && !live.deciding && (e.key === "Enter" || e.key === "Backspace" || e.key === "Delete")) {
+      const palette = document.getElementById("palette");
+      if (palette && !palette.hidden) return;
+      e.preventDefault();
+      decideApproval(e.key === "Enter");
+      return;
+    }
     const typing = e.target && /INPUT|TEXTAREA/.test(e.target.tagName);
     if (e.key === "Escape") {
       const palette = document.getElementById("palette");
       if (palette && !palette.hidden) { closePalette(); return; }
       const menu = document.getElementById("tpl-menu");
       if (menu && !menu.hidden) { menu.hidden = true; return; }
+      const approval = document.getElementById("approval-menu");
+      if (approval && !approval.hidden) { approval.hidden = true; return; }
       if (!typing && innerWidth <= 1100 && railOpen) {
         railOpen = false;
         const app = document.getElementById("app");
@@ -1551,6 +2049,13 @@ function bind() {
     if (typing || mod) return;
     if (e.key === "r") replay();
   });
+
+  setInterval(() => {
+    const el = document.querySelector("[data-countdown]");
+    if (!el || !live || !live.pendingDeadline) return;
+    const left = (live.pendingDeadline - Date.now()) / 1000;
+    el.textContent = left > 0 ? fmtCountdown(left) : "已到时限 · 等待 Runtime 拒绝";
+  }, 500);
 }
 
 function replay() {

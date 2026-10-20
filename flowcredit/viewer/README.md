@@ -10,7 +10,7 @@ flowcredit/viewer/
   app.css             ← 静默化设计系统：颜色只表达状态语义，层级靠间距与字重
   app.js              ← 全部前端逻辑（回放 / 直播 / 命令面板 / 运行管理）
   server.py           ← 本地控制台服务（标准库）：静态文件 + JSON/SSE API + 运行管理
-  traces/             ← 6 个演示场景的 trace JSON（随仓库提供，可重新生成）
+  traces/             ← 7 个演示场景的 trace JSON（随仓库提供，可重新生成）
   runs/               ← 每次真实运行的产物（task.sqlite + trace.json + meta.json，不入库）
   docs/console-live.png
   README.md
@@ -26,6 +26,7 @@ python3 flowcredit/viewer/server.py --repo . --pace 0.7
 ```
 
 - `--pace 0.7`：每轮模拟思考时长（秒），默认 0.7，`0` 则全速跑完；
+- `--approval-timeout 300`：审批等待秒数，超时自动拒绝（默认 300）；
 - `--repo` 指向仓库根（`flowcredit/src` 所在的位置），也可以用 `FLOWAGENT_REPO` 环境变量；
 - 找不到 runtime 时服务仍然可用：页面退化为**静态回放模式**（composer 禁用），`/api/health` 会说明原因；
 - 只想要静态回放：`cd flowcredit && python demo.py --serve`（打开 `viewer/index.html`，无实时运行）。
@@ -52,8 +53,14 @@ python3 flowcredit/viewer/server.py --repo . --pace 0.7
 
 - **composer 真的能派活**：输入任务 → Enter 发送 → Runtime 现场执行，
   Plan、预算、逐轮工具卡、事件日志**边产生边渲染**（Server-Sent Events 推送 trace 快照）。
-- **模板选择器**（`▤ 完整研究 ⌄`）：6 个场景模板决定授权、预算与故障注入
-  （越权拒绝 / 预算耗尽 / 真实 SIGKILL 崩溃恢复 / 未知对账 / 计划受阻）。
+- **模板选择器**（`▤ 完整研究 ⌄`）：7 个场景模板决定授权、预算与故障注入
+  （越权拒绝 / 预算耗尽 / 预算追加续跑 / 真实 SIGKILL 崩溃恢复 / 未知对账 / 计划受阻）。
+- **审批门**（`🔒 关键审批 ⌄`）：默认只在关键工具（`reconcile_basis`、`report_blocked`）执行前暂停；
+  也可切到「逐步审批」或「自动」。审批卡显示倒计时、参数与策略，允许 / 拒绝都写入哈希链；
+  拒绝会终止运行（`OPERATOR_DENIED`），超时自动拒绝；可勾选「本次运行内不再询问该工具」。
+- **人工控制**：运行中可调整计划（跳过 / 提前某个 todo）、追加预算（只能调高，下一轮生效）；
+  失败于 `BUDGET_EXCEEDED` / `ROUND_LIMIT` 时，结果卡提供「追加预算并继续」，
+  从事件日志续跑，不重发已付的读取。右侧证据栏可只看人工事件（审批 / 修订 / 预算 / 续跑）。
 - **随时停止**：运行中发送键变为 ■，点击后在**轮次边界**停止，
   终态记为 `failed · STOPPED_BY_OPERATOR`，已产生的事件与哈希链依然完整可验。
 - **工具卡按 runtime 的工具词汇渲染**（`read_document` / `calculate_margin` / `report_blocked` …）：
@@ -73,26 +80,44 @@ python3 flowcredit/viewer/server.py --repo . --pace 0.7
 | --- | --- |
 | `⌘K` / `Ctrl+K` | 命令面板：动作（重试 / 导出 / 验链 / 展开折叠 / 通知开关）+ 运行记录 + 演示场景 |
 | `⌘.` / `Ctrl+.` | 停止当前运行 |
+| `⌘↵` / `Ctrl+Enter` | 允许当前审批 |
+| `⌘⌫` / `Ctrl+Backspace` | 拒绝当前审批（终止运行） |
 | `Enter` / `⇧Enter` | 发送 / 换行 |
 | `R` | 重放当前场景（静态回放） |
-| `Esc` | 关闭命令面板 / 模板菜单 / 收起浮动证据栏 |
+| `Esc` | 关闭命令面板 / 模板菜单 / 审批菜单 / 收起浮动证据栏 |
 
 ## API（`server.py`，标准库实现）
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | GET | `/api/health` | live 是否可用、runtime 路径、pace |
-| GET | `/api/templates` | 6 个场景模板（标题 / 目标 / 故事 / 预算 / 轮数上限） |
-| GET | `/api/runs` | 运行历史（含 `tracePath` / `name` / `pinned`） |
-| POST | `/api/runs` | `{"objective": "…", "template": "full"}` → `{"id": "run-…"}` |
-| GET | `/api/runs/{id}/stream` | SSE：`hello / snapshot / done / failed`，快照即 trace 文档 |
+| GET | `/api/templates` | 7 个场景模板（标题 / 目标 / 故事 / 预算 / 轮数上限） |
+| GET | `/api/runs` | 运行历史（含 `tracePath` / `name` / `pinned` / `approval`） |
+| POST | `/api/runs` | `{"objective": "…", "template": "full", "approval": "consequential"}` → `{"id": "run-…"}` |
+| GET | `/api/runs/{id}/stream` | SSE：`hello / snapshot / done / failed`，快照含 `pending` / `approval` |
 | POST | `/api/runs/{id}/stop` | 在下一个轮次边界停止 |
+| POST | `/api/runs/{id}/decision` | `{"approvalId": "…", "allow": true, "remember": false}` → 放行或拒绝 |
+| POST | `/api/runs/{id}/plan` | `{"action": "skip"\|"promote", "todoId": "t4"}` → 下一轮生效 |
+| POST | `/api/runs/{id}/budget` | `{"maxCalls": 20, "maxReads": 30, "maxCostMicrousd": 30000}` → 只能调高，下一轮生效 |
+| POST | `/api/runs/{id}/resume` | 追加预算并续跑：`{"maxCalls": …, "maxReads": …, "maxCostMicrousd": …, "extraRounds": 6}` |
 | POST | `/api/runs/{id}/meta` | `{"name": "…", "pinned": true}` → 更新并持久化运行记录 |
 
 实现要点：运行在服务进程内的线程中驱动真实 runtime；观察者线程每 ~120ms 从 SQLite 的
 WAL 只读连接上取已提交事件，重建 trace 快照（recorder 的轮次数据与事件链合并）并推给浏览器；
 `runs/{id}/task.sqlite` 与 demo 的库结构一致（同样可用 `sqlite3` 直接查证）。
 静态文件（html/css/js）一律 `Cache-Control: no-cache`，改完刷新即生效。
+
+## 人工控制语义
+
+| 动作 | 生效时机 | 边界 |
+| --- | --- | --- |
+| 审批 allow / deny | 立即解除阻塞；暂停点在 `gate` 之后、`execute` 之前 | 拒绝 = 终止运行（`OPERATOR_DENIED`）；超时自动拒绝；`remember` 只在本次运行内对同一工具生效 |
+| 计划 `skip` / `promote` | 下一轮开始时重建计划 | 跳过不可撤销；被拒绝的指令写 `control_rejected`；跳过必要步骤会得到诚实的 `INSUFFICIENT_EVIDENCE` |
+| 预算调整 | 下一轮开始时 | 只能调高；发送前扣减的语义不变 |
+| 续跑 | 仅接受 `BUDGET_EXCEEDED` 或 `ROUND_LIMIT` | 从旧 trace 重建工作记忆并续写同一哈希链，已付的读取不重发 |
+
+所有人工决定都进签名链：`approval_requested / approval_granted / approval_denied / approval_aborted /
+plan_steered / budget_adjusted / control_rejected / task_resumed`。右侧证据栏的「人工」筛选只显示这些事件。
 
 ## 只读回放模式
 
@@ -118,7 +143,7 @@ WAL 只读连接上取已提交事件，重建 trace 快照（recorder 的轮次
 
 ## 数据是从哪来的
 
-`traces/` 里的 6 个文件随仓库提供，由 Python Runtime 的离线 demo 生成，可随时重跑：
+`traces/` 里的 7 个文件随仓库提供，由 Python Runtime 的离线 demo 生成，可随时重跑：
 
 ```sh
 cd flowcredit && python demo.py all

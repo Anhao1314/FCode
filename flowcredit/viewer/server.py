@@ -7,15 +7,20 @@ not only a replay player:
 a task typed into the composer actually runs, round by round, and committed
 events stream into the page while the run is still in flight.
 
-    python3 server.py --repo /path/to/FCode [--port 8642] [--pace 0.8]
+    python3 server.py --repo /path/to/FCode [--port 8642] [--pace 0.8] [--approval-timeout 300]
 
 Endpoints
     GET  /api/health              what the server can and cannot do
     GET  /api/templates           scenario templates the composer may run
     GET  /api/runs                run history (survives restarts, runs/*/meta.json)
-    POST /api/runs                {"objective": "...", "template": "full"} -> {"id": "run-..."}
+    POST /api/runs                {"objective": "...", "template": "full", "approval": "consequential"}
+                                  -> {"id": "run-..."}
     GET  /api/runs/{id}/stream    server-sent events: trace snapshots as they grow
     POST /api/runs/{id}/stop      stop at the next round boundary
+    POST /api/runs/{id}/decision  {"approvalId": "...", "allow": true, "remember": false}
+    POST /api/runs/{id}/plan      {"action": "skip"|"promote", "todoId": "t4"}
+    POST /api/runs/{id}/budget    raise limits; applies at the next round
+    POST /api/runs/{id}/resume    add budget and continue a failed run
     POST /api/runs/{id}/meta      {"name": "...", "pinned": true} -> updated record
 
 Standard library only, the same constraint as the rest of this viewer. The
@@ -37,10 +42,12 @@ import time
 import traceback
 import types
 import uuid
+from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from typing import Any
 from urllib.parse import unquote, urlparse
 
 __all__ = ["main"]
@@ -83,12 +90,19 @@ class Runtime:
         self.ReceiptStore = m.ReceiptStore
         m = imp("flowagent.core.store")
         self.TaskStore = m.TaskStore
+        m = imp("flowagent.core.plan")
+        self.Plan = m.Plan
         m = imp("flowagent.demo.fixtures")
         self.SCENARIOS = m.SCENARIOS
         self.AVAILABLE = m.AVAILABLE
         self.get_scenario = m.get_scenario
         m = imp("flowagent.providers.mock")
         self.MockProvider = m.MockProvider
+        m = imp("flowagent.runtime.budget")
+        self.BudgetLimits = m.BudgetLimits
+        m = imp("flowagent.runtime.control")
+        self.RoundControl = m.RoundControl
+        self.ToolControl = m.ToolControl
         m = imp("flowagent.runtime.harness")
         self.Harness = m.Harness
         m = imp("flowagent.runtime.loop")
@@ -149,6 +163,9 @@ class Run:
     finished: bool = False
     name: str = ""
     pinned: bool = False
+    approval: str = "consequential"  # off | consequential | all
+    pending: dict | None = None
+    controller: Any = None
     lock: threading.RLock = field(default_factory=threading.RLock)
     cond: threading.Condition = field(init=False)
 
@@ -173,17 +190,21 @@ class Run:
             "verified": self.trace_verified,
             "name": self.name,
             "pinned": self.pinned,
+            "approval": self.approval,
+            "taskId": self.task_id,
         }
         if detail:
             out["error"] = self.error
+            out["pending"] = self.pending
         return out
 
 
 class RunManager:
-    def __init__(self, runtime: Runtime | None, runtime_error: str, pace: float) -> None:
+    def __init__(self, runtime: Runtime | None, runtime_error: str, pace: float, approval_timeout: float = 300.0) -> None:
         self.runtime = runtime
         self.runtime_error = runtime_error
         self.pace = pace
+        self.approval_timeout = approval_timeout
         self.runs: dict[str, Run] = {}
         self.order: list[str] = []
         self._lock = threading.Lock()
@@ -212,6 +233,8 @@ class RunManager:
                 trace_verified=bool(meta.get("verified", False)),
                 name=meta.get("name", ""),
                 pinned=bool(meta.get("pinned", False)),
+                approval=meta.get("approval", "consequential"),
+                task_id=meta.get("taskId", ""),
                 finished=True,
             )
             self.runs[run.id] = run
@@ -237,7 +260,7 @@ class RunManager:
     def get(self, run_id: str) -> Run | None:
         return self.runs.get(run_id)
 
-    def create(self, objective: str, template: str) -> Run:
+    def create(self, objective: str, template: str, approval: str = "consequential") -> Run:
         with self._lock:
             self._seq += 1
             stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
@@ -248,6 +271,7 @@ class RunManager:
                 objective=objective,
                 created=datetime.now(timezone.utc).isoformat(timespec="seconds"),
                 pace=self.pace,
+                approval=approval,
             )
             self.runs[run_id] = run
             self.order.insert(0, run_id)
@@ -257,9 +281,44 @@ class RunManager:
         thread.start()
         return run
 
+    def resume(self, run: Run, *, limits: dict, extra_rounds: int = 6) -> Run:
+        """Continue a run that stopped on a resource limit, without re-paying."""
+        rt = self.runtime
+        if rt is None:
+            raise ValueError("live runtime is unavailable")
+        if not run.finished:
+            raise ValueError("run is still active")
+        if not run.task_id:
+            raise ValueError("run has no durable task to continue")
+        db = RUNS_DIR / run.id / "task.sqlite"
+        store = rt.TaskStore(db)
+        try:
+            task = store.load(run.task_id)
+        finally:
+            store.close()
+        code = (task.failure or {}).get("code", "")
+        if task.status != "failed" or code not in ("BUDGET_EXCEEDED", "ROUND_LIMIT"):
+            raise ValueError(f"run cannot be resumed from {task.status}/{code or 'no failure'}")
+        with run.lock:
+            run.finished = False
+            run.status = "running"
+            run.error = ""
+            run.stop_requested = False
+            run.pending = None
+            run.bump()
+        thread = threading.Thread(
+            target=self._run_thread,
+            args=(run,),
+            kwargs={"resume_limits": limits, "extra_rounds": extra_rounds},
+            name=f"run:{run.id}",
+            daemon=True,
+        )
+        thread.start()
+        return run
+
     # ------------------------------------------------------------- run driver
 
-    def _run_thread(self, run: Run) -> None:
+    def _run_thread(self, run: Run, *, resume_limits: dict | None = None, extra_rounds: int = 6) -> None:
         rt = self.runtime
         assert rt is not None
         store = None
@@ -273,6 +332,15 @@ class RunManager:
             registry = rt.ToolRegistry(rt.build_finance_tools(world))
             receipts = rt.ReceiptStore(store)
             issued: dict[str, str] = {}
+
+            limits = scenario.limits
+            if resume_limits:
+                limits = rt.BudgetLimits(
+                    max_calls=int(resume_limits["maxCalls"]),
+                    max_reads=int(resume_limits["maxReads"]),
+                    max_cost_microusd=int(resume_limits["maxCostMicrousd"]),
+                    max_tokens=int(resume_limits.get("maxTokens") or scenario.limits.max_tokens),
+                )
 
             def issue(**kwargs):
                 ref = receipts.issue(**kwargs)
@@ -289,20 +357,38 @@ class RunManager:
                 registry=registry,
                 provider=provider,
                 world=world,
-                limits=scenario.limits,
+                limits=limits,
                 receipts=receipts,
             )
             recorder = rt.TraceRecorder(
                 store, provider_name=provider.name, model_name=provider.model
             )
-            task = harness.create(
-                task_id=f"task-{run.id}",
-                objective=run.objective,
-                principal="console-operator",
-                binding={"scenario": scenario.key, "corpus": "synthetic-authored-v1", "source": "viewer-live"},
-                allowed_tools=list(scenario.allowed_tools),
-                grant=scenario.grant,
-            )
+            if resume_limits:
+                previous = run_dir / "trace.json"
+                if previous.exists():
+                    try:
+                        recorder.seed(json.loads(previous.read_text(encoding="utf-8")).get("rounds") or [])
+                    except Exception:  # noqa: BLE001 — a damaged old trace must not block resume
+                        pass
+            control = RunControl(run, harness, rt, scenario.approval_tools, self.approval_timeout)
+            run.controller = control
+            if resume_limits:
+                task = store.load(run.task_id)
+                task = harness.resume(
+                    task,
+                    detail={"by": "operator", "reason": "budget topped up", "limits": limits.to_dict()},
+                )
+                max_rounds = max(scenario.max_rounds, task.model.attempts + extra_rounds)
+            else:
+                task = harness.create(
+                    task_id=f"task-{run.id}",
+                    objective=run.objective,
+                    principal="console-operator",
+                    binding={"scenario": scenario.key, "corpus": "synthetic-authored-v1", "source": "viewer-live"},
+                    allowed_tools=list(scenario.allowed_tools),
+                    grant=scenario.grant,
+                )
+                max_rounds = scenario.max_rounds
             run.task_id = task.id
             observer = LiveObserver(run, recorder, store, task.id)
             watcher = threading.Thread(
@@ -310,13 +396,24 @@ class RunManager:
             )
             watcher.start()
 
+            loop = rt.Loop(
+                harness,
+                planner=rt.FinancePlanner(),
+                max_rounds=max_rounds,
+                observer=observer,
+                control=control,
+            )
+            if resume_limits:
+                # The world is in-memory; the event log is not. Rebuild the
+                # "already read" flags before the loop so a resumed run does
+                # not read or charge for the same documents twice.
+                world.apply_state(loop.restore(task).state())
+
             try:
                 if scenario.crash_at:
                     task = _run_crash(rt, harness, store, world, scenario, task, observer, db)
                 else:
-                    task = rt.Loop(
-                        harness, planner=rt.FinancePlanner(), max_rounds=scenario.max_rounds, observer=observer
-                    ).run(task.id)
+                    task = loop.run(task.id)
 
                 if scenario.reconcile and task.status == "recovery_required":
                     # Mirrors demo/runner.py: an unknown model result is never
@@ -327,7 +424,11 @@ class RunManager:
                         pass
                     task = harness.reconcile(task, issued.get("ref", ""))
                     task = rt.Loop(
-                        harness, planner=rt.FinancePlanner(), max_rounds=scenario.max_rounds, observer=observer
+                        harness,
+                        planner=rt.FinancePlanner(),
+                        max_rounds=max_rounds,
+                        observer=observer,
+                        control=control,
                     ).run(task.id)
                 status = task.status
             except StopRequested:
@@ -387,6 +488,11 @@ class RunManager:
                 run.finished = True
                 run.bump()
         finally:
+            with run.lock:
+                if run.pending is not None:
+                    run.pending = None
+                    run.bump()
+                run.controller = None
             self._write_meta(run)
             if store is not None:
                 try:
@@ -460,6 +566,261 @@ class LiveObserver:
     def terminal(self, task, result) -> None:
         with self.run.lock:
             self.recorder.terminal(task, result)
+
+
+class RunControl:
+    """Console-side control: approvals block, plan and budget commands queue.
+
+    Exactly one thread writes the event chain: the run thread. HTTP threads only
+    set a decision or enqueue a command, and the run thread commits it at the
+    next legal boundary. That keeps the compare-and-swap discipline intact and
+    makes "下一轮生效" a fact rather than a label.
+    """
+
+    def __init__(self, run: Run, harness, runtime: Runtime, approval_tools, timeout: float) -> None:
+        self.run = run
+        self.harness = harness
+        self.Plan = runtime.Plan
+        self.BudgetLimits = runtime.BudgetLimits
+        self.RoundControl = runtime.RoundControl
+        self.ToolControl = runtime.ToolControl
+        self.approval_tools = set(approval_tools)
+        self.timeout = max(5.0, float(timeout))
+        self._lock = threading.Lock()
+        self._commands: deque[dict] = deque()
+        self._approval: dict | None = None
+        self._decision: dict | None = None
+        self._wake = threading.Event()
+        self._remembered: set[str] = set()
+
+    # ---------------------------------------------------------------- HTTP side
+
+    def queue(self, command: dict) -> None:
+        with self._lock:
+            self._commands.append(command)
+
+    def decide(self, approval_id: str, *, allow: bool, remember: bool = False) -> bool:
+        with self._lock:
+            if self._approval is None or self._approval.get("id") != approval_id:
+                return False
+            if self._decision is not None:
+                return False
+            self._decision = {"allow": allow, "remember": remember}
+            self._wake.set()
+            return True
+
+    def pending(self) -> dict | None:
+        with self._lock:
+            return dict(self._approval) if self._approval else None
+
+    def current_limits(self) -> dict:
+        return self.harness.limits.to_dict()
+
+    # ------------------------------------------------------------- runtime side
+
+    def before_round(self, *, round_no: int, task, plan):
+        with self._lock:
+            commands, self._commands = list(self._commands), deque()
+        for command in commands:
+            if command["kind"] == "plan":
+                task, plan = self._apply_plan(task, plan, round_no, command)
+            elif command["kind"] == "budget":
+                task = self._apply_budget(task, round_no, command)
+        return self.RoundControl(task=task, plan=plan)
+
+    def before_tool(self, *, round_no: int, task, step: dict, decision):
+        mode = self.run.approval
+        tool = step["tool"]
+        required = mode == "all" or (mode == "consequential" and tool in self.approval_tools)
+        if not required:
+            return self.ToolControl(task=task, allowed=True)
+        if tool in self._remembered:
+            task = self.harness.record(
+                task,
+                "approval_granted",
+                {"round": round_no, "tool": tool, "by": "operator-rule", "scope": "run"},
+            )
+            return self.ToolControl(task=task, allowed=True)
+
+        if task.status == "planned":
+            task = self.harness.transition(task, "running", "execution_started", {})
+        approval = {
+            "id": f"apv-{round_no}-{uuid.uuid4().hex[:6]}",
+            "round": round_no,
+            "tool": tool,
+            "arguments": step.get("arguments") or {},
+            "policy": "every-step" if mode == "all" else "consequential",
+            "expiresIn": int(self.timeout),
+            "requestedAt": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        }
+        task = self.harness.transition(task, "paused", "approval_requested", approval)
+        with self._lock:
+            self._approval = approval
+            self._decision = None
+            self._wake.clear()
+        self._publish()
+
+        deadline = time.monotonic() + self.timeout
+        try:
+            while True:
+                if self.run.stop_requested:
+                    with self._lock:
+                        self._approval = None
+                    self._publish()
+                    task = self.harness.record(
+                        task,
+                        "approval_aborted",
+                        {"round": round_no, "tool": tool, "by": "operator", "code": "STOPPED_BY_OPERATOR"},
+                    )
+                    task = self.harness.transition(
+                        task, "running", "execution_resumed", {"round": round_no}
+                    )
+                    raise StopRequested()
+                if self._wake.wait(0.1):
+                    break
+                if time.monotonic() >= deadline:
+                    with self._lock:
+                        self._decision = {"allow": False, "timeout": True}
+                    break
+        except BaseException:
+            with self._lock:
+                self._approval = None
+            self._publish()
+            if task.status == "paused":
+                task = self.harness.transition(
+                    task, "running", "execution_resumed", {"round": round_no, "reason": "controller interrupted"}
+                )
+            raise
+
+        with self._lock:
+            result = self._decision or {"allow": False, "timeout": True}
+            self._approval = None
+        self._publish()
+        if result["allow"]:
+            task = self.harness.transition(
+                task,
+                "running",
+                "approval_granted",
+                {
+                    "round": round_no,
+                    "tool": tool,
+                    "by": "operator",
+                    "remember": bool(result.get("remember")),
+                },
+            )
+            if result.get("remember"):
+                with self._lock:
+                    self._remembered.add(tool)
+            return self.ToolControl(task=task, allowed=True)
+
+        code = "APPROVAL_TIMEOUT" if result.get("timeout") else "OPERATOR_DENIED"
+        reason = (
+            "no decision arrived before the approval deadline"
+            if result.get("timeout")
+            else "the operator denied this call"
+        )
+        task = self.harness.record(
+            task,
+            "approval_denied",
+            {"round": round_no, "tool": tool, "by": "operator", "code": code},
+        )
+        return self.ToolControl(task=task, allowed=False, code=code, reason=reason)
+
+    # ------------------------------------------------------------------ private
+
+    def _publish(self) -> None:
+        pending = self.pending()
+        with self.run.lock:
+            self.run.pending = pending
+            self.run.bump()
+
+    def _reject(self, task, round_no: int, kind: str, reason: str):
+        return self.harness.record(
+            task,
+            "control_rejected",
+            {"round": round_no, "kind": kind, "reason": reason[:200], "by": "operator"},
+        )
+
+    def _apply_plan(self, task, plan, round_no: int, command: dict):
+        action = command.get("action")
+        todo_id = command.get("todo_id")
+        note = str(command.get("note") or "")[:200]
+        try:
+            if action == "skip":
+                marked = plan.mark(todo_id, "abandoned", reason=note or "operator skipped this step")
+                updated = self.Plan(goal=marked.goal, todos=marked.todos, revision=plan.revision + 1)
+            elif action == "promote":
+                todos = list(plan.todos)
+                index = next((i for i, todo in enumerate(todos) if todo.id == todo_id), None)
+                if index is None:
+                    raise ValueError(f"no todo {todo_id!r}")
+                target = todos.pop(index)
+                if target.status not in ("pending", "active"):
+                    raise ValueError(f"todo {todo_id!r} is {target.status}")
+                insert = next(
+                    (i for i, todo in enumerate(todos) if todo.status in ("pending", "active")),
+                    len(todos),
+                )
+                updated = self.Plan(
+                    goal=plan.goal,
+                    todos=todos[:insert] + [target] + todos[insert:],
+                    revision=plan.revision + 1,
+                )
+            else:
+                raise ValueError(f"unknown plan action {action!r}")
+        except Exception as exc:  # noqa: BLE001 — a stale command must not kill the run
+            return self._reject(task, round_no, "plan", str(exc)), plan
+        task.plan_state = updated.to_dict()
+        task = self.harness.record(
+            task,
+            "plan_steered",
+            {
+                "round": round_no,
+                "action": action,
+                "todo_id": todo_id,
+                "note": note,
+                "plan": updated.to_dict(),
+                "by": "operator",
+            },
+        )
+        return task, updated
+
+    def _apply_budget(self, task, round_no: int, command: dict):
+        before = self.harness.limits
+        try:
+            new = self.BudgetLimits(
+                max_calls=int(command["maxCalls"]),
+                max_reads=int(command["maxReads"]),
+                max_cost_microusd=int(command["maxCostMicrousd"]),
+                max_tokens=int(command.get("maxTokens") or before.max_tokens),
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            return self._reject(task, round_no, "budget", f"invalid limits: {exc}")
+        if (
+            new.max_calls < before.max_calls
+            or new.max_reads < before.max_reads
+            or new.max_cost_microusd < before.max_cost_microusd
+            or new.max_tokens < before.max_tokens
+        ):
+            return self._reject(task, round_no, "budget", "limits can only be raised")
+        used = self.harness.budget(task).snapshot()
+        if (
+            used["calls_used"] > new.max_calls
+            or used["reads_used"] > new.max_reads
+            or used["cost_used_microusd"] > new.max_cost_microusd
+        ):
+            return self._reject(task, round_no, "budget", "new limits are below current usage")
+        self.harness.limits = new
+        return self.harness.record(
+            task,
+            "budget_adjusted",
+            {
+                "round": round_no,
+                "before": before.to_dict(),
+                "after": new.to_dict(),
+                "by": "operator",
+            },
+        )
 
 
 class _EventsShim:
@@ -686,6 +1047,8 @@ class Handler(SimpleHTTPRequestHandler):
                 status = run.status
                 trace_path = run.trace_path
                 error = run.error
+                pending = run.pending
+                approval = run.approval
             if version > last and snapshot is not None:
                 last = version
                 if not self._sse(
@@ -697,6 +1060,8 @@ class Handler(SimpleHTTPRequestHandler):
                         "tracePath": trace_path,
                         "error": error,
                         "snapshot": snapshot,
+                        "pending": pending,
+                        "approval": approval,
                     },
                 ):
                     return
@@ -735,7 +1100,10 @@ class Handler(SimpleHTTPRequestHandler):
                 objective = scenario.objective
             if len(objective) > 600:
                 return self._json({"error": "objective too long"}, 400)
-            run = mgr.create(objective, template)
+            approval = str(body.get("approval") or "consequential")
+            if approval not in ("off", "consequential", "all"):
+                return self._json({"error": "approval must be off, consequential or all"}, 400)
+            run = mgr.create(objective, template, approval)
             return self._json(run.to_json(detail=True), 202)
         if path.startswith("/api/runs/") and path.endswith("/stop"):
             run_id = path[len("/api/runs/") : -len("/stop")]
@@ -744,6 +1112,103 @@ class Handler(SimpleHTTPRequestHandler):
                 return self._json({"error": "no such run"}, 404)
             run.stop_requested = True
             return self._json({"stop": True, "id": run.id})
+        if path.startswith("/api/runs/") and path.endswith("/decision"):
+            run_id = path[len("/api/runs/") : -len("/decision")]
+            run = mgr.get(run_id)
+            if run is None:
+                return self._json({"error": "no such run"}, 404)
+            body = self._read_body()
+            control = getattr(run, "controller", None)
+            if control is None:
+                return self._json({"error": "run is not waiting for a decision"}, 409)
+            if not control.decide(
+                str(body.get("approvalId") or ""),
+                allow=bool(body.get("allow")),
+                remember=bool(body.get("remember")),
+            ):
+                return self._json({"error": "no pending approval with that id"}, 409)
+            return self._json({"ok": True})
+        if path.startswith("/api/runs/") and path.endswith("/plan"):
+            run_id = path[len("/api/runs/") : -len("/plan")]
+            run = mgr.get(run_id)
+            if run is None:
+                return self._json({"error": "no such run"}, 404)
+            if run.finished:
+                return self._json({"error": "run has finished"}, 409)
+            control = getattr(run, "controller", None)
+            if control is None:
+                return self._json({"error": "run has no live control"}, 409)
+            body = self._read_body()
+            action = str(body.get("action") or "")
+            todo_id = str(body.get("todoId") or "")
+            if action not in ("skip", "promote") or not todo_id:
+                return self._json({"error": "action must be skip or promote, with a todoId"}, 400)
+            control.queue(
+                {
+                    "kind": "plan",
+                    "action": action,
+                    "todo_id": todo_id,
+                    "note": str(body.get("note") or "")[:200],
+                }
+            )
+            return self._json({"queued": True, "applies": "next-round"})
+        if path.startswith("/api/runs/") and path.endswith("/budget"):
+            run_id = path[len("/api/runs/") : -len("/budget")]
+            run = mgr.get(run_id)
+            if run is None:
+                return self._json({"error": "no such run"}, 404)
+            if run.finished:
+                return self._json({"error": "run has finished"}, 409)
+            control = getattr(run, "controller", None)
+            if control is None:
+                return self._json({"error": "run has no live control"}, 409)
+            body = self._read_body()
+            try:
+                max_calls = int(body["maxCalls"])
+                max_reads = int(body["maxReads"])
+                max_cost = int(body["maxCostMicrousd"])
+            except (KeyError, TypeError, ValueError):
+                return self._json({"error": "maxCalls, maxReads and maxCostMicrousd are required integers"}, 400)
+            current = control.current_limits()
+            if (
+                max_calls < current["max_calls"]
+                or max_reads < current["max_reads"]
+                or max_cost < current["max_cost_microusd"]
+            ):
+                return self._json({"error": "limits can only be raised"}, 400)
+            control.queue(
+                {
+                    "kind": "budget",
+                    "maxCalls": max_calls,
+                    "maxReads": max_reads,
+                    "maxCostMicrousd": max_cost,
+                }
+            )
+            return self._json({"queued": True, "applies": "next-round"})
+        if path.startswith("/api/runs/") and path.endswith("/resume"):
+            run_id = path[len("/api/runs/") : -len("/resume")]
+            run = mgr.get(run_id)
+            if run is None:
+                return self._json({"error": "no such run"}, 404)
+            body = self._read_body()
+            try:
+                max_calls = int(body["maxCalls"])
+                max_reads = int(body["maxReads"])
+                max_cost = int(body["maxCostMicrousd"])
+                extra_rounds = int(body.get("extraRounds") or 6)
+            except (KeyError, TypeError, ValueError):
+                return self._json({"error": "maxCalls, maxReads and maxCostMicrousd are required integers"}, 400)
+            if min(max_calls, max_reads, max_cost) < 1 or not 0 <= extra_rounds <= 50:
+                return self._json({"error": "limits must be positive and extraRounds between 0 and 50"}, 400)
+            try:
+                mgr.resume(
+                    run,
+                    limits={"maxCalls": max_calls, "maxReads": max_reads, "maxCostMicrousd": max_cost},
+                    extra_rounds=extra_rounds,
+                )
+            except ValueError as exc:
+                return self._json({"error": str(exc)}, 409)
+            return self._json(run.to_json(detail=True), 202)
         if path.startswith("/api/runs/") and path.endswith("/meta"):
             run_id = path[len("/api/runs/") : -len("/meta")]
             run = mgr.get(run_id)
@@ -776,6 +1241,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--pace", type=float, default=0.8, help="simulated thinking seconds per round (0 = as fast as possible)"
     )
+    parser.add_argument(
+        "--approval-timeout",
+        type=float,
+        default=300.0,
+        help="seconds a paused approval waits for a human before denying (default 300)",
+    )
     args = parser.parse_args(argv)
 
     runtime: Runtime | None = None
@@ -788,13 +1259,16 @@ def main(argv: list[str] | None = None) -> int:
     else:
         runtime_error = "no --repo given; set it to the FCode checkout to enable live runs"
 
-    manager = RunManager(runtime, runtime_error, args.pace)
+    manager = RunManager(runtime, runtime_error, args.pace, args.approval_timeout)
     Handler.manager = manager
     httpd = ThreadingHTTPServer((args.host, args.port), Handler)
     httpd.daemon_threads = True
     print(f"[console] serving {VIEWER_DIR} on http://{args.host}:{args.port}")
     if runtime is not None:
-        print(f"[console] live mode on — runtime from {runtime.src} (pace {args.pace}s/round)")
+        print(
+            f"[console] live mode on — runtime from {runtime.src} "
+            f"(pace {args.pace}s/round, approval timeout {args.approval_timeout:.0f}s)"
+        )
     else:
         print(f"[console] live mode OFF — {runtime_error}")
     try:

@@ -25,6 +25,7 @@ from ..core.contracts import AgentError, Task
 from ..core.plan import Plan
 from ..memory.context import WorkingMemory
 from ..tools.base import Observation
+from .control import Control, Denial
 from .harness import Harness, TraceObserver
 
 __all__ = ["Loop", "NullObserver"]
@@ -51,11 +52,13 @@ class Loop:
         planner: Any = None,
         max_rounds: int = 12,
         observer: TraceObserver | None = None,
+        control: Control | None = None,
     ) -> None:
         self.harness = harness
         self.planner = planner
         self.max_rounds = max_rounds
         self.observer: TraceObserver = observer or NullObserver()
+        self.control = control
 
     def run(self, task_id: str) -> Task:
         task = self.harness.store.load(task_id)
@@ -64,6 +67,14 @@ class Loop:
         pending = self.pending_step(task)
 
         while True:
+            if pending is None and self.control is not None:
+                controlled = self.control.before_round(
+                    round_no=task.model.attempts + 1,
+                    task=task,
+                    plan=plan,
+                )
+                task, plan = controlled.task, controlled.plan
+
             if pending is None:
                 if plan.is_blocked():
                     return self._stop(task, plan, "PLAN_BLOCKED")
@@ -99,6 +110,28 @@ class Loop:
             self.observer.gate(round_no, decision)
             if not decision.allowed:
                 return self._deny(task, decision, plan)
+
+            if self.control is not None:
+                approval = self.control.before_tool(
+                    round_no=round_no,
+                    task=task,
+                    step=step,
+                    decision=decision,
+                )
+                task = approval.task
+                if not approval.allowed:
+                    if approval.terminated:
+                        self.observer.terminal(task, None)
+                        return task
+                    return self._deny(
+                        task,
+                        Denial(
+                            tool=step["tool"],
+                            code=approval.code or "OPERATOR_DENIED",
+                            reason=approval.reason or "operator denied the call",
+                        ),
+                        plan,
+                    )
 
             try:
                 task, observation = self.harness.execute(task, step, round_no=round_no)
@@ -140,23 +173,39 @@ class Loop:
         return memory
 
     def rebuild_plan(self, task: Task, memory: WorkingMemory) -> Plan:
-        """Derive the current plan by replaying observations through the planner.
+        """Derive the current plan from the log, including operator revisions.
 
         The stored snapshot is not trusted here. If a process died between
         committing an observation and updating the plan, the snapshot is one
-        step behind; the replay is always right.
+        step behind; the replay is always right. When an operator revised the
+        plan, the latest revision becomes the base and only observations after
+        it are replayed — otherwise a restart would silently undo the decision.
         """
         if self.planner is None:
             return Plan(goal=task.objective)
+        events = self.harness.store.events(task.id)
         base = Plan.from_dict(task.plan_state) if task.plan_state else self.planner.decompose(task.objective)
-        for record in memory.records:
+        revised_after: int | None = None
+        for event in events:
+            if event["type"] != "plan_steered":
+                continue
+            detail = event["payload"].get("detail") or {}
+            if detail.get("plan"):
+                base = Plan.from_dict(detail["plan"])
+                revised_after = int(event["sequence"])
+        for event in events:
+            if revised_after is not None and int(event["sequence"]) <= revised_after:
+                continue
+            if event["type"] != "tool_succeeded":
+                continue
+            detail = event["payload"].get("detail", {})
             base = self.planner.advance(
                 base,
                 Observation(
-                    tool=record.tool,
-                    arguments=record.arguments,
-                    result=record.result,
-                    result_hash=record.result_hash,
+                    tool=detail["tool"],
+                    arguments=detail.get("arguments", {}),
+                    result=detail["result"],
+                    result_hash=detail["result_hash"],
                 ),
             )
         return base

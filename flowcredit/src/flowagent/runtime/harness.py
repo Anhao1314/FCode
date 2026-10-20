@@ -12,6 +12,7 @@ budget and in the verifier's refusal to accept an unproven result.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any, Protocol
 
 from ..core.contracts import AgentError, Task, validate_plan
@@ -177,6 +178,27 @@ class Harness:
         )
         updated.failure = None
         return self._commit(task, updated.advance("running"), "model_reconciled", {"receipt_ref": receipt_ref})
+
+    def transition(self, task: Task, status: str, event: str, detail: dict[str, Any] | None = None) -> Task:
+        """Move the task to a non-terminal status and record why.
+
+        Used by operator controls for ``paused`` around an approval. The
+        transition table still decides what is legal; this method only owns the
+        event and the sequence bookkeeping.
+        """
+        return self._commit(task, task.advance(status), event, detail or {})
+
+    def resume(self, task: Task, *, detail: dict[str, Any] | None = None) -> Task:
+        """Return a failed task to running so a new loop can continue it.
+
+        Budget exhaustion is the motivating case: the call counters live in the
+        store, so raising the limits and resuming continues from the same round
+        instead of replaying the reads that were already paid for.
+        """
+        if task.status != "failed":
+            raise AgentError("RESUME_BLOCKED", f"task is {task.status}, not failed")
+        cleared = replace(task, failure=None)
+        return self._commit(task, cleared.advance("running"), "task_resumed", detail or {})
 
     def _intent(self, task: Task, context: dict[str, Any]) -> dict[str, Any]:
         """Describe one call precisely enough that a receipt can only match it."""

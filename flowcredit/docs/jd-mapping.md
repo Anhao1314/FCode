@@ -14,7 +14,7 @@
 | 成本控制 | `runtime/budget.py` 四维硬预算，发送前扣减，不退 | `python demo.py budget` |
 | 崩溃恢复 / 幂等 | `runtime/loop.py::restore` 从事件日志重建记忆；断言"没有任何一轮被重复提议" | `python demo.py crash` |
 | 可观测性 | `trajectory/recorder.py` 观察者模式；trace 含完整事件链与预算快照 | `python demo.py full --open` |
-| 评测与回归 | `tests/` 23 项；CI 跑 Python 3.11 与 3.13，Ubuntu 与 macOS | `python -m unittest discover -s tests -v` |
+| 评测与回归 | `tests/` 41 项；CI 跑 Python 3.11 与 3.13，Ubuntu 与 macOS | `python -m unittest discover -s tests -v` |
 
 ## 工程素养
 
@@ -26,7 +26,7 @@
 | 密码学基础用法 | `core/receipts.py`：HMAC-SHA256 签收据，`hmac.compare_digest` 比签名 | `test_a_receipt_cannot_be_forged` |
 | 状态机建模 | `core/contracts.py` 显式迁移表，存储层强制 | `test_illegal_transition_is_rejected` |
 | 类型注解与文档 | 全量类型注解；每个模块有 docstring 说明**为什么**这样设计 | 随便打开一个文件 |
-| 测试设计 | 单元（门控/预算/存储/收据/验证）+ 端到端（五个场景）+ 真实 SIGKILL | `test_scenarios.py` |
+| 测试设计 | 单元（门控/预算/存储/收据/验证/控制）+ 端到端（七个场景）+ 真实 SIGKILL | `test_scenarios.py`、`test_control.py` |
 | 前后端基础 | `viewer/index.html`：单文件、无构建、`crypto.subtle` 重算哈希 | `python demo.py full --open` |
 | 文档能力 | `docs/`：架构、12 条设计决策、框架对照、本文件 | — |
 
@@ -52,6 +52,6 @@
 
 ## 一句话总结
 
-如果只能演示三分钟：`python demo.py all` 跑完五个场景，然后打开 `viewer/index.html` 拖进 trace，改一个字节让它变红。
+如果只能演示三分钟：`python demo.py all` 跑完七个场景，然后打开 `viewer/index.html` 拖进 trace，改一个字节让它变红。
 
 这三步分别证明：**能跑、能失败得正确、能证明自己没撒谎。**

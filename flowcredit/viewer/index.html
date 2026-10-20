@@ -71,6 +71,7 @@
         <footer class="composer-wrap">
           <div class="composer">
             <div class="composer-box" id="composer-box">
+              <div class="tpl-menu approval-menu" id="approval-menu" hidden></div>
               <div class="tpl-menu" id="tpl-menu" hidden></div>
               <textarea class="composer-ta" id="composer-ta" rows="1"
                 placeholder="给 agent 派一个任务：判断 2024 与 2025 两期合并毛利率是否可比…"></textarea>
@@ -81,6 +82,11 @@
                 <button class="c-btn" id="template-btn" title="选择任务模板（决定授权与预算）">
                   <svg class="i" viewBox="0 0 24 24"><path d="M4 6h10M4 12h16M4 18h7"/></svg>
                   <span id="template-label">完整研究</span>
+                  <svg class="i" viewBox="0 0 24 24" style="width:12px;height:12px"><path d="m6 9 6 6 6-6"/></svg>
+                </button>
+                <button class="c-btn" id="approval-btn" title="审批档位：只在需要你确认的地方暂停（对新任务生效）">
+                  <svg class="i" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>
+                  <span id="approval-label">关键审批</span>
                   <svg class="i" viewBox="0 0 24 24" style="width:12px;height:12px"><path d="m6 9 6 6 6-6"/></svg>
                 </button>
                 <div class="grow"></div>
@@ -121,7 +127,7 @@
   <div class="palette-box" role="dialog" aria-label="命令面板">
     <input class="palette-input" id="palette-input" placeholder="输入命令，或搜索运行与场景…" autocomplete="off" spellcheck="false">
     <div class="palette-list" id="palette-list"></div>
-    <div class="palette-foot"><span>↑↓ 选择</span><span>↵ 执行</span><span>esc 关闭</span><div class="grow"></div><span>⌘K 面板 · ⌘. 停止 · Enter 发送</span></div>
+    <div class="palette-foot"><span>↑↓ 选择</span><span>↵ 执行</span><span>esc 关闭</span><div class="grow"></div><span>⌘K 面板 · ⌘. 停止 · 审批 ⌘↵ 允许 / ⌘⌫ 拒绝</span></div>
   </div>
 </div>
 <div class="toast" id="toast" hidden></div>

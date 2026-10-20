@@ -33,6 +33,10 @@ class Scenario:
     partial_corpus: bool = False
     expected_status: str = "succeeded"
     available: bool = True
+    #: Tools whose consequences are large enough that the console asks a human
+    #: before executing them. Data, not runtime policy: a different domain can
+    #: name a different set without touching the loop.
+    approval_tools: tuple[str, ...] = ("reconcile_basis", "report_blocked")
 
 
 _ALL_TOOLS = (
@@ -97,6 +101,17 @@ SCENARIOS: dict[str, Scenario] = {
         limits=BudgetLimits(4, 20, 20_000, 20_000),
         max_rounds=10,
         policy="loop",
+        expected_status="failed",
+    ),
+    "budget-resume": Scenario(
+        key="budget-resume",
+        title="预算追加：失败后续跑，已付的读取不重发",
+        objective=_OBJECTIVE,
+        story="前 6 次调用用完了额度，任务停在第七轮之前。追加预算后从事件日志续跑，已读的资料不会重发。",
+        allowed_tools=_ALL_TOOLS,
+        grant=_grant(max_calls=6),
+        limits=BudgetLimits(6, 20, 20_000, 20_000),
+        max_rounds=12,
         expected_status="failed",
     ),
     "crash": Scenario(

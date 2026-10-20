@@ -27,12 +27,13 @@ python demo.py
   变化        -2.50 pp
 ```
 
-## 五个场景
+## 七个场景
 
 ```sh
 python demo.py full          # 完整研究，9 轮
 python demo.py tool-denied   # 越权工具：主机拒绝，工具从未执行
 python demo.py budget        # 预算耗尽：发送前拦住，已占用不退
+python demo.py budget-resume # 预算追加：失败后续跑，已付的读取不重发
 python demo.py crash         # 进程被 SIGKILL，重启续跑不重复
 python demo.py unknown       # 供应商超时：不重发，凭签名收据对账
 python demo.py open-ended    # 计划被卡住：诚实停止，不给算不出的数字
@@ -46,12 +47,18 @@ python demo.py all           # 顺序跑完并打印汇总表
  full         succeeded               9    9    9      4500   ok
  tool-denied  denied                  1    1    0       500   ok
  budget       failed                  5    4    4      2000   ok
+ budget-resume failed                  7    6    6      3000   ok
  crash        succeeded               9    9    9      4500   ok
  unknown      succeeded               9    9    9      4500   ok
- 全部 5 个场景的轨迹均通过自检
+ open-ended   failed                  9    9    9      4500   ok
+ 全部 7 个场景的轨迹均通过自检
 ```
 
-四个可靠性场景都不改 Runtime 代码——它们是不同的主机策略与故障注入，这一点本身就是设计主张。
+其余六个场景都不改 Runtime 代码——它们是不同的主机策略与故障注入，这一点本身就是设计主张。
+
+## 人工控制
+
+`runtime/control.py` 定义了控制协议：审批门在门控之后、执行之前暂停，拒绝会终止运行（`OPERATOR_DENIED`），超时自动拒绝；计划 `skip` / `promote` 与预算调高在下一轮开始生效；失败于 `BUDGET_EXCEEDED` / `ROUND_LIMIT` 时，可以追加预算并从事件日志续跑，已付的读取不重发。所有人工决定（审批、计划修订、预算调整、续跑）都写入同一条哈希链。
 
 ## 看轨迹
 
@@ -61,7 +68,7 @@ python demo.py all           # 顺序跑完并打印汇总表
 python demo.py --serve        # 只读回放：静态服务 + 浏览器
 ```
 
-打开的是 `viewer/index.html`：左侧是六个场景，点一下切换；每一轮是一张工具卡（默认折叠，带一行结果预览），页面加载时用 `crypto.subtle` 重算整条链，改一个字节就变红——这不是日志高亮，是真的重算。也可以把任意 trace JSON 拖进窗口。
+打开的是 `viewer/index.html`：左侧是七个场景，点一下切换；每一轮是一张工具卡（默认折叠，带一行结果预览），页面加载时用 `crypto.subtle` 重算整条链，改一个字节就变红——这不是日志高亮，是真的重算。也可以把任意 trace JSON 拖进窗口。
 
 想真实派活用控制台 server（SSE 流式运行 + 运行记录）：
 
@@ -83,7 +90,7 @@ python viewer/server.py --repo ..   # 打开 http://127.0.0.1:8642/
 python -m unittest discover -s tests -v
 ```
 
-35 项，覆盖计划层与权限门控（未注册 / 越权 / 超 grant / 参数非法）、预算三个维度、状态机非法迁移、并发写 CAS、事件篡改、收据伪造、独立重算拒绝伪造观测、trace 篡改，以及五个场景的端到端断言（其中崩溃场景用真实 SIGKILL，断言"没有任何一轮被重复提议"）。
+41 项，覆盖计划层与权限门控（未注册 / 越权 / 超 grant / 参数非法）、预算三个维度、状态机非法迁移、并发写 CAS、事件篡改、收据伪造、独立重算拒绝伪造观测、trace 篡改、审批放行与拒绝、计划跳过 / 提前、预算追加、失败续跑，以及七个场景的端到端断言（其中崩溃场景用真实 SIGKILL，断言"没有任何一轮被重复提议"）。
 
 CI 在 Ubuntu 与 macOS 上跑 Python 3.11 与 3.13，包含 `python demo.py all` 与零配置入口冒烟。
 
@@ -92,14 +99,14 @@ CI 在 Ubuntu 与 macOS 上跑 Python 3.11 与 3.13，包含 `python demo.py all
 ```
 src/flowagent/
   core/        hashing（canonical JSON）、contracts（状态与校验）、plan（目标/计划/todo）、store（sqlite + 哈希链）、receipts（签名收据）
-  runtime/     state_machine、permissions（主机门控）、budget、harness（单轮）、loop（多轮 + 恢复）
+  runtime/     state_machine、permissions（主机门控）、budget、control（人工控制协议）、harness（单轮）、loop（多轮 + 恢复）
   tools/       base/registry，finance/（只读工具 + Evidence Authority）
   providers/   base、mock（离线确定性，三种策略）
   memory/      context（模型可见的观测摘要，从事件日志重建）
   trajectory/  recorder、exporter（导出与独立重算）
-  demo/        CLI、终端渲染、五个场景、崩溃 worker
+  demo/        CLI、终端渲染、七个场景、崩溃 worker
 viewer/        实时控制台 + Trace 回放（零依赖零构建）
-tests/         23 项 unittest
+tests/         41 项 unittest
 ```
 
 ## 现在还没有的

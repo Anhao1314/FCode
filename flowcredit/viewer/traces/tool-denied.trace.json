@@ -230,8 +230,8 @@
         "detail": {}
       },
       "prev_hash": null,
-      "hash": "2ff4f470fc4828c84eba225cd6c5ca22513f92d2fa495fb5779f390ae06ea5c1",
-      "at": "2026-10-19T15:38:10.197Z"
+      "hash": "a0e9ccb30a8918405e5c99479167f9c010a5c8251c2301488131ee0cc1ce94e9",
+      "at": "2026-10-20T04:31:55.872Z"
     },
     {
       "sequence": 2,
@@ -242,9 +242,9 @@
           "round": 1
         }
       },
-      "prev_hash": "2ff4f470fc4828c84eba225cd6c5ca22513f92d2fa495fb5779f390ae06ea5c1",
-      "hash": "382cf8cfd8ace58f9ee0804bc003ef6a6369f266d8cd5f204ad92b05b963ac00",
-      "at": "2026-10-19T15:38:10.197Z"
+      "prev_hash": "a0e9ccb30a8918405e5c99479167f9c010a5c8251c2301488131ee0cc1ce94e9",
+      "hash": "189f0e0acc18d0db9e1f9db8d56788aab0e5d4f822c01ecd99ba7375f577ebc1",
+      "at": "2026-10-20T04:31:55.873Z"
     },
     {
       "sequence": 3,
@@ -272,9 +272,9 @@
           "round": 1
         }
       },
-      "prev_hash": "382cf8cfd8ace58f9ee0804bc003ef6a6369f266d8cd5f204ad92b05b963ac00",
-      "hash": "54a9093dff4168470887728322450599790ff36fd9c16a16bb182897996fb470",
-      "at": "2026-10-19T15:38:10.198Z"
+      "prev_hash": "189f0e0acc18d0db9e1f9db8d56788aab0e5d4f822c01ecd99ba7375f577ebc1",
+      "hash": "379a2dab258df4255e5e444da72336872678428deb325779330dd86df24d681f",
+      "at": "2026-10-20T04:31:55.873Z"
     },
     {
       "sequence": 4,
@@ -295,15 +295,15 @@
           "tool": "write_document"
         }
       },
-      "prev_hash": "54a9093dff4168470887728322450599790ff36fd9c16a16bb182897996fb470",
-      "hash": "7f58cf9b838bcbed1bf67fd339aa00e48676cbd4687243dd7c7e2cc2bdaa4991",
-      "at": "2026-10-19T15:38:10.198Z"
+      "prev_hash": "379a2dab258df4255e5e444da72336872678428deb325779330dd86df24d681f",
+      "hash": "7152f87571b666592ea9da2968441f8f20105a2a9dd0c2f473aabc48ea4da042",
+      "at": "2026-10-20T04:31:55.873Z"
     }
   ],
   "chain": {
     "event_count": 4,
-    "head_hash": "7f58cf9b838bcbed1bf67fd339aa00e48676cbd4687243dd7c7e2cc2bdaa4991",
+    "head_hash": "7152f87571b666592ea9da2968441f8f20105a2a9dd0c2f473aabc48ea4da042",
     "algorithm": "sha256 over canonical json of {sequence,type,payload,prev_hash,at}"
   },
-  "trace_hash": "f0ec87230903a16cff5d1e8a232cec602270d765c690c35a94e1e3300facdb91"
+  "trace_hash": "0f67fdddd0f980fa0f0d5f82df706386dea36dd3779cf81c29f2207cb781068c"
 }
