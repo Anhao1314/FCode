@@ -459,18 +459,37 @@ function runRowHtml(run) {
   const running = run.status === "running";
   const cls = running ? "live" : stateClass(run.status);
   const meta = running ? "运行中" : runTimeText(run.created);
-  return `<div class="session run-row${active ? " active" : ""}${run.pinned ? " pinned" : ""}" data-run="${esc(run.id)}" title="${esc(run.objective)}${run.rounds ? " · " + run.rounds + " 轮" : ""}">
+  const pinMark = run.pinned ? `<span class="pin-mark" title="已固定">${doodleSvg("star")}</span>` : "";
+  return `<div class="session run-row${active ? " active" : ""}${run.pinned ? " pinned" : ""}" data-run="${esc(run.id)}" tabindex="0" title="${esc(run.objective)}${run.rounds ? " · " + run.rounds + " 轮" : ""}">
     <span class="sdot ${cls}"></span>
     <span class="slabel" data-name>${esc(runLabel(run))}</span>
+    ${pinMark}
     <span class="smeta">${meta}</span>
-    <button class="pin" data-pin="${esc(run.id)}" title="${run.pinned ? "取消固定" : "固定"}">${run.pinned ? "★" : "☆"}</button>
-    <button class="rename-act" data-rename="${esc(run.id)}" title="重命名">✎</button>
+    <button class="row-more" data-more="${esc(run.id)}" title="更多">${doodleSvg("ellipsis")}</button>
+    <div class="row-menu" data-menu="${esc(run.id)}" hidden>
+      <button data-row-act="pin">${run.pinned ? "取消固定" : "固定"}</button>
+      <button data-row-act="rename">重命名</button>
+      <button data-row-act="delete">删除</button>
+    </div>
   </div>`;
+}
+
+function closeRowMenus() {
+  for (const menu of document.querySelectorAll(".row-menu")) menu.hidden = true;
+}
+
+function updateRunCounts() {
+  const total = String(runHistory.length);
+  for (const id of ["run-count", "desk-count"]) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = total;
+  }
 }
 
 function renderRuns() {
   const runNav = document.getElementById("run-nav");
   if (!runNav) return;
+  updateRunCounts();
   const query = runFilter.trim().toLowerCase();
   const runs = runHistory
     .filter(run => !query || `${run.name || ""} ${run.objective} ${run.id}`.toLowerCase().includes(query))
@@ -479,7 +498,7 @@ function renderRuns() {
 
   if (!runs.length) {
     runNav.innerHTML = query
-      ? `<div class="side-empty">没有匹配的运行</div>`
+      ? `<div class="side-empty side-empty-search">${doodleSvg("search")}<div>没有匹配的委托</div><div class="dim">换个关键词试试</div></div>`
       : `<div class="side-empty">还没有运行记录<br>点上方「新建委托」开始</div>`;
     return;
   }
@@ -519,15 +538,42 @@ function renderRuns() {
 
   for (const row of runNav.querySelectorAll(".run-row")) {
     row.addEventListener("click", event => {
-      if (event.target.closest("[data-pin]") || event.target.closest("[data-rename]") || event.target.closest(".rename-input")) return;
+      if (event.target.closest("[data-more]") || event.target.closest(".row-menu") || event.target.closest(".rename-input")) return;
       selectRun(row.dataset.run);
+    });
+    row.addEventListener("keydown", event => {
+      if (event.target !== row) return;
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        selectRun(row.dataset.run);
+      }
     });
     const label = row.querySelector("[data-name]");
     label.addEventListener("dblclick", event => { event.stopPropagation(); startRename(row.dataset.run, label); });
-    const pin = row.querySelector("[data-pin]");
-    pin.addEventListener("click", event => { event.stopPropagation(); togglePin(row.dataset.run); });
-    const rename = row.querySelector("[data-rename]");
-    rename.addEventListener("click", event => { event.stopPropagation(); startRename(row.dataset.run, label); });
+    const more = row.querySelector("[data-more]");
+    more.addEventListener("click", event => {
+      event.stopPropagation();
+      const menu = row.querySelector(".row-menu");
+      const wasHidden = menu.hidden;
+      closeRowMenus();
+      menu.hidden = !wasHidden;
+      if (!menu.hidden) {
+        const del = menu.querySelector('[data-row-act="delete"]');
+        if (del) { del.textContent = "删除"; delete del.dataset.confirm; }
+      }
+    });
+    for (const item of row.querySelectorAll("[data-row-act]")) {
+      item.addEventListener("click", event => {
+        event.stopPropagation();
+        const act = item.dataset.rowAct;
+        if (act === "pin") { closeRowMenus(); togglePin(row.dataset.run); }
+        else if (act === "rename") { closeRowMenus(); startRename(row.dataset.run, label); }
+        else if (act === "delete") {
+          if (item.dataset.confirm === "1") { closeRowMenus(); deleteRun(row.dataset.run); }
+          else { item.dataset.confirm = "1"; item.textContent = "确认删除？"; }
+        }
+      });
+    }
   }
   const more = runNav.querySelector("[data-more-older]");
   if (more) more.addEventListener("click", () => { olderOpen = true; renderRuns(); });
@@ -3129,6 +3175,7 @@ function bind() {
     const slashMenu = document.getElementById("slash-menu");
     const composerBox = document.getElementById("composer-box");
     if (slashMenu && !slashMenu.hidden && composerBox && !composerBox.contains(event.target)) slashMenu.hidden = true;
+    if (!event.target.closest(".run-row")) closeRowMenus();
   });
   document.getElementById("chain-badge").addEventListener("click", reverify);
   document.getElementById("report-close").addEventListener("click", closeReport);
@@ -3265,6 +3312,22 @@ function bind() {
       return;
     }
     const typing = e.target && /INPUT|TEXTAREA/.test(e.target.tagName);
+    if (!typing && !mod && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
+      const rows = [...document.querySelectorAll(".run-row")];
+      if (rows.length) {
+        e.preventDefault();
+        const index = rows.indexOf(document.activeElement);
+        const step = e.key === "ArrowDown" ? 1 : -1;
+        const next = index === -1 ? 0 : Math.max(0, Math.min(rows.length - 1, index + step));
+        rows[next].focus();
+        return;
+      }
+    }
+    if (!typing && !mod && e.key === "/") {
+      e.preventDefault();
+      document.getElementById("run-search").focus();
+      return;
+    }
     if (!typing && live && live.pending && !live.deciding && (e.key === "1" || e.key === "2")) {
       const overlay = ["palette", "wizard-layer", "report-layer"].some(id => {
         const el = document.getElementById(id);
