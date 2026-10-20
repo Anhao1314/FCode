@@ -727,46 +727,6 @@ button.run-chip:hover { border-color: var(--border); color: var(--text-2); }
 .report-title { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .report-frame { flex: 1; border: none; background: #fff; width: 100%; }
 
-/* ============================================================ 建单向导 */
-.wizard-layer { position: fixed; inset: 0; z-index: 140; display: flex; }
-.wizard-layer[hidden] { display: none; }
-.wizard-panel {
-  position: relative; margin: auto; width: min(680px, 92vw); max-height: min(84vh, 820px);
-  display: flex; flex-direction: column; background: var(--card);
-  border: 1px solid var(--border); border-radius: var(--r-card);
-  box-shadow: 0 24px 64px rgba(0, 0, 0, .5); overflow: hidden;
-}
-.wizard-body { flex: 1; overflow-y: auto; padding: 16px 18px; }
-.wizard-foot {
-  display: flex; align-items: center; gap: 8px; padding: 12px 18px; flex: none;
-  border-top: 1px solid var(--border-soft); background: var(--card-2);
-}
-.wz-hint { font-size: 12.5px; color: var(--text-2); margin-bottom: 12px; line-height: 1.7; }
-.wz-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.wz-card {
-  text-align: left; border: 1px solid var(--border-soft); background: var(--well);
-  border-radius: 10px; padding: 11px 13px; cursor: pointer; color: var(--text-2);
-}
-.wz-card:hover { border-color: var(--border); color: var(--text-2); }
-.wz-card.active { border-color: var(--accent); background: var(--accent-soft); color: var(--text); }
-.wz-t { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-weight: 600; font-size: 13px; }
-.wz-badge { font-size: 10px; font-weight: 700; padding: 1px 7px; border-radius: 999px;
-  background: var(--green-soft); color: var(--green); letter-spacing: .04em; flex: none; }
-.wz-badge.demo { background: var(--yellow-soft); color: var(--yellow); }
-.wz-d { font-size: 11.5px; margin-top: 4px; line-height: 1.6; }
-.wz-m { font-size: 10.5px; color: var(--text-3); margin-top: 6px; font-family: var(--mono); }
-.wz-ta {
-  width: 100%; background: var(--well); color: var(--text); border: 1px solid var(--border-soft);
-  border-radius: 10px; padding: 11px 13px; font: 13.5px/1.7 var(--sans); resize: vertical; min-height: 110px;
-}
-.wz-ta:focus { outline: none; border-color: var(--accent); }
-.wz-count { text-align: right; font-size: 11px; color: var(--text-3); margin-top: 4px; font-family: var(--mono); }
-.wz-summary { border: 1px solid var(--border-soft); border-radius: 10px; margin-top: 12px; overflow: hidden; }
-.wz-summary > div { display: flex; gap: 12px; padding: 8px 13px; border-bottom: 1px solid var(--border-soft); font-size: 12.5px; }
-.wz-summary > div:last-child { border-bottom: none; }
-.wz-summary span { color: var(--text-3); width: 44px; flex: none; }
-.wz-summary b { font-weight: 500; word-break: break-all; }
-
 /* ============================================================ 工作台账本 */
 .side-desk {
   display: flex; align-items: center; gap: 9px; width: calc(100% - 8px);
@@ -810,7 +770,7 @@ body { font-size: 13px; line-height: 1.55; }
 
 /* 元信息一律等宽：这是终端气质的来源，也是 Codex 的信息层级做法 */
 .side-head-label, .session .smeta, .chip, .mini, .badge, .card-meta, .args, .rno,
-.tb-chips, .foot-text, .kbtn, .ev-seq, .ev-hash, .m-k, .m-v, .wz-m, .metric .k,
+.tb-chips, .foot-text, .kbtn, .ev-seq, .ev-hash, .m-k, .m-v, .metric .k,
 .result .k, .led-table th, .led-stat .k, .smeta, .c-btn.static { font-family: var(--mono); }
 .side-head-label { font-size: 10px; letter-spacing: .09em; text-transform: uppercase; }
 
@@ -890,11 +850,10 @@ body { font-size: 13px; line-height: 1.55; }
 .tr-usage { font: 10px var(--mono); color: var(--text-3); margin-top: 4px; }
 
 /* ========================================================== 模块分组 */
-.tpl-group, .wz-group {
+.tpl-group {
   font: 600 10px var(--mono); letter-spacing: .09em; text-transform: uppercase;
   color: var(--text-3); padding: 8px 11px 4px;
 }
-.wz-group { padding: 4px 2px 6px; }
 
 /* ============================================================== Manus 审美层
    暖纸色画布、白卡片浮起、衬线大标题、炭黑主按钮、陶土色强调、大圆角与
@@ -949,12 +908,10 @@ body { font-size: 13px; line-height: 1.55; }
 .session.active { background: var(--card); box-shadow: 0 1px 2px rgba(60, 50, 35, .06); }
 .tab { border-radius: 10px 10px 0 0; }
 .chip, .mini { border-radius: 999px; background: var(--card-2); }
-.tpl-menu, .slash-menu, .palette-box, .wizard-panel, .report-panel {
+.tpl-menu, .slash-menu, .palette-box, .report-panel {
   border-radius: 16px;
   box-shadow: 0 18px 50px rgba(60, 50, 35, .12);
 }
-.wz-card { border-radius: 12px; }
-.wz-card.active { border-color: var(--accent); background: var(--accent-fill); }
 .slash-item.active { background: var(--accent-fill); }
 .slash-item.active .cmd, .slash-item.active .desc { color: #5a2c17; }
 
@@ -998,7 +955,7 @@ body { font-size: 13px; line-height: 1.55; }
 }
 
 /* 手写体只出现在展示位 */
-.side-brand, .prompt-text, .result-answer, .empty, .wizard-panel .report-title {
+.side-brand, .prompt-text, .result-answer, .empty {
   font-family: var(--serif);
   letter-spacing: 0;
 }
@@ -1015,13 +972,13 @@ body { background: #ffffff; }
 
 /* 扁平化：零阴影、细墨线、小圆角 */
 .card, .round, .led-card, .composer-box, .side-new, .side-search, .side-desk,
-.wz-card, .tpl-menu, .slash-menu, .palette-box, .wizard-panel, .report-panel {
+.tpl-menu, .slash-menu, .palette-box, .report-panel {
   box-shadow: none !important;
 }
-.card, .round, .led-card, .wz-card { border-radius: 2px; border-color: var(--border-soft); }
+.card, .round, .led-card { border-radius: 2px; border-color: var(--border-soft); }
 .composer-box { border-radius: 2px; border-color: var(--border); }
 .side-new, .side-search, .side-desk { border-radius: 2px; border-color: var(--border-soft); }
-.tpl-menu, .slash-menu, .palette-box, .wizard-panel, .report-panel {
+.tpl-menu, .slash-menu, .palette-box, .report-panel {
   border-radius: 2px; border-color: var(--border);
 }
 
@@ -1374,8 +1331,7 @@ body { background: #ffffff; }
 .side-new:hover, .side-desk:hover { border-radius: 8px; }
 .a-btn, .a-btn.strong { border-radius: 8px; }
 .row-menu { border-radius: 10px; overflow: hidden; }
-.tpl-menu, .slash-menu, .palette-box, .wizard-panel, .report-panel { border-radius: 14px; }
-.wz-card { border-radius: 10px; }
+.tpl-menu, .slash-menu, .palette-box, .report-panel { border-radius: 14px; }
 .seal { border-radius: 10px; }
 .raw-pre { border-radius: 8px; }
 .c-btn, .kbtn, .chip, .mini, .badge { border-radius: 999px; }

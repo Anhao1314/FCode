@@ -118,6 +118,7 @@ python3 flowcredit/viewer/server.py --repo .   # 打开 http://127.0.0.1:8642/
 - 键盘入口：composer 以 `/` 开头弹出命令面板（Tab 补全、↑↓ 选择），↑↓ 翻输入历史；视觉沿用 Codex 终端语言：等宽元信息、20% 分隔线、选中填充 `#A4CDFB`。
 - 本机偏好：左下角状态行右侧的齿轮（`⌘,`）让主区切到设置页——外观、委托默认、模型与工具、记忆统计、通知与快捷键、安全与关于；偏好只存本机，不影响签名链。
 - LLM 层实验：真实模型训练期间，用文件式 oracle 坐进 Provider 位置；协议与结果见 [oracle-lab.md](flowcredit/docs/oracle-lab.md)。
+- 前端收敛：建单向导已删除，创建统一走需求确认；结构与后续拆分见 [frontend-architecture.md](flowcredit/docs/frontend-architecture.md)。
 - 数据采集：`FCODE_SOURCES` 配置主机源后，模型可用 `collect_source` 抓取并把结果变成可检索证据；配置与安全边界见 [data-collection.md](flowcredit/docs/data-collection.md)。
 - Executive–Policy：决策包 + 候选动作 + fast path 的 P1 实验见 [executive-policy.md](flowcredit/docs/executive-policy.md)；控制台默认仍走旧 Provider。
 - 运行中插话：composer 直接输入消息，排队后在下一轮写入同一条哈希链；后台会话与新建委托各占一个标签，切换不丢画面。

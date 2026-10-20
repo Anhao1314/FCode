@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light">
 <title>Fcode · flowcredit console</title>
-<link rel="stylesheet" href="app.css?v=50">
-<link rel="stylesheet" href="design.css?v=50">
+<link rel="stylesheet" href="app.css?v=51">
+<link rel="stylesheet" href="design.css?v=51">
 </head>
 <body>
 <div class="shell app rail-open" id="app">
@@ -83,7 +83,7 @@
               <span class="empty-doodle-icon" data-doodle="book-open" data-doodle-anim="1"></span>
               <p>给 agent 派一个工作委托，或从左侧打开运行记录。</p>
               <p class="dim">每个数字有来源，每次计算被复算，每份底稿不可篡改。</p>
-              <button class="a-btn strong" data-wizard-open style="margin-top:14px">创建第一个委托</button>
+              <button class="a-btn strong" data-intake-open style="margin-top:14px">创建第一个委托</button>
             </div>
           </div>
         </main>
@@ -198,7 +198,7 @@
             <div class="set-section-head"><h2>委托默认</h2><span class="set-tag">下次委托</span></div>
             <p class="set-section-desc">新委托的审批档位。运行中的审批仍按创建时的档位执行。</p>
             <div class="set-modes" id="settings-modes"></div>
-            <p class="set-note">预算由模板决定：完整研究为 12 calls / 20 reads / 20,000 µUSD；修改预算需要在建单向导里换模板。</p>
+            <p class="set-note">预算由模板决定：完整研究为 12 calls / 20 reads / 20,000 µUSD；修改预算需要在需求确认里换模板。</p>
             <div class="set-rows">
               <div class="set-row">
                 <span class="set-row-text"><b>自动召回旧案</b><small>委托创建时检索 top-3 相似案例，并把召回写入哈希链</small></span>
@@ -312,19 +312,6 @@
 </div>
 <div class="toast" id="toast" hidden></div>
 
-<div class="wizard-layer" id="wizard-layer" hidden>
-  <div class="report-scrim" data-wz-close></div>
-  <div class="wizard-panel">
-    <div class="report-bar">
-      <span class="report-title">新委托 <span class="dim" id="wizard-step">1 / 3</span></span>
-      <span class="grow"></span>
-      <button class="icon-btn" id="wizard-close" title="关闭 (Esc)">×</button>
-    </div>
-    <div class="wizard-body" id="wizard-body"></div>
-    <div class="wizard-foot" id="wizard-foot"></div>
-  </div>
-</div>
-
 <div class="report-layer" id="report-layer" hidden>
   <div class="report-scrim" data-report-close></div>
   <div class="report-panel">
@@ -339,8 +326,8 @@
   </div>
 </div>
 
-<script src="report.js?v=50"></script>
-<script src="icons-doodle.js?v=50"></script>
-<script src="app.js?v=50"></script>
+<script src="report.js?v=51"></script>
+<script src="icons-doodle.js?v=51"></script>
+<script src="app.js?v=51"></script>
 </body>
 </html>

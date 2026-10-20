@@ -79,13 +79,13 @@ body { background: var(--paper); color: var(--ink); font-family: var(--font-body
 }
 
 /* 展示位用楷体；机器元信息用等宽；正文用无衬线 */
-.side-brand, .prompt-text, .result-answer, .empty, .wizard-panel .report-title,
+.side-brand, .prompt-text, .result-answer, .empty,
 .intake-title, .setpage-title, .set-section h2, .intake-q, .intake-reply,
 .report-title, .rail-title {
   font-family: var(--font-display);
 }
 .mono, .prompt-note, .card-meta, .statusline, .side-section, .setpage-kicker,
-.intake-kicker, .prompt-kicker .kicker-label, .set-label {
+.intake-kicker, .prompt-kicker .kicker-label {
   font-family: var(--font-mono);
 }
 .metric .v, .set-stat b, .seal-count, .statusline, .raw-pre, .seal-row,
@@ -118,7 +118,7 @@ body { background: var(--paper); color: var(--ink); font-family: var(--font-body
 .card, .round, .led-card, .intake-draft, .set-stat, .set-mode {
   border-radius: var(--radius-card);
 }
-.tpl-menu, .slash-menu, .palette-box, .wizard-panel, .report-panel, .settings-panel {
+.tpl-menu, .slash-menu, .palette-box, .report-panel {
   border-radius: var(--radius-menu);
 }
 .a-btn, .set-action, .side-gear { border-radius: var(--radius-control); }

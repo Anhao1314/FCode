@@ -2926,7 +2926,7 @@ function closeIntake(restore = true) {
       <span class="empty-doodle-icon" data-doodle="book-open" data-doodle-anim="1"></span>
       <p>给 agent 派一个工作委托，或从左侧打开运行记录。</p>
       <p class="dim">每个数字有来源，每次计算被复算，每份底稿不可篡改。</p>
-      <button class="a-btn strong" data-wizard-open style="margin-top:14px">创建第一个委托</button>
+      <button class="a-btn strong" data-intake-open style="margin-top:14px">创建第一个委托</button>
     </div>`;
     document.getElementById("tb-title").textContent = "—";
     document.getElementById("tb-chips").innerHTML = "";
@@ -3519,148 +3519,6 @@ function printReport() {
   }
 }
 
-/* --------------------------------------------------------------- 建单向导 */
-
-const wizard = { step: 1, tplKey: "full", objective: "", approval: approvalMode, submitting: false };
-
-function wizardTemplate() {
-  return templates.find(t => t.key === wizard.tplKey) || {};
-}
-
-function openWizard() {
-  if (settingsOpen) closeSettingsPage(false);
-  if (intake.active) closeIntake(false);
-  if (!health || !health.live) {
-    toast("回放模式：用 python3 viewer/server.py 启动后才能创建委托");
-    return;
-  }
-  wizard.step = 1;
-  wizard.tplKey = tplKey || "full";
-  wizard.objective = "";
-  wizard.approval = approvalMode;
-  wizard.submitting = false;
-  renderWizard();
-  document.getElementById("wizard-layer").hidden = false;
-}
-
-function closeWizard() {
-  document.getElementById("wizard-layer").hidden = true;
-}
-
-function renderWizard() {
-  const body = document.getElementById("wizard-body");
-  const foot = document.getElementById("wizard-foot");
-  if (!body || !foot) return;
-  document.getElementById("wizard-step").textContent = `${wizard.step} / 3`;
-  const template = wizardTemplate();
-  const limits = template.limits || {};
-
-  if (wizard.step === 1) {
-    body.innerHTML = `<div class="wz-hint">第一步 · 选择委托类型。类型决定授权范围、预算与轮次；带演示标记的类型会注入特定故障，用于观察运行时的防护。</div>
-      ${templateGroups().map(group => `<div class="wz-group">${esc(group.title)}</div>
-      <div class="wz-cards">${group.items.map(t => `
-        <button class="wz-card${t.key === wizard.tplKey ? " active" : ""}" data-wz-tpl="${esc(t.key)}">
-          <div class="wz-t"><span>${esc(tplTitle(t.key))}</span>
-            <span class="wz-badge${t.key === "full" ? "" : " demo"}">${t.key === "full" ? "标准委托" : "演示"}</span></div>
-          <div class="wz-d">${esc(t.story || "")}</div>
-          <div class="wz-m">${t.limits ? num(t.limits.max_calls) + " calls · " + num(t.limits.max_cost_microusd) + " µUSD · " : ""}${t.max_rounds || "?"} 轮</div>
-        </button>`).join("")}</div>`).join("")}`;
-    foot.innerHTML = `<button class="a-btn" data-wz-close2>取消</button><span class="grow"></span><button class="a-btn strong" data-wz-next>下一步</button>`;
-    return;
-  }
-
-  if (wizard.step === 2) {
-    body.innerHTML = `<div class="wz-hint">第二步 · 委托说明。写清楚要判断什么、依据什么口径；留空将使用模板默认目标。</div>
-      <textarea class="wz-ta" id="wz-objective" maxlength="600" rows="4"
-        placeholder="${esc(template.objective || "描述这项委托…")}">${esc(wizard.objective)}</textarea>
-      <div class="wz-count"><span id="wz-count">${wizard.objective.length} / 600</span></div>`;
-    foot.innerHTML = `<button class="a-btn" data-wz-prev>上一步</button><span class="grow"></span><button class="a-btn strong" data-wz-next>下一步</button>`;
-    const ta = document.getElementById("wz-objective");
-    if (ta) ta.focus();
-    return;
-  }
-
-  body.innerHTML = `<div class="wz-hint">第三步 · 审批档位。审批只发生在轮次边界，拒绝会终止运行并写入签名链。</div>
-    <div class="wz-cards wz-modes">${APPROVAL_MODES.map(([key, t, d]) => `
-      <button class="wz-card${key === wizard.approval ? " active" : ""}" data-wz-mode="${esc(key)}">
-        <div class="wz-t"><span>${esc(t)}</span></div>
-        <div class="wz-d">${esc(d)}</div>
-      </button>`).join("")}</div>
-    <div class="wz-summary">
-      <div><span>类型</span><b>${esc(tplTitle(wizard.tplKey))}</b></div>
-      <div><span>预算</span><b>${limits.max_calls ? num(limits.max_calls) + " calls · " + num(limits.max_cost_microusd) + " µUSD（可在运行中调高）" : "—"}</b></div>
-      <div><span>轮次</span><b>至多 ${template.max_rounds || "?"} 轮</b></div>
-      <div><span>审批</span><b>${esc(approvalTitle(wizard.approval))}</b></div>
-      <div><span>目标</span><b>${esc(wizard.objective || template.objective || "—")}</b></div>
-    </div>`;
-  foot.innerHTML = `<button class="a-btn" data-wz-prev>上一步</button><span class="grow"></span><button class="a-btn strong" data-wz-submit>提交委托</button>`;
-}
-
-function wizardNext() {
-  if (wizard.step === 2) {
-    const ta = document.getElementById("wz-objective");
-    wizard.objective = ta ? ta.value.trim() : wizard.objective;
-  }
-  wizard.step = Math.min(3, wizard.step + 1);
-  renderWizard();
-}
-
-async function submitWizard() {
-  if (wizard.submitting) return;
-  const template = wizardTemplate();
-  const objective = wizard.objective || template.objective || "";
-  if (!objective) { toast("请填写委托说明"); return; }
-  wizard.submitting = true;
-  const submit = document.querySelector("[data-wz-submit]");
-  if (submit) { submit.disabled = true; submit.textContent = "提交中…"; }
-  try {
-    const response = await fetch("/api/runs", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ objective, template: wizard.tplKey, approval: wizard.approval }),
-    });
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({}));
-      throw new Error(error.error || `HTTP ${response.status}`);
-    }
-    const run = await response.json();
-    setApprovalMode(wizard.approval);
-    setTemplate(wizard.tplKey);
-    closeWizard();
-    toast("委托已受理 · 开始执行");
-    openLive(run.id, objective, run.template);
-    refreshRuns();
-  } catch (error) {
-    toast("委托提交失败：" + error.message);
-    if (submit) { submit.disabled = false; submit.textContent = "提交委托"; }
-  } finally {
-    wizard.submitting = false;
-  }
-}
-
-function bindWizard() {
-  const layer = document.getElementById("wizard-layer");
-  if (!layer) return;
-  layer.addEventListener("click", event => {
-    if (event.target.closest("[data-wz-close]")) { closeWizard(); return; }
-    if (event.target.closest("#wizard-close") || event.target.closest("[data-wz-close2]")) { closeWizard(); return; }
-    const tpl = event.target.closest("[data-wz-tpl]");
-    if (tpl) { wizard.tplKey = tpl.dataset.wzTpl; renderWizard(); return; }
-    const mode = event.target.closest("[data-wz-mode]");
-    if (mode) { wizard.approval = mode.dataset.wzMode; renderWizard(); return; }
-    if (event.target.closest("[data-wz-prev]")) { wizard.step = Math.max(1, wizard.step - 1); renderWizard(); return; }
-    if (event.target.closest("[data-wz-next]")) { wizardNext(); return; }
-    if (event.target.closest("[data-wz-submit]")) { submitWizard(); return; }
-  });
-  document.getElementById("wizard-body").addEventListener("input", event => {
-    if (event.target.id === "wz-objective") {
-      wizard.objective = event.target.value;
-      const count = document.getElementById("wz-count");
-      if (count) count.textContent = `${event.target.value.length} / 600`;
-    }
-  });
-}
-
 function openResumeForm() {
   const trace = currentTrace || {};
   const budget = lastBudget(trace);
@@ -4137,7 +3995,6 @@ function focusComposer() {
 function paletteActions() {
   const actions = [
     { ic: "＋", label: "新委托 · 需求选择", run: () => startIntake("") },
-    { ic: "＋", label: "高级建单向导", run: openWizard },
     { ic: "✎", label: "新任务 · 聚焦输入框", run: focusComposer },
   ];
   if (live && live.running) actions.push({ ic: "■", label: "停止当前运行", run: stopRun });
@@ -4257,7 +4114,7 @@ function runPaletteItem(index) {
 /* ----------------------------------------------------------- slash 命令 */
 /* Codex 式入口：输入框以 / 开头弹出命令面板，↑↓ 选择，Tab 补全，Enter 执行。 */
 const SLASH_COMMANDS = [
-  { cmd: "/new", desc: "新建委托（打开建单向导）", run: () => openWizard() },
+  { cmd: "/new", desc: "新建委托 · 需求确认", run: () => startIntake("") },
   { cmd: "/ledger", desc: "打开工作台账本", run: () => openLedger() },
   { cmd: "/report", desc: "签发当前运行的审计报告", run: () => openReport() },
   { cmd: "/stop", desc: "在轮次边界停止当前运行", run: () => stopRun() },
@@ -4357,7 +4214,6 @@ function bind() {
   document.getElementById("new-run").addEventListener("click", () => startIntake(""));
   document.getElementById("desk-btn").addEventListener("click", openLedger);
   document.getElementById("composer-open").addEventListener("click", () => startIntake(""));
-  bindWizard();
   document.getElementById("pick").addEventListener("change", event => {
     if (event.target.files[0]) fromFile(event.target.files[0]);
   });
@@ -4474,7 +4330,7 @@ function bind() {
     if (event.target.closest("[data-intake-start]")) { startIntakeRun(); return; }
     if (event.target.closest("[data-intake-back]")) { intakeBack(); return; }
     if (event.target.closest("[data-intake-cancel]")) { closeIntake(true); return; }
-    if (event.target.closest("[data-wizard-open]")) { startIntake(""); return; }
+    if (event.target.closest("[data-intake-open]")) { startIntake(""); return; }
     const reviewChoice = event.target.closest("[data-review-decision]");
     if (reviewChoice) {
       const panel = reviewChoice.closest("[data-review-panel]");
@@ -4632,7 +4488,7 @@ function bind() {
       return;
     }
     if (!typing && live && live.pending && !live.deciding && (e.key === "1" || e.key === "2")) {
-      const overlay = ["palette", "wizard-layer", "report-layer"].some(id => {
+      const overlay = ["palette", "report-layer"].some(id => {
         const el = document.getElementById(id);
         return el && !el.hidden;
       });
@@ -4645,8 +4501,6 @@ function bind() {
     if (e.key === "Escape") {
       const reportLayer = document.getElementById("report-layer");
       if (reportLayer && !reportLayer.hidden) { closeReport(); return; }
-      const wizardLayer = document.getElementById("wizard-layer");
-      if (wizardLayer && !wizardLayer.hidden) { closeWizard(); return; }
       const palette = document.getElementById("palette");
       if (palette && !palette.hidden) { closePalette(); return; }
       const menu = document.getElementById("tpl-menu");
