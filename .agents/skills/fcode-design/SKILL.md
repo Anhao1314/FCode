@@ -197,6 +197,7 @@ Kicker：`WORKBENCH` / `CASE FILE` / `NEW DELEGATION` / `PREFERENCES`。
 
 ## References
 
+- 产品理念：`flowcredit/docs/philosophy.md`
 - 视觉规范：`flowcredit/docs/design-system.md`
 - 样式页：`flowcredit/viewer/design.html`
 - Tokens / 新样式：`flowcredit/viewer/design.css`
