@@ -12,7 +12,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from ..base import EFFECT_READ, EFFECT_WRITE, Param, ToolSpec
+from ..base import EFFECT_NETWORK, EFFECT_READ, EFFECT_WRITE, Param, ToolSpec
+from ..connectors import ConnectorRegistry, default_registry
 from ..artifacts import ArtifactStore
 from ..evidence import EvidenceStore
 from .authority import evaluate_fact_authority
@@ -40,6 +41,7 @@ def build_finance_tools(
     world: FinanceWorld,
     evidence: EvidenceStore | None = None,
     artifacts: ArtifactStore | None = None,
+    connectors: ConnectorRegistry | None = None,
 ) -> list[ToolSpec]:
     """Bind the finance world to a list of :class:`ToolSpec`.
 
@@ -49,6 +51,7 @@ def build_finance_tools(
     """
     evidence = evidence or EvidenceStore(Path.cwd())
     artifacts = artifacts or ArtifactStore(Path.cwd() / ".fcode-artifacts")
+    connectors = connectors or default_registry()
 
     def list_documents(_: dict[str, Any]) -> dict[str, Any]:
         return world.list_documents()
@@ -100,6 +103,9 @@ def build_finance_tools(
             body=arguments["body"],
             citations=list(arguments.get("citations") or []),
         )
+
+    def fetch_source(arguments: dict[str, Any]) -> dict[str, Any]:
+        return connectors.fetch(arguments["source"], arguments.get("key"))
 
     doc_param = Param(
         name="doc_id",
@@ -313,6 +319,40 @@ def build_finance_tools(
                 out("bytes", "integer"),
                 out("section", "string"),
                 out("citations", "integer"),
+            ),
+            version="1.0",
+        ),
+        ToolSpec(
+            name="fetch_source",
+            summary="Fetch a host-configured external source by name; endpoint and credentials stay with the host",
+            effect=EFFECT_NETWORK,
+            params=(
+                Param(
+                    name="source",
+                    kind="string",
+                    required=True,
+                    enum=connectors.names(),
+                    description="configured source name",
+                ),
+                Param(
+                    name="key",
+                    kind="string",
+                    required=False,
+                    description="optional lookup key appended as a query parameter",
+                ),
+            ),
+            handler=fetch_source,
+            outputs=(
+                out("source", "string"),
+                out("url", "string"),
+                out("status", "integer"),
+                out("content_type", "string"),
+                out("sha256", "string"),
+                out("bytes", "integer"),
+                out("retrieved_at", "string"),
+                out("payload", "object"),
+                out("request_id", "string"),
+                out("latency_ms", "integer"),
             ),
             version="1.0",
         ),

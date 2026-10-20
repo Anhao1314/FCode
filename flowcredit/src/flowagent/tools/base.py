@@ -20,6 +20,7 @@ from ..core.contracts import AgentError
 __all__ = [
     "EFFECT_READ",
     "EFFECT_WRITE",
+    "EFFECT_NETWORK",
     "Param",
     "ToolSpec",
     "Observation",
@@ -31,6 +32,9 @@ EFFECT_READ = "read"
 #: A tool that produces an artifact. Allowed only where the task scope and the
 #: host approval policy say so; the artifact store enforces the sandbox.
 EFFECT_WRITE = "write"
+#: A tool that reads a host-configured external source. The endpoint and the
+#: credentials belong to the host; the model only names the source.
+EFFECT_NETWORK = "network"
 
 
 @dataclass(frozen=True)

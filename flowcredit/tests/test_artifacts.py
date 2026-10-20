@@ -85,12 +85,12 @@ class ArtifactTests(unittest.TestCase):
 
     def test_unknown_effect_is_still_denied(self) -> None:
         spec = ToolSpec(
-            name="net", summary="", effect="network", params=(),
+            name="money", summary="", effect="money", params=(),
             handler=lambda _: {"ok": True},
             outputs=(Param(name="ok", kind="boolean"),),
         )
         with self.assertRaises(AgentError) as ctx:
-            ToolRegistry([spec]).execute("net", {})
+            ToolRegistry([spec]).execute("money", {})
         self.assertEqual(ctx.exception.code, "TOOL_EFFECT_DENIED")
 
     def test_demo_policy_names_the_write_tool_as_consequential(self) -> None:

@@ -51,6 +51,7 @@ _ALL_TOOLS = (
     "search_corpus",
     "read_slice",
     "working_paper_append",
+    "fetch_source",
 )
 
 _OBJECTIVE = "判断恒星智算 2024 与 2025 两期合并毛利率是否可比，并在可比时给出变化"

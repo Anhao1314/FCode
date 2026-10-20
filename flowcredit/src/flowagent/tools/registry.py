@@ -12,7 +12,7 @@ from typing import Any, Iterable, Mapping
 
 from ..core.contracts import AgentError
 from ..core.hashing import digest
-from .base import EFFECT_READ, EFFECT_WRITE, Observation, ToolSpec, validate_arguments, validate_output
+from .base import EFFECT_NETWORK, EFFECT_READ, EFFECT_WRITE, Observation, ToolSpec, validate_arguments, validate_output
 
 __all__ = ["ToolRegistry"]
 
@@ -47,7 +47,7 @@ class ToolRegistry:
     def execute(self, name: str, arguments: Mapping[str, Any]) -> Observation:
         """Validate, run and wrap the result in an :class:`Observation`."""
         spec = self.get(name)
-        if spec.effect not in (EFFECT_READ, EFFECT_WRITE):
+        if spec.effect not in (EFFECT_READ, EFFECT_WRITE, EFFECT_NETWORK):
             raise AgentError(
                 "TOOL_EFFECT_DENIED",
                 f"{name!r} has unknown effect {spec.effect!r}",
