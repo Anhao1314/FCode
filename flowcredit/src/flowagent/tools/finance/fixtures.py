@@ -231,6 +231,7 @@ class FinanceWorld:
         self.reconciled.add(doc.period)
         return {
             "period": doc.period,
+            "reconciled": True,
             "from_basis": doc.basis,
             "to_basis": "IFRS",
             "bridge_id": bridge.id,

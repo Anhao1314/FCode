@@ -12,7 +12,7 @@ from typing import Any, Iterable, Mapping
 
 from ..core.contracts import AgentError
 from ..core.hashing import digest
-from .base import EFFECT_READ, Observation, ToolSpec, validate_arguments
+from .base import EFFECT_READ, Observation, ToolSpec, validate_arguments, validate_output
 
 __all__ = ["ToolRegistry"]
 
@@ -54,9 +54,11 @@ class ToolRegistry:
             )
         normalised = validate_arguments(spec, arguments)
         result = spec.handler(normalised)
+        validate_output(spec, result)
         return Observation(
             tool=name,
             arguments=normalised,
             result=result,
             result_hash=digest(result),
+            tool_version=spec.version,
         )

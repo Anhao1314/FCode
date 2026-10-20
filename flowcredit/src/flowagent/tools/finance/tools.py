@@ -75,6 +75,17 @@ def build_finance_tools(world: FinanceWorld) -> list[ToolSpec]:
         description="document identifier returned by list_documents",
     )
 
+    def out(name: str, kind: str, required: bool = True, nullable: bool = False) -> Param:
+        """Declare one output field. Extras are allowed; declared ones are enforced."""
+        return Param(name=name, kind=kind, required=required, nullable=nullable)
+
+    doc_outputs = (
+        out("id", "string"), out("title", "string"), out("kind", "string"),
+        out("period", "string"), out("unit", "string"), out("unit_label", "string"),
+        out("basis", "string"), out("revenue", "integer"), out("gross_profit", "integer"),
+        out("supersedes", "string", nullable=True), out("body", "string"),
+    )
+
     return [
         ToolSpec(
             name="list_documents",
@@ -82,6 +93,8 @@ def build_finance_tools(world: FinanceWorld) -> list[ToolSpec]:
             effect=EFFECT_READ,
             params=(),
             handler=list_documents,
+            outputs=(out("documents", "array"),),
+            version="1.0",
         ),
         ToolSpec(
             name="read_document",
@@ -89,6 +102,8 @@ def build_finance_tools(world: FinanceWorld) -> list[ToolSpec]:
             effect=EFFECT_READ,
             params=(doc_param,),
             handler=read_document,
+            outputs=doc_outputs,
+            version="1.0",
         ),
         ToolSpec(
             name="normalize_units",
@@ -96,6 +111,13 @@ def build_finance_tools(world: FinanceWorld) -> list[ToolSpec]:
             effect=EFFECT_READ,
             params=(doc_param,),
             handler=normalize_units,
+            outputs=(
+                out("id", "string"), out("period", "string"),
+                out("source_unit", "string"), out("target_unit", "string"),
+                out("revenue_cny", "integer"), out("gross_profit_cny", "integer"),
+                out("factor", "integer"),
+            ),
+            version="1.0",
         ),
         ToolSpec(
             name="reconcile_basis",
@@ -103,6 +125,16 @@ def build_finance_tools(world: FinanceWorld) -> list[ToolSpec]:
             effect=EFFECT_READ,
             params=(doc_param,),
             handler=reconcile_basis,
+            outputs=(
+                out("period", "string"), out("reconciled", "boolean"),
+                out("reason", "string", required=False),
+                out("from_basis", "string", required=False),
+                out("to_basis", "string", required=False),
+                out("bridge_id", "string", required=False),
+                out("delta", "integer", required=False),
+                out("reconciled_gross_profit", "integer", required=False),
+            ),
+            version="1.0",
         ),
         ToolSpec(
             name="check_restatement",
@@ -110,6 +142,15 @@ def build_finance_tools(world: FinanceWorld) -> list[ToolSpec]:
             effect=EFFECT_READ,
             params=(doc_param,),
             handler=check_restatement,
+            outputs=(
+                out("period", "string"), out("restated", "boolean"),
+                out("superseded_by", "string", required=False, nullable=True),
+                out("original_gross_profit", "integer", required=False),
+                out("restated_gross_profit", "integer", required=False),
+                out("delta", "integer", required=False),
+                out("reason", "string", required=False),
+            ),
+            version="1.0",
         ),
         ToolSpec(
             name="calculate_margin",
@@ -117,6 +158,21 @@ def build_finance_tools(world: FinanceWorld) -> list[ToolSpec]:
             effect=EFFECT_READ,
             params=(),
             handler=calculate_margin,
+            outputs=(
+                out("computed", "boolean"),
+                out("blockers", "array", required=False),
+                out("comparable", "boolean", required=False),
+                out("basis", "string", required=False),
+                out("consolidation", "string", required=False),
+                out("restatement_applied", "boolean", required=False),
+                out("periods", "array", required=False),
+                out("margin_bp_2024", "integer", required=False),
+                out("margin_bp_2025", "integer", required=False),
+                out("change_bp", "integer", required=False),
+                out("citations", "array", required=False),
+                out("authority", "object", required=False),
+            ),
+            version="1.0",
         ),
         ToolSpec(
             name="report_blocked",
@@ -132,5 +188,11 @@ def build_finance_tools(world: FinanceWorld) -> list[ToolSpec]:
                 ),
             ),
             handler=report_blocked,
+            outputs=(
+                out("acknowledged", "boolean"),
+                out("reason", "string"),
+                out("blocker_count", "integer"),
+            ),
+            version="1.0",
         ),
     ]

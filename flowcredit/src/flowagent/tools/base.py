@@ -23,6 +23,7 @@ __all__ = [
     "ToolSpec",
     "Observation",
     "validate_arguments",
+    "validate_output",
 ]
 
 EFFECT_READ = "read"
@@ -39,6 +40,8 @@ class Param:
     minimum: int | None = None
     maximum: int | None = None
     description: str = ""
+    #: Output contracts only: an explicitly nullable field may be None.
+    nullable: bool = False
 
     def to_schema(self) -> dict[str, Any]:
         schema: dict[str, Any] = {"type": self.kind, "required": self.required}
@@ -50,6 +53,8 @@ class Param:
             schema["maximum"] = self.maximum
         if self.description:
             schema["description"] = self.description
+        if self.nullable:
+            schema["nullable"] = True
         return schema
 
 
@@ -62,13 +67,32 @@ class ToolSpec:
     effect: str
     params: tuple[Param, ...]
     handler: Callable[[Mapping[str, Any]], dict[str, Any]]
+    #: The fields this tool promises to return. Validated after every call, so
+    #: a renamed or mistyped field fails the run instead of silently starving
+    #: the memory summary and the report of data they were promised.
+    outputs: tuple[Param, ...] = ()
+    #: Semver-ish contract version; recorded in every observation.
+    version: str = "1.0"
 
     def to_schema(self) -> dict[str, Any]:
+        """Model-facing schema. Deliberately excludes outputs/version: the
+        context handed to the model (and therefore the SFT dataset) must not
+        change when a tool gains a contract."""
         return {
             "name": self.name,
             "summary": self.summary,
             "effect": self.effect,
             "parameters": {param.name: param.to_schema() for param in self.params},
+        }
+
+    def contract(self) -> dict[str, Any]:
+        """Full contract for operators, tests and audits (not for the model)."""
+        return {
+            "name": self.name,
+            "version": self.version,
+            "effect": self.effect,
+            "parameters": {param.name: param.to_schema() for param in self.params},
+            "outputs": {param.name: param.to_schema() for param in self.outputs},
         }
 
 
@@ -80,6 +104,7 @@ class Observation:
     arguments: dict[str, Any]
     result: dict[str, Any]
     result_hash: str = ""
+    tool_version: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -87,6 +112,7 @@ class Observation:
             "arguments": self.arguments,
             "result": self.result,
             "result_hash": self.result_hash,
+            "tool_version": self.tool_version,
         }
 
 
@@ -137,3 +163,59 @@ def validate_arguments(spec: ToolSpec, arguments: Mapping[str, Any]) -> dict[str
             raise AgentError("TOOL_SCHEMA_INVALID", f"unknown parameter kind {param.kind!r}")
         normalised[param.name] = value
     return normalised
+
+
+def validate_output(spec: ToolSpec, result: Mapping[str, Any]) -> None:
+    """Check a tool result against its declared output contract.
+
+    Only declared fields are checked; extra fields are allowed because a tool
+    may add information without breaking readers. A required field that is
+    missing, a present field with the wrong type, or an unexpected ``None`` is
+    a contract violation: the runtime refuses to record the observation rather
+    than persisting a shape downstream readers were never promised.
+    """
+    if not isinstance(result, Mapping):
+        raise AgentError(
+            "TOOL_OUTPUT_CONTRACT",
+            f"{spec.name} v{spec.version} must return an object",
+        )
+    for param in spec.outputs:
+        if param.name not in result:
+            if param.required:
+                raise AgentError(
+                    "TOOL_OUTPUT_CONTRACT",
+                    f"{spec.name} v{spec.version} is missing output field {param.name!r}",
+                )
+            continue
+        value = result[param.name]
+        if value is None:
+            if param.nullable:
+                continue
+            raise AgentError(
+                "TOOL_OUTPUT_CONTRACT",
+                f"{spec.name} v{spec.version} output {param.name!r} is null",
+            )
+        if param.kind == "string":
+            ok = isinstance(value, str)
+        elif param.kind == "integer":
+            ok = isinstance(value, int) and not isinstance(value, bool)
+        elif param.kind == "number":
+            ok = isinstance(value, (int, float)) and not isinstance(value, bool)
+        elif param.kind == "boolean":
+            ok = isinstance(value, bool)
+        elif param.kind == "object":
+            ok = isinstance(value, Mapping)
+        elif param.kind == "array":
+            ok = isinstance(value, (list, tuple))
+        else:  # pragma: no cover - programming error in a tool spec
+            raise AgentError("TOOL_SCHEMA_INVALID", f"{spec.name}: unknown output kind {param.kind!r}")
+        if not ok:
+            raise AgentError(
+                "TOOL_OUTPUT_CONTRACT",
+                f"{spec.name} v{spec.version} output {param.name!r} must be {param.kind}",
+            )
+        if param.enum is not None and value not in param.enum:
+            raise AgentError(
+                "TOOL_OUTPUT_CONTRACT",
+                f"{spec.name} v{spec.version} output {param.name!r} must be one of {list(param.enum)}",
+            )

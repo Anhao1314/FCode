@@ -255,6 +255,7 @@ class Harness:
             "arguments": observation.arguments,
             "result": observation.result,
             "result_hash": observation.result_hash,
+            "tool_version": observation.tool_version,
             "round": round_no,
         }
         return self._commit(task, task, "tool_succeeded", detail), observation
