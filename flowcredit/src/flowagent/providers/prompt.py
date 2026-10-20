@@ -36,7 +36,7 @@ __all__ = [
 
 from ..core.contracts import PLAN_VERSION
 
-PROMPT_VERSION = "fcode.prompt/v2"
+PROMPT_VERSION = "fcode.prompt/v3"
 
 SYSTEM_PROMPT = (
     "你是 FCode 运行时内的模型。你只能提议动作，永远不能执行。"

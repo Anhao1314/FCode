@@ -12,7 +12,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from ..base import EFFECT_READ, Param, ToolSpec
+from ..base import EFFECT_READ, EFFECT_WRITE, Param, ToolSpec
+from ..artifacts import ArtifactStore
 from ..evidence import EvidenceStore
 from .authority import evaluate_fact_authority
 from .fixtures import FinanceWorld
@@ -35,7 +36,11 @@ BLOCK_REASONS: tuple[str, ...] = (
 )
 
 
-def build_finance_tools(world: FinanceWorld, evidence: EvidenceStore | None = None) -> list[ToolSpec]:
+def build_finance_tools(
+    world: FinanceWorld,
+    evidence: EvidenceStore | None = None,
+    artifacts: ArtifactStore | None = None,
+) -> list[ToolSpec]:
     """Bind the finance world to a list of :class:`ToolSpec`.
 
     ``evidence`` is the sandbox for file ingestion. The catalog is the same
@@ -43,6 +48,7 @@ def build_finance_tools(world: FinanceWorld, evidence: EvidenceStore | None = No
     stays deterministic; only the store's contents vary.
     """
     evidence = evidence or EvidenceStore(Path.cwd())
+    artifacts = artifacts or ArtifactStore(Path.cwd() / ".fcode-artifacts")
 
     def list_documents(_: dict[str, Any]) -> dict[str, Any]:
         return world.list_documents()
@@ -86,6 +92,13 @@ def build_finance_tools(world: FinanceWorld, evidence: EvidenceStore | None = No
             arguments["doc_id"],
             int(arguments.get("start") or 1),
             arguments.get("end"),
+        )
+
+    def working_paper_append(arguments: dict[str, Any]) -> dict[str, Any]:
+        return artifacts.append_section(
+            title=arguments["title"],
+            body=arguments["body"],
+            citations=list(arguments.get("citations") or []),
         )
 
     doc_param = Param(
@@ -274,6 +287,32 @@ def build_finance_tools(world: FinanceWorld, evidence: EvidenceStore | None = No
                 out("lines", "array"),
                 out("truncated", "boolean"),
                 out("total_lines", "integer"),
+            ),
+            version="1.0",
+        ),
+        ToolSpec(
+            name="working_paper_append",
+            summary="Append one cited section to the working paper; content-addressed and approval-gated",
+            effect=EFFECT_WRITE,
+            params=(
+                Param(name="title", kind="string", required=True, description="section heading"),
+                Param(name="body", kind="string", required=True, description="section body, max 8000 characters"),
+                Param(
+                    name="citations",
+                    kind="array",
+                    required=False,
+                    maximum=20,
+                    description="doc anchors such as doc_fy2025#L12 or evidence:<hash>#L3",
+                ),
+            ),
+            handler=working_paper_append,
+            outputs=(
+                out("artifact_id", "string"),
+                out("path", "string"),
+                out("sha256", "string"),
+                out("bytes", "integer"),
+                out("section", "string"),
+                out("citations", "integer"),
             ),
             version="1.0",
         ),

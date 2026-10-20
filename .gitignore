@@ -29,3 +29,4 @@ flowcredit/sft/data/
 __pycache__/
 *.pyc
 .pytest_cache/
+.fcode-artifacts/

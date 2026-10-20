@@ -19,6 +19,7 @@ from ..core.contracts import AgentError
 
 __all__ = [
     "EFFECT_READ",
+    "EFFECT_WRITE",
     "Param",
     "ToolSpec",
     "Observation",
@@ -27,6 +28,9 @@ __all__ = [
 ]
 
 EFFECT_READ = "read"
+#: A tool that produces an artifact. Allowed only where the task scope and the
+#: host approval policy say so; the artifact store enforces the sandbox.
+EFFECT_WRITE = "write"
 
 
 @dataclass(frozen=True)
@@ -151,6 +155,19 @@ def validate_arguments(spec: ToolSpec, arguments: Mapping[str, Any]) -> dict[str
                 raise AgentError(
                     "TOOL_ARGUMENTS_INVALID",
                     f"{param.name!r} must be one of {list(param.enum)}",
+                )
+        elif param.kind == "array":
+            if not isinstance(value, (list, tuple)) or any(
+                not isinstance(item, str) or not item for item in value
+            ):
+                raise AgentError(
+                    "TOOL_ARGUMENTS_INVALID",
+                    f"{param.name!r} must be an array of non-empty strings",
+                )
+            if param.maximum is not None and len(value) > param.maximum:
+                raise AgentError(
+                    "TOOL_ARGUMENTS_INVALID",
+                    f"{param.name!r} accepts at most {param.maximum} items",
                 )
         elif param.kind == "integer":
             if isinstance(value, bool) or not isinstance(value, int):

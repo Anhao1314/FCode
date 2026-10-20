@@ -36,7 +36,7 @@ class Scenario:
     #: Tools whose consequences are large enough that the console asks a human
     #: before executing them. Data, not runtime policy: a different domain can
     #: name a different set without touching the loop.
-    approval_tools: tuple[str, ...] = ("reconcile_basis", "report_blocked")
+    approval_tools: tuple[str, ...] = ("reconcile_basis", "report_blocked", "working_paper_append")
 
 
 _ALL_TOOLS = (
@@ -47,6 +47,10 @@ _ALL_TOOLS = (
     "check_restatement",
     "calculate_margin",
     "report_blocked",
+    "ingest_file",
+    "search_corpus",
+    "read_slice",
+    "working_paper_append",
 )
 
 _OBJECTIVE = "判断恒星智算 2024 与 2025 两期合并毛利率是否可比，并在可比时给出变化"
