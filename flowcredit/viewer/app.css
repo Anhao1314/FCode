@@ -874,3 +874,17 @@ body { font-size: 13px; line-height: 1.55; }
 
 /* 审批数字键提示 */
 .apv-keys { font-family: var(--mono); font-size: 10.5px; color: var(--text-3); margin-right: 4px; }
+
+/* ============================================================== 工具目录 */
+.tool-row { padding: 9px 12px; border-bottom: 1px solid var(--border-soft); }
+.tool-row.out-of-scope { opacity: .55; }
+.tr-head { display: flex; align-items: baseline; gap: 8px; }
+.tr-name { font: 600 11.5px var(--mono); color: var(--text); }
+.eff { font: 600 9.5px var(--mono); padding: 1px 6px; border-radius: 4px; text-transform: uppercase; letter-spacing: .04em; }
+.eff-read { background: rgba(0, 0, 0, .05); color: var(--text-2); }
+.eff-write { background: var(--yellow-soft); color: var(--yellow); }
+.eff-network { background: var(--accent-soft); color: var(--accent); }
+.tr-ver { font: 10px var(--mono); color: var(--text-3); }
+.tr-scope { font: 10px var(--mono); color: var(--text-3); }
+.tr-summary { font-size: 11.5px; color: var(--text-2); margin-top: 3px; line-height: 1.5; }
+.tr-usage { font: 10px var(--mono); color: var(--text-3); margin-top: 4px; }

@@ -125,6 +125,12 @@ class Runtime:
         m = imp("flowagent.trajectory.recorder")
         self.TraceRecorder = m.TraceRecorder
 
+    def tool_contracts(self) -> list[dict]:
+        """The registered contracts (name, effect, version, schemas)."""
+        world = self.FinanceWorld()
+        registry = self.ToolRegistry(self.build_finance_tools(world))
+        return [registry.get(tool["name"]).contract() for tool in registry.catalog()]
+
     def templates(self) -> list[dict]:
         out = []
         for key in self.AVAILABLE:
@@ -1101,6 +1107,10 @@ class Handler(SimpleHTTPRequestHandler):
             if mgr.runtime is None:
                 return self._json({"error": mgr.runtime_error}, 503)
             return self._json(mgr.runtime.templates())
+        if path == "/api/tools":
+            if mgr.runtime is None:
+                return self._json({"error": mgr.runtime_error}, 503)
+            return self._json({"tools": mgr.runtime.tool_contracts()})
         if path == "/api/runs":
             return self._json(mgr.list_runs())
         if path.startswith("/api/runs/"):

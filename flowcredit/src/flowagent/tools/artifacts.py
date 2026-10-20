@@ -40,7 +40,6 @@ class ArtifactStore:
 
     def __init__(self, root: Path) -> None:
         self.root = Path(root).resolve()
-        self.root.mkdir(parents=True, exist_ok=True)
 
     def append_section(
         self,
@@ -75,6 +74,7 @@ class ArtifactStore:
         encoded = payload.encode("utf-8")
         digest = hashlib.sha256(encoded).hexdigest()
         name = f"{digest[:16]}.md"
+        self.root.mkdir(parents=True, exist_ok=True)
         target = self.root / name
         if not target.exists():
             tmp = self.root / f".tmp-{digest[:16]}"

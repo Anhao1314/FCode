@@ -125,6 +125,7 @@ let tplKey = "full";    // selected template
 let runHistory = [];    // /api/runs
 let live = null;        // 当前激活的会话（指向 sessions 中的一项）
 let runFilter = "";     // 运行记录搜索词
+let toolContracts = null; // /api/tools，工具契约（含版本与 effect）
 let olderOpen = false;  // 「更早」分组是否展开
 let scenesOpen = localStorage.getItem("fa.scenesOpen"); // null | "1" | "0"
 
@@ -553,6 +554,11 @@ function renderRail(trace, check) {
     return;
   }
 
+  if (railTab === "tools") {
+    body.innerHTML = renderTools(trace, check);
+    return;
+  }
+
   if (railTab === "chain") {
     const events = trace.events || [];
     const chain = trace.chain || {};
@@ -575,6 +581,63 @@ function renderRail(trace, check) {
   }
 
   body.innerHTML = `<pre>${esc(JSON.stringify(trace, null, 2))}</pre>`;
+}
+
+function renderTools(trace, check) {
+  const task = trace.task || {};
+  const allowed = new Set(task.allowed_tools || []);
+  const granted = new Set((task.model_grant || {}).allowed_tools || []);
+  const usage = new Map();
+  const touch = name => {
+    if (!usage.has(name)) usage.set(name, { calls: 0, denied: 0, tokens: 0, cost: 0, latency: 0 });
+    return usage.get(name);
+  };
+  for (const round of trace.rounds || []) {
+    const denied = (round.decision || {}).allowed === false;
+    const tool = (round.observation || {}).tool
+      || (round.decision || {}).tool
+      || (((round.proposal || {}).steps || [])[0] || {}).tool;
+    if (!tool) continue;
+    const stat = touch(tool);
+    stat.calls += 1;
+    if (denied) stat.denied += 1;
+    const receipt = round.receipt || {};
+    if (receipt.tokens !== undefined) stat.tokens += Number(receipt.tokens) || 0;
+    if (receipt.cost_microusd !== undefined) stat.cost += Number(receipt.cost_microusd) || 0;
+    if (receipt.latency_ms !== undefined) stat.latency += Number(receipt.latency_ms) || 0;
+  }
+  if (!toolContracts) return `<div class="rail-empty">正在加载工具契约…</div>`;
+  const rows = toolContracts
+    .slice()
+    .sort((a, b) => {
+      const ua = usage.get(a.name), ub = usage.get(b.name);
+      if ((ub ? ub.calls : 0) !== (ua ? ua.calls : 0)) return (ub ? ub.calls : 0) - (ua ? ua.calls : 0);
+      if (allowed.has(b.name) !== allowed.has(a.name)) return allowed.has(b.name) ? 1 : -1;
+      return a.name.localeCompare(b.name);
+    })
+    .map(contract => {
+      const stat = usage.get(contract.name);
+      const inScope = allowed.has(contract.name);
+      const inGrant = granted.has(contract.name);
+      const effect = contract.effect || "read";
+      const usageText = stat
+        ? `${stat.calls} 次${stat.denied ? " · 拒绝 " + stat.denied : ""}${stat.tokens ? " · " + num(stat.tokens) + " tokens" : ""}${stat.cost ? " · " + num(stat.cost) + " µUSD" : ""}${stat.latency ? " · " + num(stat.latency) + " ms" : ""}`
+        : "未使用";
+      return `<div class="tool-row${inScope ? "" : " out-of-scope"}">
+        <div class="tr-head">
+          <span class="tr-name">${esc(contract.name)}</span>
+          <span class="eff eff-${esc(effect)}">${esc(effect)}</span>
+          <span class="tr-ver">v${esc(contract.version || "?")}</span>
+          <span class="grow"></span>
+          <span class="tr-scope">${inScope ? (inGrant ? "允许 · 已授权" : "允许 · 未授权") : "不在任务范围"}</span>
+        </div>
+        <div class="tr-summary">${esc(contract.summary || "")}</div>
+        <div class="tr-usage">${esc(usageText)}</div>
+      </div>`;
+    }).join("");
+  return `<div class="rail-tools">
+      <span class="rf-hint">${allowed.size} 个允许 · ${granted.size} 个授权 · 契约来自注册表</span>
+    </div>${rows}`;
 }
 
 function summariseEvent(e) {
@@ -2025,6 +2088,11 @@ async function initLive() {
   setTemplate(templates.some(t => t.key === "full") ? "full" : templates[0].key);
   setComposerRunning(false);
   updateStatusline();
+  fetch("/api/tools", { cache: "no-store" }).then(r => r.ok ? r.json() : null).then(data => {
+    if (!data || !Array.isArray(data.tools)) return;
+    toolContracts = data.tools;
+    if (currentTrace) renderRail(currentTrace, currentCheck || { ok: false, reason: "" });
+  }).catch(() => { /* the tools tab will show 加载中 */ });
   autosize(document.getElementById("composer-ta"));
   refreshRuns();
   setInterval(refreshRuns, 2500);
