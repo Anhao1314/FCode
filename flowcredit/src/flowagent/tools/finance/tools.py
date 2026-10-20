@@ -9,9 +9,11 @@ the trace.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from ..base import EFFECT_READ, Param, ToolSpec
+from ..evidence import EvidenceStore
 from .authority import evaluate_fact_authority
 from .fixtures import FinanceWorld
 
@@ -33,8 +35,14 @@ BLOCK_REASONS: tuple[str, ...] = (
 )
 
 
-def build_finance_tools(world: FinanceWorld) -> list[ToolSpec]:
-    """Bind the finance world to a list of :class:`ToolSpec`."""
+def build_finance_tools(world: FinanceWorld, evidence: EvidenceStore | None = None) -> list[ToolSpec]:
+    """Bind the finance world to a list of :class:`ToolSpec`.
+
+    ``evidence`` is the sandbox for file ingestion. The catalog is the same
+    whether or not anything has been ingested, so the model-visible tool list
+    stays deterministic; only the store's contents vary.
+    """
+    evidence = evidence or EvidenceStore(Path.cwd())
 
     def list_documents(_: dict[str, Any]) -> dict[str, Any]:
         return world.list_documents()
@@ -66,6 +74,19 @@ def build_finance_tools(world: FinanceWorld) -> list[ToolSpec]:
 
     def report_blocked(arguments: dict[str, Any]) -> dict[str, Any]:
         return world.report_blocked(arguments["reason"])
+
+    def ingest_file(arguments: dict[str, Any]) -> dict[str, Any]:
+        return evidence.ingest(arguments["path"])
+
+    def search_corpus(arguments: dict[str, Any]) -> dict[str, Any]:
+        return evidence.search(arguments["query"], int(arguments.get("limit") or 10))
+
+    def read_slice(arguments: dict[str, Any]) -> dict[str, Any]:
+        return evidence.read_slice(
+            arguments["doc_id"],
+            int(arguments.get("start") or 1),
+            arguments.get("end"),
+        )
 
     doc_param = Param(
         name="doc_id",
@@ -192,6 +213,67 @@ def build_finance_tools(world: FinanceWorld) -> list[ToolSpec]:
                 out("acknowledged", "boolean"),
                 out("reason", "string"),
                 out("blocker_count", "integer"),
+            ),
+            version="1.0",
+        ),
+        ToolSpec(
+            name="ingest_file",
+            summary="Ingest a text/CSV/JSON file inside the evidence sandbox; returns a content hash and line anchors",
+            effect=EFFECT_READ,
+            params=(
+                Param(
+                    name="path",
+                    kind="string",
+                    required=True,
+                    description="path relative to the evidence root (absolute paths and .. are refused)",
+                ),
+            ),
+            handler=ingest_file,
+            outputs=(
+                out("doc_id", "string"),
+                out("kind", "string"),
+                out("size", "integer"),
+                out("sha256", "string"),
+                out("lines", "integer"),
+                out("rows", "integer", required=False, nullable=True),
+                out("columns", "array", required=False, nullable=True),
+            ),
+            version="1.0",
+        ),
+        ToolSpec(
+            name="search_corpus",
+            summary="Search ingested evidence by substring; returns hits with doc_id and line anchors",
+            effect=EFFECT_READ,
+            params=(
+                Param(name="query", kind="string", required=True, description="case-insensitive substring"),
+                Param(name="limit", kind="integer", required=False, minimum=1, maximum=50, description="max hits (default 10)"),
+            ),
+            handler=search_corpus,
+            outputs=(
+                out("query", "string"),
+                out("hits", "array"),
+                out("scanned", "integer"),
+                out("truncated", "boolean"),
+            ),
+            version="1.0",
+        ),
+        ToolSpec(
+            name="read_slice",
+            summary="Read a bounded line range from ingested evidence; whole documents are never dumped",
+            effect=EFFECT_READ,
+            params=(
+                Param(name="doc_id", kind="string", required=True, description="doc_id returned by ingest_file"),
+                Param(name="start", kind="integer", required=False, minimum=1, description="first line (1-based, default 1)"),
+                Param(name="end", kind="integer", required=False, minimum=1, description="last line (inclusive; window capped at 80 lines)"),
+            ),
+            handler=read_slice,
+            outputs=(
+                out("doc_id", "string"),
+                out("start", "integer"),
+                out("end", "integer"),
+                out("lines", "array"),
+                out("truncated", "boolean"),
+                out("total_lines", "integer"),
             ),
             version="1.0",
         ),
