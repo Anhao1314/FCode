@@ -204,6 +204,7 @@ class Run:
     approval: str = "consequential"  # off | consequential | all
     pending: dict | None = None
     cost: dict | None = None
+    spec: dict | None = None
     controller: Any = None
     lock: threading.RLock = field(default_factory=threading.RLock)
     cond: threading.Condition = field(init=False)
@@ -232,6 +233,7 @@ class Run:
             "approval": self.approval,
             "taskId": self.task_id,
             "cost": self.cost,
+            "spec": self.spec,
         }
         if detail:
             out["error"] = self.error
@@ -295,6 +297,7 @@ class RunManager:
                 approval=meta.get("approval", "consequential"),
                 task_id=meta.get("taskId", ""),
                 cost=meta.get("cost"),
+                spec=meta.get("spec"),
                 finished=True,
             )
             self.runs[run.id] = run
@@ -360,7 +363,7 @@ class RunManager:
             },
         }
 
-    def create(self, objective: str, template: str, approval: str = "consequential") -> Run:
+    def create(self, objective: str, template: str, approval: str = "consequential", spec: dict | None = None) -> Run:
         with self._lock:
             self._seq += 1
             stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
@@ -372,6 +375,7 @@ class RunManager:
                 created=datetime.now(timezone.utc).isoformat(timespec="seconds"),
                 pace=self.pace,
                 approval=approval,
+                spec=spec,
             )
             self.runs[run_id] = run
             self.order.insert(0, run_id)
@@ -493,6 +497,7 @@ class RunManager:
                     "module": module.key,
                     "corpus": "synthetic-authored-v1",
                     "source": "viewer-live",
+                    **({"spec": run.spec} if run.spec else {}),
                 },
                     allowed_tools=list(scenario.allowed_tools),
                     grant=scenario.grant,
@@ -1341,7 +1346,13 @@ class Handler(SimpleHTTPRequestHandler):
             approval = str(body.get("approval") or "consequential")
             if approval not in ("off", "consequential", "all"):
                 return self._json({"error": "approval must be off, consequential or all"}, 400)
-            run = mgr.create(objective, template, approval)
+            spec = body.get("spec")
+            if spec is not None:
+                if not isinstance(spec, dict):
+                    return self._json({"error": "spec must be an object"}, 400)
+                if len(json.dumps(spec, ensure_ascii=False).encode("utf-8")) > 4096:
+                    return self._json({"error": "spec is too large"}, 400)
+            run = mgr.create(objective, template, approval, spec)
             return self._json(run.to_json(detail=True), 202)
         if path.startswith("/api/runs/") and path.endswith("/stop"):
             run_id = path[len("/api/runs/") : -len("/stop")]

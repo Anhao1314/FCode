@@ -273,6 +273,7 @@ function renderNav() {
 /* ------------------------------------------------------------- 工作台账本 */
 
 function openLedger() {
+  if (intake.active) closeIntake(false);
   if (settingsOpen) closeSettingsPage(false);
   ledgerOpen = true;
   if (live) detachLive();
@@ -1918,7 +1919,7 @@ function createSession(id, objective, template) {
     pending: null, pendingDeadline: 0, deciding: null, approvalKey: "",
     planEditing: false, planConfirm: null, planQueued: null,
     budgetEditing: false, budgetQueued: null, thoughtPinned: false,
-    queuedMsgs: [],
+    autoReport: false, queuedMsgs: [],
   };
 }
 
@@ -2107,6 +2108,10 @@ function finishSession(s, data) {
   }
   renderTabs();
   if (live === s) updateStatusline();
+  if (s.autoReport && status === "succeeded" && live === s) {
+    s.autoReport = false;
+    setTimeout(() => { if (live === s && currentTrace) openReport(); }, 300);
+  }
 }
 
 function detachLive() {
@@ -2168,8 +2173,371 @@ function renderTabs() {
   }
 }
 
-/* 输入框统一入口：运行中 = 发消息，空闲 = 派新任务 */
+/* --------------------------------------------------------------- 委托入口
+   选择优先：先问三个高价值问题，再把选择收敛成任务卡。自由输入始终保留。 */
+
+const INTAKE_KEY = "fa.intake";
+const INTAKE_INTENTS = {
+  compare: {
+    label: "判断两期能不能直接比",
+    short: "两期可比性",
+    desc: "核对单位、口径、重述后，再决定能不能算",
+    template: "full",
+  },
+  restatement: {
+    label: "重点看重述与口径变化",
+    short: "重述与口径",
+    desc: "解释 FY2024 重述和 FY2025 的桥接口径",
+    template: "full",
+  },
+  missing: {
+    label: "资料可能不全，先看能否下结论",
+    short: "资料不全",
+    desc: "缺证据时明确阻塞，不编数字",
+    template: "open-ended",
+  },
+};
+const INTAKE_OUTPUTS = {
+  memo: {
+    label: "一页结论 + 审计底稿",
+    short: "结论 + 底稿",
+    desc: "完成后自动打开可签发的底稿",
+    badge: "推荐",
+  },
+  trace: {
+    label: "详细过程 + 原始 trace",
+    short: "详细过程",
+    desc: "保留运行现场，自己检查证据链",
+  },
+  conclusion: {
+    label: "只要结论",
+    short: "只要结论",
+    desc: "不自动打开底稿，需要时再签发",
+  },
+};
+
+function loadIntakePrefs() {
+  const raw = localStorage.getItem(INTAKE_KEY);
+  try {
+    const parsed = JSON.parse(raw || "{}");
+    return {
+      stored: !!raw,
+      intent: INTAKE_INTENTS[parsed.intent] ? parsed.intent : "",
+      output: INTAKE_OUTPUTS[parsed.output] ? parsed.output : "memo",
+      approval: APPROVAL_MODES.some(([key]) => key === parsed.approval) ? parsed.approval : approvalMode,
+    };
+  } catch {
+    return { stored: false, intent: "", output: "memo", approval: approvalMode };
+  }
+}
+
+const intakePrefs = loadIntakePrefs();
+const intake = {
+  active: false,
+  original: "",
+  step: "intent",
+  intent: "",
+  output: intakePrefs.output,
+  approval: intakePrefs.approval,
+  returnKey: null,
+  returnLabel: "",
+  note: "",
+};
+
+function inferIntakeIntent(text) {
+  const value = String(text || "");
+  if (/重述|调整后|口径|桥接/.test(value)) return "restatement";
+  if (/不全|缺|没有|找不到|不足/.test(value)) return "missing";
+  if (/可比|对比|比较|毛利率|两期|变化/.test(value)) return "compare";
+  return "";
+}
+
+function intakeTemplateKey() {
+  return (INTAKE_INTENTS[intake.intent] || INTAKE_INTENTS.compare).template;
+}
+
+function intakeTemplate() {
+  return templates.find(t => t.key === intakeTemplateKey()) || {};
+}
+
+function intakeSavePrefs() {
+  try {
+    localStorage.setItem(INTAKE_KEY, JSON.stringify({
+      intent: intake.intent,
+      output: intake.output,
+      approval: intake.approval,
+    }));
+    intakePrefs.stored = true;
+    intakePrefs.intent = intake.intent;
+    intakePrefs.output = intake.output;
+    intakePrefs.approval = intake.approval;
+  } catch { /* quota */ }
+}
+
+function intakePickedHtml() {
+  const picked = [];
+  if (intake.intent) picked.push(INTAKE_INTENTS[intake.intent].short);
+  if (intake.step === "approval" || intake.step === "summary") picked.push(INTAKE_OUTPUTS[intake.output].short);
+  if (intake.step === "summary") picked.push(approvalTitle(intake.approval));
+  if (!picked.length) return "";
+  return `<div class="intake-picked">${picked.map(item => `<span>${esc(item)}</span>`).join("")}</div>`;
+}
+
+function intakeQuestion() {
+  if (intake.step === "intent") {
+    return {
+      title: "你更想要哪一种结果？",
+      desc: "我先按内置合成资料来理解；选中的关注点会写进任务卡。",
+      field: "intent",
+      options: Object.entries(INTAKE_INTENTS).map(([key, item]) => ({
+        value: key,
+        label: item.label,
+        desc: item.desc,
+        badge: intakePrefs.stored && intakePrefs.intent === key ? "上次选择" : (key === "compare" ? "推荐" : ""),
+      })),
+    };
+  }
+  if (intake.step === "output") {
+    return {
+      title: "结果怎么用？",
+      desc: "这只改变运行结束后的呈现，不改变证据与计算。",
+      field: "output",
+      options: Object.entries(INTAKE_OUTPUTS).map(([key, item]) => ({
+        value: key,
+        label: item.label,
+        desc: item.desc,
+        badge: intakePrefs.stored && intakePrefs.output === key ? "上次选择" : (item.badge || ""),
+      })),
+    };
+  }
+  if (intake.step === "approval") {
+    return {
+      title: "审批怎么设？",
+      desc: "关键步骤停下来等你确认；自动模式下权限门控与预算仍然生效。",
+      field: "approval",
+      options: APPROVAL_MODES.map(([key, title, desc]) => ({
+        value: key,
+        label: title,
+        desc,
+        badge: key === approvalMode ? "当前默认" : "",
+      })),
+    };
+  }
+  return null;
+}
+
+function intakeDraftHtml() {
+  const template = intakeTemplate();
+  const limits = template.limits || {};
+  const intent = intake.intent ? INTAKE_INTENTS[intake.intent].label : "待选择";
+  const output = INTAKE_OUTPUTS[intake.output] ? INTAKE_OUTPUTS[intake.output].short : "待选择";
+  const budget = limits.max_calls
+    ? `${num(limits.max_calls)} calls · ${num(limits.max_reads)} reads · ${num(limits.max_cost_microusd)} µUSD`
+    : "—";
+  const canStart = intake.step === "summary";
+  return `<div class="intake-draft">
+    <div class="intake-draft-head"><span>任务草稿</span><span class="intake-draft-tag">内置合成资料 · 恒星智算</span></div>
+    <div class="intake-row"><span>问题</span><b>${esc(intent)}</b></div>
+    <div class="intake-row"><span>输出</span><b>${esc(output)}</b></div>
+    <div class="intake-row"><span>审批</span><b>${esc(approvalTitle(intake.approval))}</b></div>
+    <div class="intake-row"><span>预算</span><b>${esc(budget)}</b></div>
+    <div class="intake-actions">
+      <button class="a-btn" data-intake-cancel>取消</button>
+      ${intake.step !== "intent" ? `<button class="a-btn" data-intake-back>上一步</button>` : ""}
+      <span class="grow"></span>
+      <button class="a-btn strong" data-intake-start${canStart ? "" : " disabled"}>${canStart ? "开始委托" : "还差一步"}</button>
+    </div>
+  </div>`;
+}
+
+function renderIntake() {
+  const main = document.getElementById("main");
+  if (!intake.active) return;
+  const question = intakeQuestion();
+  const choices = question ? question.options.map(option => {
+    const selected = intake[question.field] === option.value;
+    return `<button class="intake-choice${selected ? " selected" : ""}" type="button"
+      data-intake-choice data-intake-field="${esc(question.field)}" data-intake-value="${esc(option.value)}">
+      <span class="t"><b>${esc(option.label)}</b>${option.badge ? `<span class="intake-badge">${esc(option.badge)}</span>` : ""}</span>
+      <small>${esc(option.desc)}</small>
+    </button>`;
+  }).join("") : "";
+  const original = intake.original
+    ? `<div class="intake-msg user"><span class="who">你</span><p>${esc(intake.original)}</p></div>`
+    : "";
+  const agent = question
+    ? `<div class="intake-msg agent"><span class="who">FCode</span>
+        <p class="intake-q">${esc(question.title)}</p>
+        <p class="intake-desc">${esc(question.desc)}</p>
+        <div class="intake-choices">${choices}</div>
+      </div>`
+    : `<div class="intake-msg agent"><span class="who">FCode</span>
+        <p class="intake-q">我准备这样执行</p>
+        <p class="intake-desc">确认后才会创建运行；任务卡会随委托写入哈希链。</p>
+      </div>`;
+  main.innerHTML = `<div class="intake">
+    <div class="intake-head">
+      <div>
+        <div class="intake-kicker"><span data-doodle="list-checks"></span> NEW DELEGATION</div>
+        <h1 class="intake-title">先说清楚，再开始</h1>
+        <p class="intake-sub">三个选择就够了。也可以直接在下方描述。</p>
+      </div>
+    </div>
+    <div class="intake-thread">
+      ${original}
+      ${intakePickedHtml()}
+      ${agent}
+      ${intake.note ? `<p class="intake-note">${esc(intake.note)}</p>` : ""}
+      ${intakeDraftHtml()}
+    </div>
+  </div>`;
+  hydrateDoodles(main);
+  main.scrollTop = main.scrollHeight;
+}
+
+function startIntake(text = "") {
+  if (!health || !health.live) {
+    toast("回放模式：用 python3 viewer/server.py 启动后才能创建委托");
+    return;
+  }
+  if (live && live.running && !live.finished) {
+    toast("当前任务还在运行：先停止，或等它结束后再开新委托");
+    return;
+  }
+  if (settingsOpen) closeSettingsPage(false);
+  intake.active = true;
+  intake.original = String(text || "").trim();
+  intake.returnKey = currentKey;
+  intake.returnLabel = document.getElementById("tb-title").textContent || "当前视图";
+  intake.intent = inferIntakeIntent(intake.original);
+  intake.output = intakePrefs.output;
+  intake.approval = intakePrefs.approval;
+  intake.step = intake.intent ? "output" : "intent";
+  intake.note = intake.intent ? "已从你的描述里识别到关注点。" : "";
+  document.getElementById("app").classList.add("intake-mode");
+  document.getElementById("tb-title").textContent = "新委托 · 需求确认";
+  document.getElementById("tb-chips").innerHTML = `<span class="chip">需求确认</span>`;
+  const ta = document.getElementById("composer-ta");
+  ta.value = "";
+  autosize(ta);
+  ta.placeholder = "也可以直接输入你的需求，Enter 交给 agent…";
+  renderIntake();
+}
+
+function closeIntake(restore = true) {
+  if (!intake.active) return;
+  intake.active = false;
+  document.getElementById("app").classList.remove("intake-mode");
+  setComposerRunning(false);
+  if (restore && intake.returnKey) {
+    select(intake.returnKey, intake.returnLabel);
+  } else if (restore) {
+    document.getElementById("main").innerHTML = `<div class="empty empty-doodle">
+      <span class="empty-doodle-icon" data-doodle="book-open" data-doodle-anim="1"></span>
+      <p>给 agent 派一个工作委托，或从左侧打开运行记录。</p>
+      <p class="dim">每个数字有来源，每次计算被复算，每份底稿不可篡改。</p>
+      <button class="a-btn strong" data-wizard-open style="margin-top:14px">创建第一个委托</button>
+    </div>`;
+    document.getElementById("tb-title").textContent = "—";
+    document.getElementById("tb-chips").innerHTML = "";
+    hydrateDoodles(document.getElementById("main"));
+  }
+}
+
+function intakeChoose(field, value) {
+  if (!intake.active) return;
+  if (field === "intent" && INTAKE_INTENTS[value]) {
+    intake.intent = value;
+    intake.step = "output";
+  } else if (field === "output" && INTAKE_OUTPUTS[value]) {
+    intake.output = value;
+    intake.step = "approval";
+  } else if (field === "approval" && APPROVAL_MODES.some(([key]) => key === value)) {
+    intake.approval = value;
+    intake.step = "summary";
+  }
+  intake.note = "";
+  renderIntake();
+}
+
+function intakeBack() {
+  if (intake.step === "summary") intake.step = "approval";
+  else if (intake.step === "approval") intake.step = "output";
+  else if (intake.step === "output") intake.step = "intent";
+  intake.note = "";
+  renderIntake();
+}
+
+function intakeFreeText(text) {
+  const value = String(text || "").trim();
+  if (!value || !intake.active) return;
+  intake.original = intake.original ? `${intake.original}\n${value}` : value;
+  const inferred = inferIntakeIntent(value);
+  if (inferred) {
+    intake.intent = inferred;
+    intake.step = "output";
+    intake.note = "已根据你的补充更新关注点。";
+  } else {
+    intake.note = "没识别到具体关注点，先选一个最接近的。";
+    if (!intake.intent) intake.step = "intent";
+  }
+  renderIntake();
+}
+
+async function startIntakeRun() {
+  if (!intake.active || intake.step !== "summary") return;
+  const templateKey = intakeTemplateKey();
+  const template = intakeTemplate();
+  const base = intake.original || template.objective || "";
+  const objective = `${base}${base ? "；" : ""}关注点：${INTAKE_INTENTS[intake.intent].label}`;
+  const spec = {
+    version: "fcode.intake/v1",
+    task: "financial-check",
+    intent: intake.intent,
+    output: intake.output,
+    approval: intake.approval,
+    materials: "builtin-synthetic",
+    subject: "恒星智算",
+    periods: ["FY2024", "FY2025"],
+    source: "console-intake",
+  };
+  const button = document.querySelector("[data-intake-start]");
+  if (button) { button.disabled = true; button.textContent = "提交中…"; }
+  try {
+    const response = await fetch("/api/runs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ objective, template: templateKey, approval: intake.approval, spec }),
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.error || `HTTP ${response.status}`);
+    }
+    const run = await response.json();
+    intakeSavePrefs();
+    intake.active = false;
+    document.getElementById("app").classList.remove("intake-mode");
+    setComposerRunning(false);
+    toast("委托已受理 · 开始执行");
+    openLive(run.id, objective, run.template);
+    if (live) live.autoReport = intake.output === "memo";
+    refreshRuns();
+  } catch (error) {
+    toast("委托提交失败：" + error.message);
+    if (button) { button.disabled = false; button.textContent = "开始委托"; }
+  }
+}
+
+/* 输入框统一入口：需求选择中 = 补充描述，运行中 = 发消息，空闲 = 开始新委托 */
 function composerSubmit() {
+  if (intake.active) {
+    const ta = document.getElementById("composer-ta");
+    const text = (ta.value || "").trim();
+    if (!text) { toast("先选一个选项，或在下方描述你的需求"); return; }
+    ta.value = "";
+    autosize(ta);
+    return intakeFreeText(text);
+  }
   if (live && live.running && !live.finished) return sendOperatorMessage();
   return sendTask();
 }
@@ -2219,37 +2587,14 @@ function paintQueuedMsgs() {
 
 async function sendTask() {
   const ta = document.getElementById("composer-ta");
-  const template = templates.find(t => t.key === tplKey) || {};
-  const objective = ta.value.trim() || template.objective || "";
-  if (!objective) return;
+  const text = (ta.value || "").trim();
   if (!health || !health.live) {
     toast("回放模式：用 python3 viewer/server.py 启动后才能派任务");
     return;
   }
-  const btn = document.getElementById("send");
-  btn.disabled = true;
-  try {
-    const response = await fetch("/api/runs", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ objective, template: tplKey, approval: approvalMode }),
-    });
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({}));
-      throw new Error(error.error || `HTTP ${response.status}`);
-    }
-    const run = await response.json();
-    ta.value = "";
-    autosize(ta);
-    openLive(run.id, objective, run.template);
-    refreshRuns();
-    ta.blur();
-  } catch (error) {
-    document.getElementById("main").innerHTML =
-      `<div class="empty">无法启动运行：${esc(error.message)}</div>`;
-  } finally {
-    if (!(live && live.running)) btn.disabled = !(health && health.live);
-  }
+  ta.value = "";
+  autosize(ta);
+  startIntake(text);
 }
 
 async function stopRun() {
@@ -2385,6 +2730,7 @@ async function initLive() {
 }
 
 async function selectRun(id) {
+  if (intake.active) closeIntake(false);
   if (settingsOpen) closeSettingsPage(false);
   ledgerOpen = false;
   evExpanded.clear();
@@ -2441,6 +2787,7 @@ async function loadTrace(key) {
 }
 
 async function select(key, label) {
+  if (intake.active) closeIntake(false);
   if (settingsOpen) closeSettingsPage(false);
   if (key.startsWith("run:")) return selectRun(key.slice(4));
   ledgerOpen = false;
@@ -2660,6 +3007,7 @@ function wizardTemplate() {
 
 function openWizard() {
   if (settingsOpen) closeSettingsPage(false);
+  if (intake.active) closeIntake(false);
   if (!health || !health.live) {
     toast("回放模式：用 python3 viewer/server.py 启动后才能创建委托");
     return;
@@ -3103,6 +3451,7 @@ function activateSettingsSection(name, behavior = motionOn ? "smooth" : "auto") 
 
 function openSettingsPage() {
   if (settingsOpen) return;
+  if (intake.active) closeIntake(false);
   settingsOpen = true;
   settingsScroll.main = document.getElementById("main").scrollTop;
   settingsScroll.rail = document.getElementById("rail-body").scrollTop;
@@ -3265,7 +3614,8 @@ function focusComposer() {
 
 function paletteActions() {
   const actions = [
-    { ic: "＋", label: "新委托 · 建单向导", run: openWizard },
+    { ic: "＋", label: "新委托 · 需求选择", run: () => startIntake("") },
+    { ic: "＋", label: "高级建单向导", run: openWizard },
     { ic: "✎", label: "新任务 · 聚焦输入框", run: focusComposer },
   ];
   if (live && live.running) actions.push({ ic: "■", label: "停止当前运行", run: stopRun });
@@ -3482,9 +3832,9 @@ function bind() {
   hydrateDoodles();
   applyMotion();
   bindSettings();
-  document.getElementById("new-run").addEventListener("click", openWizard);
+  document.getElementById("new-run").addEventListener("click", () => startIntake(""));
   document.getElementById("desk-btn").addEventListener("click", openLedger);
-  document.getElementById("composer-open").addEventListener("click", openWizard);
+  document.getElementById("composer-open").addEventListener("click", () => startIntake(""));
   bindWizard();
   document.getElementById("pick").addEventListener("change", event => {
     if (event.target.files[0]) fromFile(event.target.files[0]);
@@ -3594,7 +3944,15 @@ function bind() {
     else if (event.key === "Escape") { event.preventDefault(); closePalette(); }
   });
   document.getElementById("main").addEventListener("click", event => {
-    if (event.target.closest("[data-wizard-open]")) { openWizard(); return; }
+    const intakeChoice = event.target.closest("[data-intake-choice]");
+    if (intakeChoice) {
+      intakeChoose(intakeChoice.dataset.intakeField, intakeChoice.dataset.intakeValue);
+      return;
+    }
+    if (event.target.closest("[data-intake-start]")) { startIntakeRun(); return; }
+    if (event.target.closest("[data-intake-back]")) { intakeBack(); return; }
+    if (event.target.closest("[data-intake-cancel]")) { closeIntake(true); return; }
+    if (event.target.closest("[data-wizard-open]")) { startIntake(""); return; }
     const ledDel = event.target.closest("[data-led-del]");
     if (ledDel) {
       const id = ledDel.dataset.ledDel;
@@ -3695,7 +4053,7 @@ function bind() {
   document.addEventListener("keydown", e => {
     const mod = e.metaKey || e.ctrlKey;
     if (mod && e.key.toLowerCase() === "k") { e.preventDefault(); togglePalette(); return; }
-    if (mod && e.key.toLowerCase() === "n") { e.preventDefault(); openWizard(); return; }
+    if (mod && e.key.toLowerCase() === "n") { e.preventDefault(); startIntake(""); return; }
     if (mod && e.key === ",") { e.preventDefault(); toggleSettingsPage(); return; }
     if (mod && e.key === ".") { e.preventDefault(); if (live && live.running) stopRun(); return; }
     if (mod && live && live.pending && !live.deciding && (e.key === "Enter" || e.key === "Backspace" || e.key === "Delete")) {
@@ -3766,6 +4124,7 @@ function bind() {
 }
 
 function replay() {
+  if (intake.active) closeIntake(false);
   if (settingsOpen) closeSettingsPage(false);
   if (currentKey && currentKey.startsWith("run:")) return; // run records are immutable
   if (currentKey) { cache.delete(currentKey); select(currentKey, labelOf(currentKey)); }
@@ -3774,6 +4133,7 @@ function replay() {
 
 async function fromFile(file) {
   try {
+    if (intake.active) closeIntake(false);
     if (settingsOpen) closeSettingsPage(false);
     ledgerOpen = false;
     const trace = JSON.parse(await file.text());
