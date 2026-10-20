@@ -163,6 +163,33 @@ svg.i { width: 15px; height: 15px; flex: none; stroke: currentColor; stroke-widt
 .prompt-text { margin: 0; font-size: 15.5px; line-height: 1.7; font-weight: 500; color: var(--text); }
 .prompt-note { margin: 12px 0 2px; color: var(--text-3); font-size: 12px; line-height: 1.75; }
 
+/* 思考链：过程默认收起，最终只留下结论；展开后仍是完整可审计轨迹 */
+.thought {
+  margin: 14px 0 10px;
+  border-top: 1px solid var(--border-soft);
+  border-bottom: 1px solid var(--border-soft);
+}
+.thought-head {
+  display: flex; align-items: center; gap: 10px;
+  padding: 11px 2px; cursor: pointer; list-style: none; user-select: none;
+}
+.thought-head::-webkit-details-marker { display: none; }
+.thought-head:hover { color: var(--text-2); }
+.thought-title {
+  display: inline-flex; align-items: center; gap: 7px;
+  color: var(--text-2); font-size: 12px; font-weight: 500; flex: none;
+}
+.thought-title svg { width: 14px; height: 14px; color: var(--text-3); }
+.thought-meta { font-family: var(--mono); font-size: 10.5px; color: var(--text-3); white-space: nowrap; }
+.thought-hint {
+  color: var(--text-3); font-size: 11px; min-width: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.thought .chev { color: var(--text-3); font-size: 11px; transition: transform .16s ease; flex: none; }
+.thought:not([open]) .chev { transform: rotate(-90deg); }
+.thought-body { padding: 0 0 6px; }
+.thought-body > .card:first-child { margin-top: 0; }
+
 /* cards */
 .card {
   border: 1px solid var(--border-soft); border-radius: var(--r-card); background: var(--card);
@@ -296,6 +323,10 @@ details.raw pre {
 }
 
 /* 结果与操作 */
+.result-answer {
+  margin: 0; padding: 0 14px 10px;
+  color: var(--text); font-size: 14px; line-height: 1.75;
+}
 .result .metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; padding: 2px 14px 8px; }
 .metric .k { font-size: 11.5px; color: var(--text-3); margin-bottom: 4px; }
 .metric .v { font-family: var(--mono); font-size: 22px; letter-spacing: -.01em; font-variant-numeric: tabular-nums; }
@@ -488,6 +519,7 @@ details.raw pre {
 }
 .tpl-note { padding: 7px 11px 5px; margin-top: 4px; border-top: 1px solid var(--border-soft); color: var(--text-3); font-size: 10.5px; line-height: 1.6; }
 .run-chip { color: var(--accent); border-color: rgba(78,155,216,.3); background: var(--accent-soft); gap: 7px; }
+.run-chip[hidden] { display: none; }
 .run-chip .pdot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); animation: blink 1.1s ease-in-out infinite; }
 .send.stop { background: #d7d7d7; color: #161616; }
 .send.stop:hover { background: #fafafa; }

@@ -45,6 +45,18 @@ const ICON = {
   x:       '<svg class="i" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>',
   circle:  '<svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7.5"/></svg>',
   lock:    '<svg class="i" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>',
+  thought: '<svg class="i" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="19" cy="12" r="1.4"/></svg>',
+};
+
+/* 失败原因的用户语言；代码仍保留在结果卡下方，方便审计 */
+const FAILURE_REASONS = {
+  BUDGET_EXCEEDED: "预算已耗尽",
+  ROUND_LIMIT: "达到轮次上限",
+  OPERATOR_DENIED: "操作员拒绝了关键工具调用",
+  PLAN_BLOCKED: "计划被阻塞",
+  PLAN_EXHAUSTED: "计划已没有可执行步骤",
+  INSUFFICIENT_EVIDENCE: "证据不足，Runtime 拒绝给出未经证明的数字",
+  STOPPED_BY_OPERATOR: "操作员停止了运行",
 };
 const dot = cls => `<span class="ev-dot ${cls || ""}"></span>`;
 
@@ -53,7 +65,7 @@ let currentKey = null;
 let currentTrace = null;
 let currentCheck = null;
 let railTab = "events";
-let railOpen = true;
+let railOpen = window.innerWidth > 1100;
 let railHumanOnly = false;
 let approvalMode = localStorage.getItem("fa.approval") || "consequential";
 if (!APPROVAL_MODES.some(([key]) => key === approvalMode)) approvalMode = "consequential";
@@ -592,6 +604,20 @@ function renderRound(round, index, ann = {}) {
   </div>`;
 }
 
+function resultConclusion(result) {
+  if (!result || result.change_bp === undefined) return "";
+  if (result.comparable === false) return "两期数据口径不可比，不能给出变化结论。";
+  const chg = result.change_bp;
+  const direction = chg > 0 ? "上升" : chg < 0 ? "下降" : "持平";
+  const amount = chg === 0 ? "" : ` ${(Math.abs(chg) / 100).toFixed(2)} 个百分点`;
+  return `两期合并毛利率可比：FY2024 ${pct(result.margin_bp_2024)}，FY2025 ${pct(result.margin_bp_2025)}，${direction}${amount}。`;
+}
+
+function failureConclusion(failure) {
+  const reason = FAILURE_REASONS[failure.code] || failure.message || "运行未能完成";
+  return `未能给出结论：${reason}。`;
+}
+
 function renderResult(trace) {
   const terminal = trace.terminal || {};
   const result = terminal.result || {};
@@ -601,11 +627,12 @@ function renderResult(trace) {
     const chg = result.change_bp;
     return `<div class="card result">
       <div class="card-head">
-        <span class="card-title">${ICON.check} 结果</span>
-        <span class="badge pass" style="margin-left:2px"><span class="dot"></span>succeeded</span>
+        <span class="card-title">${ICON.check} 结论</span>
+        <span class="badge pass" style="margin-left:2px"><span class="dot"></span>已验证</span>
         <span class="grow"></span>
-        <span class="card-meta">runtime-recomputed</span>
+        <span class="card-meta">succeeded · runtime-recomputed</span>
       </div>
+      <p class="result-answer">${esc(resultConclusion(result))}</p>
       <div class="metrics">
         <div class="metric"><div class="k">FY2024 毛利率</div><div class="v">${pct(result.margin_bp_2024)}</div></div>
         <div class="metric"><div class="k">FY2025 毛利率</div><div class="v">${pct(result.margin_bp_2025)}</div></div>
@@ -622,13 +649,27 @@ function renderResult(trace) {
     </div>`;
   }
 
+  if (terminal.status === "succeeded") {
+    return `<div class="card result">
+      <div class="card-head">
+        <span class="card-title">${ICON.check} 结论</span>
+        <span class="badge pass" style="margin-left:2px"><span class="dot"></span>已验证</span>
+        <span class="grow"></span>
+        <span class="card-meta">succeeded</span>
+      </div>
+      <p class="result-answer">任务已完成，结果通过 Runtime 独立校验。</p>
+      <div class="result-foot">${runActionsHtml(trace)}</div>
+    </div>`;
+  }
+
   return `<div class="card result">
     <div class="card-head">
-      <span class="card-title">${ICON.alert} 结果</span>
+      <span class="card-title">${ICON.alert} 未能得出结论</span>
       <span class="badge ${stateClass(terminal.status)}" style="margin-left:2px"><span class="dot"></span>${esc(terminal.status || "?")}</span>
       <span class="grow"></span>
       <span class="card-meta">序列 ${esc(terminal.sequence)}</span>
     </div>
+    <p class="result-answer">${esc(failureConclusion(failure))}</p>
     <div class="fail-line">
       <span class="code">${esc(failure.code || "—")}</span>
       <span class="msg">${esc(failure.message || "")}</span>
@@ -710,7 +751,6 @@ async function render(trace, title) {
   const task = trace.task || {};
   const terminal = trace.terminal || {};
   const rounds = trace.rounds || [];
-  const status = terminal.status || task.status;
   const model = trace.model || {};
   const anns = annotateRounds(trace);
 
@@ -719,20 +759,30 @@ async function render(trace, title) {
 
   const started = (trace.events && trace.events[0] && trace.events[0].at)
     ? String(trace.events[0].at).replace("T", " ").slice(0, 19) : "";
-  const statusColor = { ok: "var(--green)", bad: "var(--red)" }[stateClass(status)] || "var(--yellow)";
+  const events = (trace.events || []).length;
+  const note = `Fcode · ${rounds.length} 轮 · ${events} 个事件 · ${check.ok ? "全链验证通过" : "链验证失败"}${started ? " · " + started + "Z" : ""}`;
 
   document.getElementById("main").innerHTML = `
     <section class="prompt">
       <div class="prompt-kicker">任务 · ${esc(task.principal || "")}</div>
       <p class="prompt-text">${esc(task.objective || "")}</p>
-      <p class="prompt-note">以下为 Runtime 生成的签名轨迹：每轮「模型提议 → 宿主门控 → 工具执行 → 收据入账」，
-      全链可在浏览器里重算校对。模型 ${esc(model.model || "—")}（${esc(model.provider || "—")}）· 终态
-      <span style="color:${statusColor}">${esc(status || "?")}</span>
-      · ${rounds.length} 轮 · ${(trace.events || []).length} 事件${started ? " · " + esc(started) + "Z" : ""}</p>
+      <p class="prompt-note">${esc(note)}</p>
     </section>
-    <div id="plan-slot">${renderPlan(lastPlan(trace))}</div>
-    <div id="budget-slot">${renderMeters(trace)}</div>
-    <div id="rounds-slot">${rounds.map((r, i) => renderRound(r, i, anns[i])).join("")}</div>
+    <div id="approval-slot"></div>
+    <details class="thought" id="thought">
+      <summary class="thought-head">
+        <span class="thought-title">${ICON.thought} 思考链</span>
+        <span class="thought-meta">${thoughtMeta(trace)}</span>
+        <span class="grow"></span>
+        <span class="thought-hint">计划、工具调用与证据</span>
+        <span class="chev">▾</span>
+      </summary>
+      <div class="thought-body">
+        <div id="plan-slot">${renderPlan(lastPlan(trace))}</div>
+        <div id="budget-slot">${renderMeters(trace)}</div>
+        <div id="rounds-slot">${rounds.map((r, i) => renderRound(r, i, anns[i])).join("")}</div>
+      </div>
+    </details>
     <div id="result-slot">${terminal && terminal.status ? renderResult(trace) : ""}</div>
   `;
 
@@ -766,28 +816,46 @@ function liveShell(trace) {
       <p class="prompt-text">${esc(task.objective || "")}</p>
       <p class="prompt-note" id="live-note">已提交，等待 Runtime 启动…</p>
     </section>
-    <div id="plan-slot"></div>
-    <div id="budget-slot"></div>
-    <div id="rounds-slot"></div>
     <div id="approval-slot"></div>
+    <details class="thought" id="thought" open>
+      <summary class="thought-head">
+        <span class="thought-title">${ICON.thought} 思考链</span>
+        <span class="thought-meta" id="thought-meta">启动中</span>
+        <span class="grow"></span>
+        <span class="thought-hint">计划、工具调用与证据</span>
+        <span class="chev">▾</span>
+      </summary>
+      <div class="thought-body">
+        <div id="plan-slot"></div>
+        <div id="budget-slot"></div>
+        <div id="rounds-slot"></div>
+      </div>
+    </details>
     <div id="result-slot"></div>`;
+  const summary = document.querySelector("#thought > summary");
+  if (summary) summary.addEventListener("click", () => { if (live) live.thoughtPinned = true; });
 }
 
 function liveNote(trace) {
   const events = trace.events || [];
   const rounds = trace.rounds || [];
-  const last = events[events.length - 1];
-  const running = !(trace.terminal && trace.terminal.status);
-  const status = running ? "running" : trace.terminal.status;
-  const statusColor = running ? "var(--accent)" : ({ ok: "var(--green)", bad: "var(--red)" }[stateClass(status)] || "var(--yellow)");
-  const bits = [
-    "事件按提交顺序实时写入，链随事件增长",
-    `${rounds.length} 轮 · ${events.length} 事件`,
-    `终态 <span style="color:${statusColor}">${esc(status)}</span>`,
-  ];
-  if (live && live.pending) bits.push(`<span class="yel">等待你的决定 · ${esc(live.pending.tool)}</span>`);
-  else if (last) bits.push(`最近 <span style="font-family:var(--mono)">${esc(last.type)}</span>`);
-  return bits.join(" · ");
+  const terminal = trace.terminal || {};
+  if (live && live.pending) return `<span class="yel">等待你的决定 · ${esc(live.pending.tool)}</span>`;
+  if (terminal.status) {
+    const code = (terminal.failure || {}).code;
+    const label = terminal.status === "succeeded" ? "已完成" : "已结束";
+    return `${label} · ${rounds.length} 轮 · ${events.length} 个事件${code ? " · " + esc(code) : ""} · 过程见思考链`;
+  }
+  return `Fcode 正在处理${rounds.length ? ` · 第 ${rounds.length} 轮` : ""} · ${events.length} 个事件 · 过程见思考链`;
+}
+
+function thoughtMeta(trace) {
+  const rounds = (trace.rounds || []).length;
+  const events = (trace.events || []).length;
+  const plan = lastPlan(trace);
+  const total = plan && plan.todos ? plan.todos.length : 0;
+  const done = plan && plan.todos ? plan.todos.filter(t => t.status === "done").length : 0;
+  return `${rounds} 轮 · ${events} 事件${total ? ` · ${done}/${total} 步` : ""}`;
 }
 
 function liveApply(data) {
@@ -823,6 +891,9 @@ function liveApply(data) {
   }
   if (!pending) live.deciding = null;
   live.pending = pending;
+
+  const thoughtMetaEl = document.getElementById("thought-meta");
+  if (thoughtMetaEl) thoughtMetaEl.textContent = thoughtMeta(trace);
 
   if (live.planQueued && events > live.planQueued.events) {
     const added = eventList.slice(live.planQueued.events);
@@ -883,6 +954,12 @@ function liveApply(data) {
     const slot = document.getElementById("result-slot");
     if (slot) slot.innerHTML = resultHtml;
     live.resultHtml = resultHtml;
+  }
+
+  const thought = document.getElementById("thought");
+  if (thought && !live.thoughtPinned) {
+    const open = running || !!pending;
+    if (thought.open !== open) thought.open = open;
   }
 
   const note = document.getElementById("live-note");
@@ -1142,7 +1219,7 @@ function openLive(id, objective, template) {
     planHtml: "", budgetHtml: "", resultHtml: "", roundHtml: [], eventCount: 0,
     pending: null, pendingDeadline: 0, deciding: null, approvalKey: "",
     planEditing: false, planConfirm: null, planQueued: null,
-    budgetEditing: false, budgetQueued: null,
+    budgetEditing: false, budgetQueued: null, thoughtPinned: false,
   };
   currentKey = "run:" + id;
   renderNav();
@@ -1195,6 +1272,8 @@ function finishLive(data) {
   live.deciding = null;
   live.approvalKey = "";
   paintApproval();
+  const thought = document.getElementById("thought");
+  if (thought && !live.thoughtPinned) thought.open = false;
   if (live.es) { live.es.close(); live.es = null; }
   setComposerRunning(false);
   const trace = live.trace;
@@ -1998,9 +2077,11 @@ function bind() {
     else if (button.dataset.act === "diag") copyDiagnostics();
     else if (button.dataset.act === "resume") openResumeForm();
   });
+  const app = document.getElementById("app");
+  app.classList.toggle("rail-open", railOpen);
+  app.classList.toggle("rail-hidden", !railOpen);
   document.getElementById("rail-toggle").addEventListener("click", () => {
     railOpen = !railOpen;
-    const app = document.getElementById("app");
     app.classList.toggle("rail-hidden", !railOpen);
     app.classList.toggle("rail-open", railOpen);
   });
