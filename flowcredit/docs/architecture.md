@@ -149,6 +149,9 @@ hash_n = sha256(canonical_json({sequence, type, payload, prev_hash, at}))
 | `runtime/harness.py` | 单轮机制 + 独立重算 | 成功只能由 verify 产生 |
 | `runtime/loop.py` | 多轮 + 恢复 | 轮次不重复；支持 packet 模式与 fast path |
 | `runtime/policy.py` | DecisionPacket / ActionCompiler / Policy | 模型只选候选；单候选不调模型 |
+| `providers/local_policy.py` | LocalPolicy | choice-only；一次修复；失败不编造 |
+| `providers/packet_prompt.py` | packet prompt 渲染器 | 训练/推理共用；不含工具目录 |
+| `sft/choices.py` | choice SFT 导出 | packet + policy_decided → 样本 |
 | `demo/packet.py` | Executive–Policy 实验运行器 | 对照 packet 与旧上下文体积 |
 | `memory/context.py` | 派生上下文 | 每轮重算，不累积 |
 | `memory/cases.py` | 长期案例簿 | 终态轨迹的纯函数投影；分数为整数基点；删除只墓碑 |

@@ -181,13 +181,13 @@ open desktop/dist/FCode.app
 | SFT 数据管线（轨迹 → 训练样本，训练与推理 prompt 逐字节一致） | 已实现（2271 条样本） |
 | LLM 层实验装置（文件式 oracle，复用真实 prompt / 门控 / 验证） | 已实现（实验） |
 | 澄清式委托（消息 → 理解摘要 → 选项 → TaskSpec → 任务卡） | 已实现（确定性 clarifier） |
-| Executive–Policy 决策包（候选动作 + fast path + 可控上下文） | 已实现（P1 lab：上下文降 79.8%） |
+| Executive–Policy 决策包（候选动作 + fast path + LocalPolicy + choice SFT） | 已实现（P2 lab：上下文降 79.8%） |
 | 本地模型供应商（Qwen3-4B LoRA · OpenAI 兼容 · 零依赖） | **骨架就绪**，门控关闭 |
 | 真实供应商（一次性传输授权 + 凭证提供者 + 价格快照） | **门控关闭**，仅骨架 |
 
 ## 数字
 
-- **140** 项单元与场景测试，全部离线
+- **148** 项单元与场景测试，全部离线
 - **7** 个可复现场景，其中崩溃场景用真实 `SIGKILL`
 - **0** 个第三方运行时依赖（只用标准库）
 - **9** 轮完成一次完整研究，**4500 µUSD** 合成预算
@@ -207,7 +207,7 @@ flowcredit/          Python Runtime 与 Demo
     trajectory/      记录、导出、独立重算
     demo/            CLI、终端渲染、七个场景、崩溃 worker
   viewer/            实时控制台 + Trace 回放（零依赖零构建）
-  tests/             140 项 unittest
+  tests/             148 项 unittest
   docs/              架构、设计决策、框架对照、JD 映射
 archive/             v1：Node.js 研究原型（保留，不参与 CI）
 ```

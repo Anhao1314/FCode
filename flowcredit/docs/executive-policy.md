@@ -64,9 +64,63 @@ PYTHONPATH=src python3 -m flowagent.demo.packet \
 - SFT 仍是 v10 全上下文格式；P2 才会切到“DecisionPacket → choice”。
 - 发生阻塞时 packet 会保留一个 `report_blocked` 候选；模型可以诚实停下。
 
-## P2 要做什么
+## P2 已落地（lab）
 
-1. `LocalPolicy`：约束解码输出 `choice`，一次修复，失败回退 Host 规则；
-2. SFT 数据改成候选选择格式，加入 hard negatives 和 blocked 样本；
-3. 评测平面：动作正确率、blocked 精确率/召回率、引用覆盖率、每决策 tokens；
-4. 把 packet 模式接进控制台，同时保留旧 Provider 作为故障注入/基线。
+### LocalPolicy
+
+`providers/local_policy.py` 调用 OpenAI-compatible 本地端点，只接受 `{"choice": "aN"}`：
+
+- `temperature=0`，`max_tokens=64`；
+- 可选 `--json-mode`（`response_format={"type":"json_object"}`），
+  真正的 grammar/guided decoding 由 vLLM/Outlines/llama.cpp 侧提供；
+- 输出不是合法候选时，只做**一次**修复；第二次仍失败抛
+  `POLICY_INVALID_CHOICE`，不会静默回退或编造动作；
+- 修复调用的 tokens 计入 receipt；本地推理 cost 为 0。
+
+运行：
+
+```sh
+PYTHONPATH=src python3 -m flowagent.demo.packet   --workdir /tmp/fcode-packet-local --scenario full --fresh   --policy local --endpoint http://127.0.0.1:11434/v1 --model qwen3-4b-fcode
+```
+
+### packet prompt
+
+`providers/packet_prompt.py`：版本 `fcode.packet-prompt/v1`。
+模型只看到 packet 和输出 schema，不再看到完整工具目录；训练和推理共用同一渲染器。
+
+### choice SFT
+
+`flowagent.sft.choices` 从 packet 轨迹生成训练样本：
+
+```sh
+PYTHONPATH=src python3 -m flowagent.sft.choices   --traces /tmp/fcode-packet-full/trace.json   --out sft/data/choices_full.jsonl   --stats-out sft/data/choices_stats.json
+```
+
+一条样本就是：
+
+```json
+{"conversations": [
+  {"from": "system", "value": "..."},
+  {"from": "user", "value": "{\"packet\": ...}"},
+  {"from": "assistant", "value": "{\"choice\": \"a1\"}"}
+]}
+```
+
+`policy_requested` 提供 packet，`policy_decided` 提供标签；`auto_action` 轮次没有
+模型标签，不进入训练集。
+
+### 当前边界
+
+- 还没有在真实 Qwen3-4B 端点上跑过；测试使用 loopback OpenAI mock。
+- `LocalPolicy` 的“约束”目前是 prompt + JSON mode + 一次修复；严格 grammar
+  需要服务端 guided decoding。
+- 控制台默认仍走旧 Provider；packet 模式尚未成为默认运行路径。
+- 旧 SFT（v10 全上下文）仍在；新 choice 数据集是独立格式，需要重新训练/评测。
+- 还没有完成动作正确率、blocked 精确率、引用覆盖率的冻结评测集。
+
+## 下一步
+
+1. 用真实 Qwen3-4B 端点跑 packet lab，记录合法率、动作正确率、延迟；
+2. 冻结 20–30 个任务，比较 MockPolicy / LocalPolicy / oracle；
+3. 把 packet 模式接进控制台，旧 Provider 保留为故障注入与基线；
+4. 再考虑 strict grammar（vLLM guided_json / Outlines）与更多领域。

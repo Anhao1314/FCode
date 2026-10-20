@@ -19,6 +19,7 @@ from ..core.store import TaskStore
 from ..domains.finance import verify_observation
 from ..memory.cases import CaseIndex
 from ..memory.facts import FactStore
+from ..providers.local_policy import LocalPolicy
 from ..providers.mock import MockProvider
 from ..runtime.harness import Harness
 from ..runtime.loop import Loop
@@ -40,7 +41,17 @@ __all__ = ["run"]
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 
-def run(*, workdir: Path, scenario_key: str, fresh: bool) -> dict[str, Any]:
+def run(
+    *,
+    workdir: Path,
+    scenario_key: str,
+    fresh: bool,
+    policy_name: str = "mock",
+    endpoint: str = "http://127.0.0.1:11434/v1",
+    model: str = "qwen3-4b-fcode",
+    json_mode: bool = False,
+    timeout: float = 120.0,
+) -> dict[str, Any]:
     scenario = get_scenario(scenario_key)
     workdir = workdir.expanduser().resolve()
     if workdir in (Path("/"), PROJECT_ROOT):
@@ -72,10 +83,16 @@ def run(*, workdir: Path, scenario_key: str, fresh: bool) -> dict[str, Any]:
         receipts=receipts,
         verifier=lambda observation: verify_observation(world, observation),
     )
+    if policy_name == "local":
+        policy = LocalPolicy(
+            base_url=endpoint, model=model, timeout=timeout, json_mode=json_mode,
+        )
+    else:
+        policy = MockPolicy()
     recorder = TraceRecorder(
         store,
-        provider_name="mock-packet-policy",
-        model_name="rule-first-candidate",
+        provider_name=policy.name,
+        model_name=policy.model,
     )
     task = harness.create(
         task_id=f"task-packet-{scenario.key}",
@@ -90,7 +107,7 @@ def run(*, workdir: Path, scenario_key: str, fresh: bool) -> dict[str, Any]:
         planner=FinancePlanner(),
         max_rounds=scenario.max_rounds,
         observer=recorder,
-        policy=MockPolicy(),
+        policy=policy,
     )
     memory = loop.restore(task)
     plan = loop.rebuild_plan(task, memory)
@@ -125,6 +142,8 @@ def run(*, workdir: Path, scenario_key: str, fresh: bool) -> dict[str, Any]:
 
     return {
         "scenario": scenario.key,
+        "policy": policy.name,
+        "model": policy.model,
         "status": task.status,
         "change_bp": (task.result or {}).get("change_bp"),
         "rounds": len(final.get("rounds") or []),
@@ -145,8 +164,22 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--workdir", required=True)
     parser.add_argument("--scenario", default="full")
     parser.add_argument("--fresh", action="store_true")
+    parser.add_argument("--policy", choices=("mock", "local"), default="mock")
+    parser.add_argument("--endpoint", default="http://127.0.0.1:11434/v1")
+    parser.add_argument("--model", default="qwen3-4b-fcode")
+    parser.add_argument("--json-mode", action="store_true")
+    parser.add_argument("--timeout", type=float, default=120.0)
     args = parser.parse_args(argv)
-    summary = run(workdir=Path(args.workdir), scenario_key=args.scenario, fresh=args.fresh)
+    summary = run(
+        workdir=Path(args.workdir),
+        scenario_key=args.scenario,
+        fresh=args.fresh,
+        policy_name=args.policy,
+        endpoint=args.endpoint,
+        model=args.model,
+        json_mode=args.json_mode,
+        timeout=args.timeout,
+    )
     print(json.dumps(summary, ensure_ascii=False, indent=2))
     return 0 if summary["verified"] and summary["status"] == "succeeded" else 1
 

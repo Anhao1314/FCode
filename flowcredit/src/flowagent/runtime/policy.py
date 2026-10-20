@@ -57,6 +57,9 @@ class ActionCandidate:
 class ActionChoice:
     candidate_id: str
     reason: str = ""
+    tokens: int = 0
+    latency_ms: int = 0
+    repaired: bool = False
 
 
 @dataclass(frozen=True)
@@ -152,14 +155,16 @@ class PacketProvider:
             plan=plan,
             provider=self.name,
             model=self.model,
-            tokens=max(1, (packet_bytes + 64) // 4),
+            tokens=choice.tokens or max(1, (packet_bytes + 64) // 4),
             cost_microusd=0,
+            latency_ms=choice.latency_ms,
             todo_id=candidate.todo_id or None,
             metadata={
                 "policy": PACKET_VERSION,
                 "packet_hash": self.packet.packet_hash,
                 "candidate_id": candidate.id,
                 "reason": choice.reason,
+                "repaired": choice.repaired,
             },
         )
 
