@@ -344,6 +344,22 @@ class RunManager:
                 traceback.print_exc()
         return True, ""
 
+    def memory_summary(self) -> dict[str, Any]:
+        """Read-only counts for the settings page; never includes case contents."""
+        cases = self.case_index
+        facts = self.fact_store
+        return {
+            "runs": len(self.runs),
+            "cases": {
+                "active": cases.count() if cases else 0,
+                "total": cases.count(include_archived=True) if cases else 0,
+            },
+            "facts": {
+                "active": facts.count() if facts else 0,
+                "total": facts.count(include_archived=True) if facts else 0,
+            },
+        }
+
     def create(self, objective: str, template: str, approval: str = "consequential") -> Run:
         with self._lock:
             self._seq += 1
@@ -1176,6 +1192,8 @@ class Handler(SimpleHTTPRequestHandler):
                     ),
                 }
             )
+        if path == "/api/memory":
+            return self._json(mgr.memory_summary())
         if path == "/api/templates":
             if mgr.runtime is None:
                 return self._json({"error": mgr.runtime_error}, 503)

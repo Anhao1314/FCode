@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light">
 <title>Fcode · flowcredit console</title>
-<link rel="stylesheet" href="app.css?v=37">
+<link rel="stylesheet" href="app.css?v=40">
 </head>
 <body>
 <div class="shell app rail-open" id="app">
@@ -51,54 +51,22 @@
     <div class="side-foot">
       <span class="fdot" id="foot-dot"></span>
       <span class="foot-text" id="foot-text">offline-mock · 只读回放</span>
-      <button class="side-gear" id="settings-btn" type="button" title="设置 (⌘,)" aria-label="设置" aria-expanded="false" aria-controls="settings-panel">
+      <button class="side-gear" id="settings-btn" type="button" title="设置 (⌘,)" aria-label="设置">
         <span data-doodle="gear"></span>
       </button>
     </div>
 
-    <div class="settings-panel" id="settings-panel" role="dialog" aria-label="设置" hidden>
-      <div class="set-head">
-        <span class="set-kicker">PREFERENCES</span>
-        <span class="set-title">设置</span>
-        <button class="set-close" id="settings-close" type="button" title="关闭 (Esc)" aria-label="关闭设置">
-          <span data-doodle="x"></span>
-        </button>
-      </div>
-      <div class="set-body">
-        <section class="set-sec">
-          <div class="set-label">新委托默认审批</div>
-          <div class="set-modes" id="settings-modes"></div>
-          <p class="set-hint">只影响下一份委托；运行中的审批仍按原档位执行。</p>
-        </section>
-        <section class="set-sec">
-          <div class="set-label">本机偏好</div>
-          <div class="set-row">
-            <span class="set-row-text"><b>界面动效</b><small>手绘图标与进入动画</small></span>
-            <button class="set-switch" id="settings-motion" type="button" role="switch" aria-checked="true" aria-label="界面动效"><span></span></button>
-          </div>
-          <div class="set-row">
-            <span class="set-row-text"><b>完成通知</b><small>页面在后台时提醒</small></span>
-            <button class="set-switch" id="settings-notify" type="button" role="switch" aria-checked="false" aria-label="完成通知"><span></span></button>
-          </div>
-        </section>
-        <section class="set-sec">
-          <button class="set-action" id="settings-clear" type="button">清空输入历史</button>
-          <p class="set-hint">只清除本机 ↑↓ 历史；运行记录与签名链不受影响。</p>
-        </section>
-      </div>
-      <div class="set-foot">
-        <span>FCode · local runtime</span>
-        <span id="settings-state">offline</span>
-      </div>
-    </div>
   </aside>
 
-  <div class="workspace">
+  <div class="workspace" id="workspace">
     <header class="topbar">
       <div class="tb-title" id="tb-title">—</div>
       <div class="tb-chips" id="tb-chips"></div>
       <div class="grow"></div>
       <button class="chain-pill" id="chain-badge" type="button" title="点击重新验证签名链"><span class="dot"></span><span>未加载</span></button>
+      <button class="icon-btn settings-mobile" id="settings-mobile" type="button" title="设置" aria-label="设置">
+        <span data-doodle="gear"></span>
+      </button>
       <button class="icon-btn" id="rail-toggle" title="事件面板">
         <svg class="i" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M15 4v16"/></svg>
       </button>
@@ -179,6 +147,155 @@
       </aside>
     </div>
     <div class="statusline" id="statusline"></div>
+
+    <section class="settings-page" id="settings-page" hidden aria-label="设置">
+      <header class="setpage-head">
+        <button class="setpage-back" id="settings-back" type="button">← 返回对话</button>
+        <div class="setpage-heading">
+          <span class="setpage-kicker">PREFERENCES</span>
+          <h1 class="setpage-title">设置</h1>
+        </div>
+        <div class="setpage-head-meta">
+          <span class="setpage-scope">本机偏好</span>
+          <span class="setpage-state" id="settings-state">offline</span>
+        </div>
+      </header>
+      <div class="setpage-body">
+        <nav class="setpage-nav" id="settings-nav" aria-label="设置章节">
+          <button type="button" class="active" data-set-section="appearance"><span class="n">01</span><span>外观与动效</span></button>
+          <button type="button" data-set-section="delegation"><span class="n">02</span><span>委托默认</span></button>
+          <button type="button" data-set-section="model"><span class="n">03</span><span>模型与工具</span></button>
+          <button type="button" data-set-section="memory"><span class="n">04</span><span>记忆与数据</span></button>
+          <button type="button" data-set-section="notify"><span class="n">05</span><span>通知与快捷键</span></button>
+          <button type="button" data-set-section="about"><span class="n">06</span><span>安全与关于</span></button>
+        </nav>
+        <div class="setpage-content" id="settings-content">
+          <section class="set-section" id="set-appearance" data-set-panel="appearance">
+            <div class="set-section-head"><h2>外观与动效</h2><span class="set-tag">本机</span></div>
+            <p class="set-section-desc">只改变这台机器上的阅读与操作方式，不影响运行结果或签名链。</p>
+            <div class="set-rows">
+              <div class="set-row">
+                <span class="set-row-text"><b>界面动效</b><small>手绘图标与进入动画</small></span>
+                <button class="set-switch" id="settings-motion" type="button" role="switch" aria-checked="true" aria-label="界面动效"><span></span></button>
+              </div>
+              <div class="set-row">
+                <span class="set-row-text"><b>主题</b><small>纸白是当前唯一主题，颜色只用于表达状态</small></span>
+                <span class="set-value">纸白</span>
+              </div>
+              <div class="set-row">
+                <span class="set-row-text"><b>事件栏默认</b><small>打开运行时的默认过滤，运行中仍可临时切换</small></span>
+                <div class="set-seg" id="settings-rail-filter">
+                  <button type="button" data-set-filter="key" class="active">关键</button>
+                  <button type="button" data-set-filter="all">全部</button>
+                  <button type="button" data-set-filter="human">人工</button>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="set-section" id="set-delegation" data-set-panel="delegation">
+            <div class="set-section-head"><h2>委托默认</h2><span class="set-tag">下次委托</span></div>
+            <p class="set-section-desc">新委托的审批档位。运行中的审批仍按创建时的档位执行。</p>
+            <div class="set-modes" id="settings-modes"></div>
+            <p class="set-note">预算由模板决定：完整研究为 12 calls / 20 reads / 20,000 µUSD；修改预算需要在建单向导里换模板。</p>
+            <div class="set-rows">
+              <div class="set-row">
+                <span class="set-row-text"><b>自动召回旧案</b><small>委托创建时检索 top-3 相似案例，并把召回写入哈希链</small></span>
+                <span class="set-value">已开启 · top-3</span>
+              </div>
+            </div>
+          </section>
+
+          <section class="set-section" id="set-model" data-set-panel="model">
+            <div class="set-section-head"><h2>模型与工具</h2><span class="set-tag">运行时</span></div>
+            <p class="set-section-desc">模型只提议动作；权限、预算与执行由主机决定。这里展示当前实际生效的配置。</p>
+            <div class="set-rows">
+              <div class="set-row">
+                <span class="set-row-text"><b>当前模型</b><small>离线确定性 mock，用于演示与回归</small></span>
+                <span class="set-value"><code>offline-mock</code></span>
+              </div>
+              <div class="set-row">
+                <span class="set-row-text"><b>本地 Qwen</b><small>训练完成后接入，训练与推理共用同一套 prompt</small></span>
+                <span class="set-value dim">未接入 · 训练中</span>
+              </div>
+              <div class="set-row">
+                <span class="set-row-text"><b>工具目录</b><small>封闭注册表：schema、effect、契约版本由主机持有</small></span>
+                <span class="set-value" id="settings-tools">—</span>
+              </div>
+              <div class="set-row">
+                <span class="set-row-text"><b>外部连接器</b><small>端点与凭证由主机持有，默认关闭</small></span>
+                <span class="set-value dim">demo-feed · 默认关闭</span>
+              </div>
+            </div>
+          </section>
+
+          <section class="set-section" id="set-memory" data-set-panel="memory">
+            <div class="set-section-head"><h2>记忆与数据</h2><span class="set-tag">本机 / 运行时</span></div>
+            <p class="set-section-desc">长期记忆是签名轨迹的确定性投影；删除运行只写墓碑，不销毁证据。</p>
+            <div class="set-stats">
+              <div class="set-stat"><span class="k">案例</span><b id="settings-cases">—</b><small>有效 / 含墓碑</small></div>
+              <div class="set-stat"><span class="k">事实</span><b id="settings-facts">—</b><small>有效 / 含墓碑</small></div>
+              <div class="set-stat"><span class="k">运行记录</span><b id="settings-runs">—</b><small>本机历史</small></div>
+            </div>
+            <div class="set-actions">
+              <button class="set-action" id="settings-clear" type="button">清空输入历史</button>
+              <button class="set-action" id="settings-refresh-memory" type="button">刷新统计</button>
+            </div>
+            <p class="set-note">输入历史只存在本机 ↑↓ 里；案例与事实存放在 viewer/memory，删除运行会同步墓碑。</p>
+          </section>
+
+          <section class="set-section" id="set-notify" data-set-panel="notify">
+            <div class="set-section-head"><h2>通知与快捷键</h2><span class="set-tag">本机</span></div>
+            <p class="set-section-desc">页面在后台时，完成通知会提醒你回来看结果。</p>
+            <div class="set-rows">
+              <div class="set-row">
+                <span class="set-row-text"><b>完成通知</b><small id="settings-notify-state">需要浏览器授权</small></span>
+                <button class="set-switch" id="settings-notify" type="button" role="switch" aria-checked="false" aria-label="完成通知"><span></span></button>
+              </div>
+            </div>
+            <div class="set-keys">
+              <div><kbd>⌘K</kbd><span>命令面板</span></div>
+              <div><kbd>⌘N</kbd><span>新建委托</span></div>
+              <div><kbd>⌘,</kbd><span>打开设置</span></div>
+              <div><kbd>⌘.</kbd><span>停止当前运行</span></div>
+              <div><kbd>⌘↵</kbd><span>允许审批</span></div>
+              <div><kbd>⌘⌫</kbd><span>拒绝审批</span></div>
+              <div><kbd>↑↓</kbd><span>运行记录 / 输入历史</span></div>
+              <div><kbd>Esc</kbd><span>关闭设置或浮层</span></div>
+            </div>
+          </section>
+
+          <section class="set-section" id="set-about" data-set-panel="about">
+            <div class="set-section-head"><h2>安全与关于</h2><span class="set-tag">只读</span></div>
+            <p class="set-section-desc">签名链在每次打开运行时全量重算；这里展示当前状态与本机数据位置。</p>
+            <div class="set-rows">
+              <div class="set-row">
+                <span class="set-row-text"><b>签名链</b><small id="settings-chain">当前没有加载运行</small></span>
+                <button class="set-action inline" id="settings-reverify" type="button">重新验证</button>
+              </div>
+              <div class="set-row">
+                <span class="set-row-text"><b>数据目录</b><small>运行记录、案例簿与事实簿的落点</small></span>
+                <span class="set-value dim" id="settings-repo">—</span>
+              </div>
+              <div class="set-row">
+                <span class="set-row-text"><b>许可</b><small>内核零第三方运行时依赖</small></span>
+                <span class="set-value">Apache-2.0</span>
+              </div>
+            </div>
+            <div class="set-actions">
+              <button class="set-action" id="settings-diag" type="button">复制运行诊断</button>
+              <a class="set-action" href="https://github.com/Anhao1314/FCode" target="_blank" rel="noreferrer">在 GitHub 查看</a>
+            </div>
+            <p class="set-note">FCode · local runtime。设置页不会上传任何数据；诊断信息只复制到剪贴板。</p>
+          </section>
+        </div>
+      </div>
+      <footer class="setpage-foot">
+        <button class="setpage-reset" id="settings-reset" type="button">恢复本机默认</button>
+        <span class="setpage-foot-note" id="settings-saved">更改即时保存到本机</span>
+        <button class="setpage-done" id="settings-done" type="button">完成</button>
+      </footer>
+    </section>
   </div>
 
 </div>
@@ -221,8 +338,8 @@
   </div>
 </div>
 
-<script src="report.js?v=37"></script>
-<script src="icons-doodle.js?v=37"></script>
-<script src="app.js?v=37"></script>
+<script src="report.js?v=40"></script>
+<script src="icons-doodle.js?v=40"></script>
+<script src="app.js?v=40"></script>
 </body>
 </html>

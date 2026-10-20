@@ -194,6 +194,13 @@ class FactStoreTests(unittest.TestCase):
         self.assertEqual(current[0]["value_int"], 1750)
         self.assertEqual(current[0]["source_run"], "run-1")
 
+    def test_count_can_include_tombstoned_claims(self) -> None:
+        self._upsert(fact_trace(), "run-1")
+        before = self.store.count()
+        self.store.tombstone_run("run-1")
+        self.assertEqual(self.store.count(), 0)
+        self.assertEqual(self.store.count(include_archived=True), before)
+
     def test_rebuild_is_byte_identical(self) -> None:
         traces = [
             fact_trace(margin_bp=1750),

@@ -273,6 +273,7 @@ function renderNav() {
 /* ------------------------------------------------------------- 工作台账本 */
 
 function openLedger() {
+  if (settingsOpen) closeSettingsPage(false);
   ledgerOpen = true;
   if (live) detachLive();
   currentKey = null;
@@ -2384,6 +2385,7 @@ async function initLive() {
 }
 
 async function selectRun(id) {
+  if (settingsOpen) closeSettingsPage(false);
   ledgerOpen = false;
   evExpanded.clear();
   const existing = sessions.get(id);
@@ -2439,6 +2441,7 @@ async function loadTrace(key) {
 }
 
 async function select(key, label) {
+  if (settingsOpen) closeSettingsPage(false);
   if (key.startsWith("run:")) return selectRun(key.slice(4));
   ledgerOpen = false;
   evExpanded.clear();
@@ -2656,6 +2659,7 @@ function wizardTemplate() {
 }
 
 function openWizard() {
+  if (settingsOpen) closeSettingsPage(false);
   if (!health || !health.live) {
     toast("回放模式：用 python3 viewer/server.py 启动后才能创建委托");
     return;
@@ -2977,6 +2981,14 @@ async function toggleNotify() {
 
 /* --------------------------------------------------------------- 设置 */
 
+let settingsOpen = false;
+let settingsSection = "appearance";
+const settingsScroll = { main: 0, rail: 0 };
+let memoryStats = null;
+let settingsResetArmed = false;
+let settingsResetTimer = null;
+let toolsLoaded = false;
+
 function applyMotion() {
   document.body.classList.toggle("reduce-motion", !motionOn);
   const toggle = document.getElementById("settings-motion");
@@ -2988,6 +3000,13 @@ function setMotion(on) {
   localStorage.setItem(MOTION_KEY, motionOn ? "1" : "0");
   applyMotion();
   toast(motionOn ? "界面动效已开启" : "界面动效已关闭");
+}
+
+function notificationStateText() {
+  if (!("Notification" in window)) return "此浏览器不支持系统通知";
+  if (notifyOn && Notification.permission === "granted") return "已开启 · 浏览器已授权";
+  if (notifyOn) return "已开启 · 等待浏览器授权";
+  return "关闭 · 完成时只更新页面";
 }
 
 function syncSettings() {
@@ -3003,12 +3022,34 @@ function syncSettings() {
   if (motion) motion.setAttribute("aria-checked", motionOn ? "true" : "false");
   const notifyToggle = document.getElementById("settings-notify");
   if (notifyToggle) notifyToggle.setAttribute("aria-checked", notifyOn ? "true" : "false");
+  const notifyState = document.getElementById("settings-notify-state");
+  if (notifyState) notifyState.textContent = notificationStateText();
+
+  for (const button of document.querySelectorAll("[data-set-filter]")) {
+    button.classList.toggle("active", button.dataset.setFilter === railFilter);
+  }
+
   const state = document.getElementById("settings-state");
   if (state) {
     const online = !!(health && health.live);
     state.textContent = online ? "live · local" : "offline";
     state.classList.toggle("on", online);
   }
+
+  const cases = memoryStats && memoryStats.cases;
+  const facts = memoryStats && memoryStats.facts;
+  const setText = (id, value) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = value;
+  };
+  setText("settings-cases", cases ? `${cases.active} / ${cases.total}` : "—");
+  setText("settings-facts", facts ? `${facts.active} / ${facts.total}` : "—");
+  setText("settings-runs", String(runHistory.length));
+  setText("settings-tools", toolContracts ? `${toolContracts.length} 个工具 · 契约已加载` : "—");
+  setText("settings-chain", currentCheck
+    ? (currentCheck.ok ? `链验证通过 · ${currentCheck.events} events` : `链断裂 · ${currentCheck.reason}`)
+    : "当前没有加载运行");
+  setText("settings-repo", health && health.repo ? `${health.repo}/flowcredit/viewer/runs` : "—");
 }
 
 function renderSettings() {
@@ -3017,7 +3058,8 @@ function renderSettings() {
     modes.innerHTML = APPROVAL_MODES.map(([key, title, desc]) =>
       `<button class="set-mode" type="button" role="radio" data-set-approval="${esc(key)}" aria-checked="false">
         <span class="set-dot"></span>
-        <span><b>${esc(title)}</b><small>${esc(desc)}</small></span>
+        <b>${esc(title)}</b>
+        <small>${esc(desc)}</small>
       </button>`).join("");
     modes.addEventListener("click", event => {
       const button = event.target.closest("[data-set-approval]");
@@ -3030,31 +3072,146 @@ function renderSettings() {
   syncSettings();
 }
 
-function openSettings() {
-  renderSettings();
-  const panel = document.getElementById("settings-panel");
-  const button = document.getElementById("settings-btn");
-  if (!panel || !button) return;
-  panel.hidden = false;
-  button.setAttribute("aria-expanded", "true");
+async function refreshSettingsStats() {
+  if (health && health.live) {
+    try {
+      const response = await fetch("/api/memory", { cache: "no-store" });
+      if (response.ok) memoryStats = await response.json();
+    } catch { /* the page shows — offline */ }
+    if (!toolContracts && !toolsLoaded) {
+      toolsLoaded = true;
+      try {
+        const response = await fetch("/api/tools", { cache: "no-store" });
+        if (response.ok) {
+          const data = await response.json();
+          if (Array.isArray(data.tools)) toolContracts = data.tools;
+        }
+      } catch { toolsLoaded = false; }
+    }
+  }
+  syncSettings();
 }
 
-function closeSettings(returnFocus = false) {
-  const panel = document.getElementById("settings-panel");
-  const button = document.getElementById("settings-btn");
-  if (!panel || panel.hidden) return;
-  panel.hidden = true;
+function activateSettingsSection(name, behavior = motionOn ? "smooth" : "auto") {
+  settingsSection = name;
+  for (const button of document.querySelectorAll("#settings-nav [data-set-section]")) {
+    button.classList.toggle("active", button.dataset.setSection === name);
+  }
+  const section = document.getElementById(`set-${name}`);
+  if (section) section.scrollIntoView({ block: "start", behavior });
+}
+
+function openSettingsPage() {
+  if (settingsOpen) return;
+  settingsOpen = true;
+  settingsScroll.main = document.getElementById("main").scrollTop;
+  settingsScroll.rail = document.getElementById("rail-body").scrollTop;
+  document.getElementById("workspace").classList.add("settings-open");
+  document.getElementById("settings-page").hidden = false;
+  document.getElementById("settings-btn").setAttribute("aria-current", "page");
+  renderSettings();
+  document.getElementById("settings-content").scrollTop = 0;
+  activateSettingsSection(settingsSection, "auto");
+  refreshSettingsStats();
+  document.getElementById("settings-back").focus({ preventScroll: true });
+}
+
+function closeSettingsPage(returnFocus = true) {
+  if (!settingsOpen) return;
+  settingsOpen = false;
+  document.getElementById("workspace").classList.remove("settings-open");
+  document.getElementById("settings-page").hidden = true;
+  document.getElementById("settings-btn").removeAttribute("aria-current");
+  requestAnimationFrame(() => {
+    document.getElementById("main").scrollTop = settingsScroll.main;
+    document.getElementById("rail-body").scrollTop = settingsScroll.rail;
+  });
+  if (returnFocus) document.getElementById("settings-btn").focus({ preventScroll: true });
+}
+
+function toggleSettingsPage() {
+  if (settingsOpen) closeSettingsPage(true);
+  else openSettingsPage();
+}
+
+function disarmSettingsReset() {
+  settingsResetArmed = false;
+  clearTimeout(settingsResetTimer);
+  const button = document.getElementById("settings-reset");
   if (button) {
-    button.setAttribute("aria-expanded", "false");
-    if (returnFocus) button.focus({ preventScroll: true });
+    button.textContent = "恢复本机默认";
+    button.classList.remove("confirm");
   }
 }
 
-function toggleSettings() {
-  const panel = document.getElementById("settings-panel");
-  if (!panel) return;
-  if (panel.hidden) openSettings();
-  else closeSettings(true);
+function resetSettingsPreferences() {
+  disarmSettingsReset();
+  setApprovalMode("consequential");
+  motionOn = true;
+  localStorage.setItem(MOTION_KEY, "1");
+  applyMotion();
+  notifyOn = false;
+  localStorage.setItem(NOTIFY_KEY, "0");
+  railFilter = "key";
+  localStorage.setItem("fa.railFilter", railFilter);
+  if (currentTrace) renderRail(currentTrace, currentCheck);
+  syncSettings();
+  toast("本机偏好已恢复默认");
+}
+
+function bindSettings() {
+  document.getElementById("settings-btn").addEventListener("click", toggleSettingsPage);
+  document.getElementById("settings-mobile").addEventListener("click", openSettingsPage);
+  document.getElementById("settings-back").addEventListener("click", () => closeSettingsPage(true));
+  document.getElementById("settings-done").addEventListener("click", () => closeSettingsPage(true));
+  document.getElementById("settings-motion").addEventListener("click", () => setMotion(!motionOn));
+  document.getElementById("settings-notify").addEventListener("click", async () => {
+    await toggleNotify();
+    syncSettings();
+  });
+  document.getElementById("settings-nav").addEventListener("click", event => {
+    const button = event.target.closest("[data-set-section]");
+    if (button) activateSettingsSection(button.dataset.setSection);
+  });
+  document.getElementById("settings-rail-filter").addEventListener("click", event => {
+    const button = event.target.closest("[data-set-filter]");
+    if (!button) return;
+    railFilter = button.dataset.setFilter;
+    localStorage.setItem("fa.railFilter", railFilter);
+    if (currentTrace) renderRail(currentTrace, currentCheck);
+    syncSettings();
+  });
+  document.getElementById("settings-clear").addEventListener("click", () => {
+    promptHistory.length = 0;
+    historyIndex = -1;
+    try { localStorage.removeItem("fa.history"); } catch { /* quota */ }
+    syncSettings();
+    toast("输入历史已清空");
+  });
+  document.getElementById("settings-refresh-memory").addEventListener("click", () => {
+    refreshSettingsStats().then(() => toast("记忆统计已刷新"));
+  });
+  document.getElementById("settings-reset").addEventListener("click", () => {
+    if (!settingsResetArmed) {
+      settingsResetArmed = true;
+      const button = document.getElementById("settings-reset");
+      button.textContent = "再次点击确认";
+      button.classList.add("confirm");
+      clearTimeout(settingsResetTimer);
+      settingsResetTimer = setTimeout(disarmSettingsReset, 3000);
+      return;
+    }
+    resetSettingsPreferences();
+  });
+  document.getElementById("settings-diag").addEventListener("click", () => {
+    if (!currentTrace) { toast("先打开一条运行再复制诊断"); return; }
+    copyDiagnostics();
+  });
+  document.getElementById("settings-reverify").addEventListener("click", () => {
+    if (!currentTrace) { toast("当前没有加载运行"); return; }
+    reverify();
+    setTimeout(refreshSettingsStats, 600);
+  });
 }
 
 function notify(title, body) {
@@ -3324,26 +3481,7 @@ function hydrateDoodles(root = document) {
 function bind() {
   hydrateDoodles();
   applyMotion();
-  document.getElementById("settings-btn").addEventListener("click", toggleSettings);
-  document.getElementById("settings-close").addEventListener("click", () => closeSettings(true));
-  document.getElementById("settings-motion").addEventListener("click", () => setMotion(!motionOn));
-  document.getElementById("settings-notify").addEventListener("click", async () => {
-    await toggleNotify();
-    syncSettings();
-  });
-  document.getElementById("settings-clear").addEventListener("click", () => {
-    promptHistory.length = 0;
-    historyIndex = -1;
-    try { localStorage.removeItem("fa.history"); } catch { /* quota */ }
-    toast("输入历史已清空");
-  });
-  document.addEventListener("pointerdown", event => {
-    const panel = document.getElementById("settings-panel");
-    const button = document.getElementById("settings-btn");
-    if (panel && !panel.hidden && !panel.contains(event.target) && !button.contains(event.target)) {
-      closeSettings();
-    }
-  });
+  bindSettings();
   document.getElementById("new-run").addEventListener("click", openWizard);
   document.getElementById("desk-btn").addEventListener("click", openLedger);
   document.getElementById("composer-open").addEventListener("click", openWizard);
@@ -3558,7 +3696,7 @@ function bind() {
     const mod = e.metaKey || e.ctrlKey;
     if (mod && e.key.toLowerCase() === "k") { e.preventDefault(); togglePalette(); return; }
     if (mod && e.key.toLowerCase() === "n") { e.preventDefault(); openWizard(); return; }
-    if (mod && e.key === ",") { e.preventDefault(); toggleSettings(); return; }
+    if (mod && e.key === ",") { e.preventDefault(); toggleSettingsPage(); return; }
     if (mod && e.key === ".") { e.preventDefault(); if (live && live.running) stopRun(); return; }
     if (mod && live && live.pending && !live.deciding && (e.key === "Enter" || e.key === "Backspace" || e.key === "Delete")) {
       const palette = document.getElementById("palette");
@@ -3606,8 +3744,7 @@ function bind() {
       if (menu && !menu.hidden) { menu.hidden = true; return; }
       const approval = document.getElementById("approval-menu");
       if (approval && !approval.hidden) { approval.hidden = true; return; }
-      const settings = document.getElementById("settings-panel");
-      if (settings && !settings.hidden) { closeSettings(true); return; }
+      if (settingsOpen) { closeSettingsPage(true); return; }
       if (!typing && innerWidth <= 1100 && railOpen) {
         railOpen = false;
         const app = document.getElementById("app");
@@ -3629,6 +3766,7 @@ function bind() {
 }
 
 function replay() {
+  if (settingsOpen) closeSettingsPage(false);
   if (currentKey && currentKey.startsWith("run:")) return; // run records are immutable
   if (currentKey) { cache.delete(currentKey); select(currentKey, labelOf(currentKey)); }
   else if (currentTrace) render(currentTrace, "trace");
@@ -3636,6 +3774,7 @@ function replay() {
 
 async function fromFile(file) {
   try {
+    if (settingsOpen) closeSettingsPage(false);
     ledgerOpen = false;
     const trace = JSON.parse(await file.text());
     if (live) detachLive();

@@ -213,9 +213,10 @@ class FactStore:
             ).fetchall()
         return [self._as_dict(row) for row in rows]
 
-    def count(self) -> int:
+    def count(self, *, include_archived: bool = False) -> int:
+        query = "SELECT COUNT(*) AS n FROM facts" + ("" if include_archived else " WHERE archived=0")
         with self._connect() as conn:
-            return int(conn.execute("SELECT COUNT(*) AS n FROM facts WHERE archived=0").fetchone()["n"])
+            return int(conn.execute(query).fetchone()["n"])
 
     @staticmethod
     def _as_dict(row: sqlite3.Row) -> dict[str, Any]:
