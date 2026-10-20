@@ -145,6 +145,8 @@ class Loop:
             self.observer.observation(round_no, observation)
             self.observer.round_end(round_no, self.harness.budget(task).snapshot(), plan)
 
+            if observation.tool == "report_blocked":
+                return self._reported_blocked(task, plan, observation)
             if observation.tool == "calculate_margin" and observation.result.get("computed"):
                 verified = self.harness.verify(observation)
                 return self._succeed(task, verified, plan)
@@ -247,6 +249,37 @@ class Loop:
             failure={"code": decision.code, "message": decision.reason, "retryable": False},
             event="tool_denied",
             detail={"tool": decision.tool, "code": decision.code, "plan": plan.progress()},
+        )
+        self.observer.terminal(task, None)
+        return task
+
+    def _reported_blocked(self, task: Task, plan: Plan, observation: Observation) -> Task:
+        """The model says the evidence is insufficient; stop, do not re-ask.
+
+        The system prompt allows this exit, and the tool is host-gated like any
+        other. Continuing to pull unrelated todos after the model has declared
+        the goal unreachable wastes budget and makes the declared stop a lie.
+        The failure is still a failure: the verifier never runs, and the plan's
+        own blocked reasons are preferred over the model's enum.
+        """
+        blocked = [todo.to_dict() for todo in plan.todos if todo.status == "blocked"]
+        model_reason = str(observation.result.get("reason") or "insufficient_evidence")
+        message = "; ".join(item["reason"] for item in blocked if item.get("reason")) or model_reason
+        task = self.harness.finalize(
+            task,
+            "failed",
+            failure={
+                "code": "INSUFFICIENT_EVIDENCE",
+                "message": message,
+                "retryable": False,
+            },
+            event="task_stopped",
+            detail={
+                "code": "MODEL_REPORTED_BLOCKED",
+                "model_reason": model_reason,
+                "plan": plan.progress(),
+                "blocked": blocked,
+            },
         )
         self.observer.terminal(task, None)
         return task

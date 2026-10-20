@@ -147,10 +147,12 @@ hash_n = sha256(canonical_json({sequence, type, payload, prev_hash, at}))
 | `runtime/permissions.py` | 三道门控 | 拒绝有稳定错误码 |
 | `runtime/budget.py` | 四维预算 | 发送前扣，不退 |
 | `runtime/harness.py` | 单轮机制 + 独立重算 | 成功只能由 verify 产生 |
-| `runtime/loop.py` | 多轮 + 恢复 | 轮次不重复 |
+| `runtime/loop.py` | 多轮 + 恢复 | 轮次不重复；模型报告阻塞即终止 |
 | `memory/context.py` | 派生上下文 | 每轮重算，不累积 |
 | `memory/cases.py` | 长期案例簿 | 终态轨迹的纯函数投影；分数为整数基点；删除只墓碑 |
 | `memory/facts.py` | 双时态事实簿 | 修正追加不覆盖；valid-time / transaction-time 分离 |
 | `tools/finance/facts.py` | 金融事实抽取 + 重建 CLI | 只读已提交观测；事实带事件哈希 |
+| `providers/oracle.py` | 文件式实验 Provider | 复用真实 prompt；缺回复即 unknown |
+| `demo/oracle.py` | LLM 层实验运行器 | 隔离 workdir；不污染控制台记忆 |
 | `trajectory/exporter.py` | 导出 + 重算 | 与 viewer 算法一致 |
 | `demo/runner.py` | 装配 | 唯一选择具体实现的地方 |

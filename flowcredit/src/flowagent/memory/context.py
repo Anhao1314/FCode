@@ -88,7 +88,10 @@ class WorkingMemory:
             elif tool == "normalize_units" and "id" in result:
                 normalised.append(result["id"])
             elif tool == "reconcile_basis" and "period" in result:
-                reconciled_periods.append(result["period"])
+                if result.get("reconciled"):
+                    reconciled_periods.append(result["period"])
+                else:
+                    blockers.append(result.get("reason") or "basis bridge did not reconcile")
             elif tool == "check_restatement":
                 restatement_checked = True
                 restatement_applied = bool(result.get("restated"))
@@ -197,22 +200,32 @@ class WorkingMemory:
                 "gross_profit_cny": result.get("gross_profit_cny"),
             }
         if record.tool == "reconcile_basis":
-            return {
+            reconciled = bool(result.get("reconciled"))
+            summary = {
                 "period": result.get("period"),
+                "reconciled": reconciled,
                 "from_basis": result.get("from_basis"),
-                "delta": result.get("delta"),
-                "reconciled_gross_profit": result.get("reconciled_gross_profit"),
+                "to_basis": result.get("to_basis"),
             }
+            if reconciled:
+                summary["delta"] = result.get("delta")
+                summary["reconciled_gross_profit"] = result.get("reconciled_gross_profit")
+            else:
+                summary["reason"] = result.get("reason") or "basis bridge unavailable"
+            return summary
         if record.tool == "check_restatement":
             return {
                 "period": result.get("period"),
                 "restated": result.get("restated"),
                 "delta": result.get("delta"),
+                "restated_gross_profit": result.get("restated_gross_profit"),
             }
         if record.tool == "calculate_margin":
             return {
                 "computed": result.get("computed"),
                 "blockers": result.get("blockers", []),
+                "margin_bp_2024": result.get("margin_bp_2024"),
+                "margin_bp_2025": result.get("margin_bp_2025"),
                 "change_bp": result.get("change_bp"),
             }
         return {"reason": result.get("reason")}
