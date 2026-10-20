@@ -25,6 +25,8 @@ from flowagent.tools.evidence import EvidenceStore  # noqa: E402
 from flowagent.tools.registry import ToolRegistry  # noqa: E402
 from flowagent.tools.workspace import build_workspace_tools  # noqa: E402
 
+POSTS: list[dict] = []
+
 PAGE = """<!doctype html>
 <html><head><title>恒星智算补充材料</title>
 <script>window.secret = "not evidence";</script></head>
@@ -43,6 +45,32 @@ class _Source(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+    def do_POST(self) -> None:  # noqa: N802
+        path = urllib.parse.urlparse(self.path).path
+        length = int(self.headers.get("Content-Length") or 0)
+        body = json.loads(self.rfile.read(length) or b"{}")
+        POSTS.append({"path": path, "body": body, "auth": self.headers.get("Authorization", "")})
+        if path == "/crawl":
+            target = (body.get("urls") or [""])[0]
+            payload = {
+                "success": True,
+                "results": [{
+                    "url": target,
+                    "success": True,
+                    "markdown": {"fit_markdown": "# Crawl 结果\n\n毛利率为 15.00%。"},
+                    "metadata": {"title": "Crawl4AI 标题"},
+                }],
+            }
+            return self._send(200, json.dumps(payload).encode(), "application/json")
+        if path == "/crawl-fail":
+            return self._send(200, json.dumps({
+                "success": True,
+                "results": [{"success": False, "error_message": "render blocked"}],
+            }).encode(), "application/json")
+        if path == "/crawl-bad":
+            return self._send(200, json.dumps({"success": True}).encode(), "application/json")
+        return self._send(404, b"{}", "application/json")
 
     def do_GET(self) -> None:  # noqa: N802
         path = urllib.parse.urlparse(self.path).path
@@ -81,6 +109,7 @@ class CollectSourceTests(unittest.TestCase):
         cls.server.server_close()
 
     def setUp(self) -> None:
+        POSTS.clear()
         self._tmp = tempfile.TemporaryDirectory()
         self.root = pathlib.Path(self._tmp.name)
         self.base = f"http://127.0.0.1:{self.port}"
@@ -92,6 +121,20 @@ class CollectSourceTests(unittest.TestCase):
             Connector(name="redirect-out", base_url=self.base + "/redirect-out", enabled=True, allow_private=True),
             Connector(name="big", base_url=self.base + "/big", enabled=True, allow_private=True, max_bytes=100),
             Connector(name="closed", base_url=self.base + "/page", enabled=False, allow_private=True),
+            Connector(
+                name="crawl",
+                base_url=self.base + "/crawl",
+                adapter="crawl4ai",
+                target_url=self.base + "/page",
+                enabled=True,
+                allow_private=True,
+                timeout=2,
+                credentials=lambda: {"Authorization": "Bearer sidecar-secret"},
+                crawler_config={"cache_mode": "bypass"},
+            ),
+            Connector(name="crawl-fail", base_url=self.base + "/crawl-fail", adapter="crawl4ai", target_url=self.base + "/page", enabled=True, allow_private=True),
+            Connector(name="crawl-bad", base_url=self.base + "/crawl-bad", adapter="crawl4ai", target_url=self.base + "/page", enabled=True, allow_private=True),
+            Connector(name="crawl-big", base_url=self.base + "/crawl", adapter="crawl4ai", target_url=self.base + "/page", enabled=True, allow_private=True, max_bytes=10),
         ])
         self.evidence = EvidenceStore(self.root)
         self.tools = ToolRegistry(build_workspace_tools(
@@ -161,6 +204,37 @@ class CollectSourceTests(unittest.TestCase):
         window = self.tools.execute("read_slice", {"doc_id": result["doc_id"]}).result
         self.assertIn("margin_bp", "\n".join(line["text"] for line in window["lines"]))
 
+    def test_crawl4ai_sidecar_becomes_evidence(self) -> None:
+        result = self.tools.execute("collect_source", {"source": "crawl"}).result
+        self.assertEqual(result["adapter"], "crawl4ai")
+        self.assertEqual(result["title"], "Crawl4AI 标题")
+        self.assertEqual(result["kind"], "markdown")
+        self.assertIn("15.00%", result["preview"])
+        self.assertTrue(result["doc_id"].startswith("evidence:"))
+        self.assertEqual(POSTS[-1]["auth"], "Bearer sidecar-secret")
+        self.assertEqual(POSTS[-1]["body"]["crawler_config"]["params"]["cache_mode"], "bypass")
+        self.assertNotIn("sidecar-secret", json.dumps(result, ensure_ascii=False))
+        hits = self.tools.execute("search_corpus", {"query": "15.00"}).result
+        self.assertEqual(hits["hits"][0]["source"], "crawl")
+        window = self.tools.execute("read_slice", {"doc_id": result["doc_id"]}).result
+        self.assertEqual(window["metadata"]["adapter"], "crawl4ai")
+        self.assertEqual(window["metadata"]["url"], self.base + "/page")
+
+    def test_crawl4ai_failure_is_a_clean_error(self) -> None:
+        with self.assertRaises(AgentError) as caught:
+            self.tools.execute("collect_source", {"source": "crawl-fail"})
+        self.assertEqual(caught.exception.code, "CONNECTOR_UPSTREAM_ERROR")
+
+    def test_crawl4ai_text_cap_is_enforced(self) -> None:
+        with self.assertRaises(AgentError) as caught:
+            self.tools.execute("collect_source", {"source": "crawl-big"})
+        self.assertEqual(caught.exception.code, "CONNECTOR_TOO_LARGE")
+
+    def test_crawl4ai_bad_response_is_reported(self) -> None:
+        with self.assertRaises(AgentError) as caught:
+            self.tools.execute("collect_source", {"source": "crawl-bad"})
+        self.assertEqual(caught.exception.code, "CONNECTOR_BAD_RESPONSE")
+
     def test_load_registry_reads_host_config(self) -> None:
         config = self.root / "sources.json"
         config.write_text(json.dumps({"sources": [{
@@ -171,12 +245,17 @@ class CollectSourceTests(unittest.TestCase):
             "max_bytes": 4096,
             "token_env": "FCODE_TEST_TOKEN",
             "description": "fixture",
+            "adapter": "crawl4ai",
+            "target_url": self.base + "/page",
+            "crawler_config": {"cache_mode": "bypass"},
         }]}), encoding="utf-8")
         registry = load_registry(config)
         self.assertEqual(registry.names(), ("configured",))
-        self.assertTrue(registry.get("configured").enabled)
-        result = registry.collect("configured")
-        self.assertIn("15.00%", result["text"])
+        source = registry.get("configured")
+        self.assertTrue(source.enabled)
+        self.assertEqual(source.adapter, "crawl4ai")
+        self.assertEqual(source.target_url, self.base + "/page")
+        self.assertEqual(source.crawler_config, {"cache_mode": "bypass"})
 
 
 if __name__ == "__main__":

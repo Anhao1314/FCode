@@ -61,7 +61,7 @@ def build_workspace_tools(
         collected = connectors.collect(arguments["source"], arguments.get("query"))
         metadata = {
             key: collected[key]
-            for key in ("source", "url", "status", "content_type", "retrieved_at", "sha256", "bytes", "title")
+            for key in ("source", "adapter", "url", "status", "content_type", "retrieved_at", "sha256", "bytes", "title")
             if key in collected
         }
         ingested = evidence.ingest_text(
@@ -73,6 +73,7 @@ def build_workspace_tools(
         preview = collected["text"][:400]
         return {
             "source": collected["source"],
+            "adapter": collected.get("adapter", "http"),
             "url": collected["url"],
             "status": collected["status"],
             "content_type": collected["content_type"],
@@ -291,6 +292,7 @@ def build_workspace_tools(
             handler=collect_source,
             outputs=(
                 Param.output("source", "string"),
+                Param.output("adapter", "string"),
                 Param.output("url", "string"),
                 Param.output("status", "integer"),
                 Param.output("content_type", "string"),

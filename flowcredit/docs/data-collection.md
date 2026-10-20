@@ -43,6 +43,49 @@ FCODE_SOURCES=/etc/fcode/sources.json python3 flowcredit/viewer/server.py --repo
 没有配置时，目录里只有默认关闭的 `demo-feed`；调用会得到
 `CONNECTOR_DISABLED`，网络不会真的打开。
 
+## Crawl4AI 侧车（JS 页面 / PDF / Markdown）
+
+对需要浏览器渲染的页面，不要把 Chromium 塞进 FCode 运行时，而是单独跑一个
+Crawl4AI（Apache-2.0）侧车：
+
+```sh
+docker run -d --name crawl4ai -p 11235:11235 --shm-size=1g \
+  unclecode/crawl4ai:latest
+```
+
+然后把它配置成一个源：
+
+```json
+{
+  "name": "crawl-report",
+  "adapter": "crawl4ai",
+  "base_url": "http://127.0.0.1:11235/crawl",
+  "target_url": "https://example.com/report",
+  "enabled": true,
+  "allow_private": true,
+  "token_env": "CRAWL4AI_JWT",
+  "timeout": 90,
+  "max_bytes": 2097152,
+  "crawler_config": {"cache_mode": "bypass"},
+  "browser_config": {"headless": true}
+}
+```
+
+- `target_url` 由主机配置，模型仍然只能传 `source` 和可选 `query`；
+- Crawl4AI 源只走 `collect_source`；`fetch_source` 会以 `CONNECTOR_ADAPTER_REQUIRES_COLLECT` 拒绝，避免把侧车当成普通 feed；
+- `adapter` 默认 `http`；设为 `crawl4ai` 后，连接器向侧车发 `POST /crawl`，
+  请求体是 `{urls, browser_config, crawler_config}`；
+- 侧车返回的 Markdown 会作为 Evidence 落库，`kind=markdown`，后续同样可
+  `search_corpus` / `read_slice`；
+- `allow_private: true` 只用于访问本机/内网侧车；主机配置本身是可信边界。
+  公网目标仍然建议 HTTPS，并把侧车的 SSRF 防护和 JWT 保持开启；
+- 侧车不可达、返回 `success:false`、没有 `results` 时，分别得到
+  `CONNECTOR_UNKNOWN` / `CONNECTOR_UPSTREAM_ERROR` / `CONNECTOR_BAD_RESPONSE`，
+  不会自动重试。
+
+Crawl4AI 的 `/crawl` 响应可能包含 Markdown 对象或字符串，连接器两者都兼容；
+`markdown.fit_markdown` / `raw_markdown` 优先，缺失时回退到 HTML 转文本。
+
 ## 工具调用
 
 ```json

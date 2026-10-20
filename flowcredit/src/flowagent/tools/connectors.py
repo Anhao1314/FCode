@@ -52,6 +52,7 @@ __all__ = ["Connector", "ConnectorRegistry", "default_registry", "load_registry"
 
 MAX_BYTES = 256 * 1024
 COLLECT_MAX_BYTES = 2 * 1024 * 1024
+CRAWL4AI_RESPONSE_MAX = 8 * 1024 * 1024
 MAX_TEXT = 400_000
 TEXT_EXCERPT = 4000
 
@@ -133,6 +134,11 @@ class Connector:
     description: str = ""
     #: Allow loopback/private destinations. Only for host-owned local fixtures.
     allow_private: bool = False
+    #: "http" uses base_url directly; "crawl4ai" POSTs target_url to a sidecar.
+    adapter: str = "http"
+    target_url: str = ""
+    browser_config: dict[str, Any] = field(default_factory=dict)
+    crawler_config: dict[str, Any] = field(default_factory=dict)
 
 
 class ConnectorRegistry:
@@ -195,6 +201,11 @@ class ConnectorRegistry:
             raise AgentError(
                 "CONNECTOR_DISABLED",
                 f"{name!r} is configured but disabled by the host",
+            )
+        if connector.adapter != "http":
+            raise AgentError(
+                "CONNECTOR_ADAPTER_REQUIRES_COLLECT",
+                f"{name!r} uses the {connector.adapter} adapter; call collect_source instead",
             )
         url = self._url(connector, key)
         headers = self._headers(connector, "application/json")
@@ -270,6 +281,8 @@ class ConnectorRegistry:
                 "CONNECTOR_DISABLED",
                 f"{name!r} is configured but disabled by the host",
             )
+        if connector.adapter == "crawl4ai":
+            return self._collect_crawl4ai(connector, key)
         url = self._url(connector, key)
         self._check_destination(connector, url)
         headers = self._headers(
@@ -325,6 +338,7 @@ class ConnectorRegistry:
         latency_ms = int((time.monotonic() - started) * 1000)
         return {
             "source": name,
+            "adapter": "http",
             "url": url,
             "status": status,
             "content_type": content_type,
@@ -333,6 +347,119 @@ class ConnectorRegistry:
             "retrieved_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "kind": kind,
             "title": title,
+            "text": text,
+            "request_id": request_id,
+            "latency_ms": latency_ms,
+        }
+
+    def _collect_crawl4ai(self, connector: Connector, key: str | None) -> dict[str, Any]:
+        """POST a host-owned target URL to a Crawl4AI sidecar.
+
+        The sidecar does the browser work; the model still never chooses the URL.
+        The target is part of the source configuration, while ``key`` only
+        appends a query parameter to that configured target.
+        """
+        if not connector.target_url:
+            raise AgentError("CONNECTOR_CONFIG", "crawl4ai source needs target_url")
+        endpoint = connector.base_url
+        self._check_destination(connector, endpoint)
+        target = connector.target_url
+        if key:
+            separator = "&" if "?" in target else "?"
+            target = f"{target}{separator}{urlencode({connector.query_param: key})}"
+        self._check_destination(connector, target)
+        browser = {"headless": True}
+        browser.update(connector.browser_config or {})
+        crawler = {"stream": False, "cache_mode": "bypass"}
+        crawler.update(connector.crawler_config or {})
+        crawler["stream"] = False
+        payload = {
+            "urls": [target],
+            "browser_config": {"type": "BrowserConfig", "params": browser},
+            "crawler_config": {"type": "CrawlerRunConfig", "params": crawler},
+        }
+        headers = self._headers(connector, "application/json")
+        headers["Content-Type"] = "application/json"
+        request = urllib.request.Request(
+            endpoint,
+            data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+            headers=headers,
+            method="POST",
+        )
+        request_id = uuid.uuid4().hex
+        opener = urllib.request.build_opener(_SameHostRedirect())
+        started = time.monotonic()
+        try:
+            with opener.open(request, timeout=connector.timeout) as response:
+                status = int(response.status)
+                data = response.read(CRAWL4AI_RESPONSE_MAX + 1)
+        except AgentError:
+            raise
+        except urllib.error.HTTPError as error:
+            raise AgentError("CONNECTOR_HTTP_ERROR", f"{connector.name!r} sidecar answered HTTP {error.code}") from error
+        except (TimeoutError, socket.timeout) as error:
+            raise AgentError(
+                "CONNECTOR_TIMEOUT",
+                f"{connector.name!r} sidecar timed out after {connector.timeout:.0f}s; not retried",
+            ) from error
+        except urllib.error.URLError as error:
+            if isinstance(error.reason, (TimeoutError, socket.timeout)):
+                raise AgentError(
+                    "CONNECTOR_TIMEOUT",
+                    f"{connector.name!r} sidecar timed out after {connector.timeout:.0f}s; not retried",
+                ) from error
+            raise AgentError(
+                "CONNECTOR_UNKNOWN",
+                f"{connector.name!r} sidecar transport failed; outcome unknown, not retried: {error.reason}",
+            ) from error
+        except OSError as error:
+            raise AgentError(
+                "CONNECTOR_UNKNOWN",
+                f"{connector.name!r} sidecar transport failed; outcome unknown, not retried: {error}",
+            ) from error
+        if len(data) > CRAWL4AI_RESPONSE_MAX:
+            raise AgentError("CONNECTOR_TOO_LARGE", f"{connector.name!r} sidecar response exceeded {CRAWL4AI_RESPONSE_MAX} bytes")
+        try:
+            response_payload = json.loads(data.decode("utf-8"))
+        except ValueError as error:
+            raise AgentError("CONNECTOR_BAD_RESPONSE", f"{connector.name!r} sidecar returned non-JSON") from error
+        results = response_payload.get("results") if isinstance(response_payload, dict) else None
+        if not isinstance(results, list) or not results:
+            raise AgentError("CONNECTOR_BAD_RESPONSE", f"{connector.name!r} sidecar returned no results")
+        item = results[0] if isinstance(results[0], dict) else {}
+        if not item.get("success", False):
+            error_message = str(item.get("error_message") or "crawl failed")
+            raise AgentError("CONNECTOR_UPSTREAM_ERROR", f"{connector.name!r}: {error_message[:300]}")
+        markdown = item.get("markdown")
+        if isinstance(markdown, dict):
+            text = (markdown.get("fit_markdown") or markdown.get("raw_markdown")
+                    or markdown.get("markdown_with_citations") or "")
+        elif isinstance(markdown, str):
+            text = markdown
+        else:
+            text = item.get("fit_markdown") or ""
+        text = str(text)
+        if not text.strip() and item.get("html"):
+            _, text = _extract(str(item["html"]).encode("utf-8"), "html", "utf-8")
+        if not text.strip():
+            raise AgentError("EVIDENCE_EMPTY", f"{connector.name!r} sidecar returned no readable text")
+        encoded = text.encode("utf-8")
+        cap = min(connector.max_bytes, COLLECT_MAX_BYTES)
+        if len(encoded) > cap:
+            raise AgentError("CONNECTOR_TOO_LARGE", f"{connector.name!r} sidecar text exceeded {cap} bytes")
+        metadata = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
+        latency_ms = int((time.monotonic() - started) * 1000)
+        return {
+            "source": connector.name,
+            "adapter": "crawl4ai",
+            "url": target,
+            "status": status,
+            "content_type": "text/markdown",
+            "sha256": hashlib.sha256(encoded).hexdigest(),
+            "bytes": len(encoded),
+            "retrieved_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "kind": "markdown",
+            "title": str(metadata.get("title") or item.get("title") or ""),
             "text": text,
             "request_id": request_id,
             "latency_ms": latency_ms,
@@ -430,6 +557,12 @@ def load_registry(path: str | Path | None = None) -> ConnectorRegistry:
         else:
             credentials = None
 
+        adapter = str(item.get("adapter", "http")).lower()
+        if adapter not in ("http", "crawl4ai"):
+            raise ValueError(f"unsupported adapter {adapter!r} for source {item['name']!r}")
+        target_url = str(item.get("target_url", ""))
+        if adapter == "crawl4ai" and not target_url:
+            raise ValueError(f"crawl4ai source {item['name']!r} needs target_url")
         connectors.append(Connector(
             name=str(item["name"]),
             base_url=str(item["base_url"]),
@@ -440,6 +573,10 @@ def load_registry(path: str | Path | None = None) -> ConnectorRegistry:
             credentials=credentials,
             description=str(item.get("description", "")),
             allow_private=bool(item.get("allow_private", False)),
+            adapter=adapter,
+            target_url=target_url,
+            browser_config=dict(item.get("browser_config") or {}),
+            crawler_config=dict(item.get("crawler_config") or {}),
         ))
     return ConnectorRegistry(connectors)
 
