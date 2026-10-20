@@ -114,7 +114,9 @@ let currentTrace = null;
 let currentCheck = null;
 let railTab = "events";
 let railOpen = window.innerWidth > 1100;
-let railHumanOnly = false;
+let railFilter = localStorage.getItem("fa.railFilter") || "key";
+if (!["all", "human", "key"].includes(railFilter)) railFilter = "key";
+const evExpanded = new Set();
 let approvalMode = localStorage.getItem("fa.approval") || "consequential";
 if (!APPROVAL_MODES.some(([key]) => key === approvalMode)) approvalMode = "consequential";
 
@@ -601,66 +603,186 @@ function renderRuns() {
 
 /* ------------------------------------------------------------------ rail */
 
+const MACHINE_EVENTS = new Set([
+  "model_started", "plan_validated", "plan_updated", "execution_started",
+  "execution_resumed", "tool_started",
+]);
+
+function setTabCount(name, value) {
+  const el = document.querySelector(`[data-count="${name}"]`);
+  if (el) el.textContent = value === "" ? "" : String(value);
+}
+
+function railEmptyHtml() {
+  return `<div class="rail-empty-doc">${doodleSvg("file-text")}
+    <div class="t">案卷尚未展开</div>
+    <div class="dim">从左侧选择一条委托，或运行一个新的任务</div>
+  </div>`;
+}
+
+function eventItemHtml(e) {
+  const human = HUMAN_EVENTS.has(e.type);
+  const detail = summariseEvent(e);
+  const mark = human
+    ? `<span class="ev-human">人</span>`
+    : `<span class="ev-mark ${EVENT_DOT[e.type] || ""}"></span>`;
+  return `<div class="ev-item${human ? " human" : ""}">
+    <div class="ev-line">
+      ${mark}
+      <span class="ev-type">${esc(e.type)}</span>
+      <span class="grow"></span>
+      <span class="ev-ref" data-copy="${esc(e.hash || "")}" title="点击复制完整哈希">#${e.sequence} · ${esc(shortHash(e.hash))}</span>
+    </div>
+    ${detail ? `<div class="ev-detail">${detail}</div>` : ""}
+  </div>`;
+}
+
+function renderEvents(trace, check) {
+  const all = trace.events || [];
+  const byRound = new Map();
+  for (const event of all) {
+    const round = Number((event.payload || {}).detail?.round) || 0;
+    if (!byRound.has(round)) byRound.set(round, []);
+    byRound.get(round).push(event);
+  }
+  const chips = [
+    ["key", "关键"], ["all", "全部"], ["human", "人工"],
+  ].map(([key, label]) => `<button class="rf${railFilter === key ? " active" : ""}" data-rail-filter="${key}">${label}</button>`).join("");
+
+  let html = `<div class="rail-filters">${chips}</div>`;
+  const rounds = [...byRound.keys()].sort((a, b) => a - b);
+  for (const round of rounds) {
+    const events = byRound.get(round);
+    const human = events.filter(e => HUMAN_EVENTS.has(e.type));
+    const machines = events.filter(e => MACHINE_EVENTS.has(e.type));
+    const shown = railFilter === "human"
+      ? human
+      : events.filter(e => railFilter === "all" || !MACHINE_EVENTS.has(e.type));
+    const expandable = railFilter === "key" && machines.length > 0;
+    const expanded = evExpanded.has(round);
+    if (!shown.length && !expandable) continue;
+    html += `<div class="ev-round">${round === 0 ? "任务" : "第 " + round + " 轮"}</div>`;
+    if (expanded) {
+      html += shown.concat(machines)
+        .sort((a, b) => a.sequence - b.sequence)
+        .map(eventItemHtml).join("");
+      html += `<button class="ev-more" data-ev-group="${round}">收起过程 · ${machines.length} 条</button>`;
+    } else {
+      html += shown.map(eventItemHtml).join("");
+      if (expandable) {
+        html += `<button class="ev-more" data-ev-group="${round}">过程 ${machines.length} 条 ▸</button>`;
+      }
+    }
+  }
+  if (!html.includes("ev-item")) {
+    html += `<div class="rail-empty">${railFilter === "human" ? "这条轨迹里还没有人工决定" : "没有可显示的事件"}</div>`;
+  }
+  return html;
+}
+
+function renderChain(trace, check) {
+  const events = trace.events || [];
+  const chain = trace.chain || {};
+  const ok = !!(check && check.ok);
+  const shield = doodleSvg("shield-check", "draw");
+  const head = chain.head_hash || "";
+  return `<div class="seal ${ok ? "ok" : "bad"}">
+    <div class="seal-head">${shield}<span>${check && check.live ? "签名中" : ok ? "全链验证通过" : "链验证失败"}</span><span class="grow"></span><span class="seal-count">${events.length} 事件</span></div>
+    ${!ok && check && check.reason ? `<div class="seal-reason">${esc(check.reason)}</div>` : ""}
+    <div class="seal-row"><span class="k">链头</span><span class="seal-hash" data-copy="${esc(head)}" title="点击复制">${esc(head)}</span></div>
+    <div class="seal-row"><span class="k">算法</span><span>${esc(chain.algorithm || "sha256 · canonical json")}</span></div>
+  </div>
+  <div class="rail-sec-title">链接明细</div>
+  <div class="chain-list">${events.map(e => `<div class="link-row">
+    <span class="n">#${e.sequence}</span>
+    <span class="h">${esc(shortHash(e.hash))}</span>
+    <span class="arrow">←</span>
+    <span class="p">${esc(shortHash(e.prev_hash))}${e.prev_hash ? "" : " (genesis)"}</span>
+  </div>`).join("")}</div>`;
+}
+
+function renderRaw(trace) {
+  const json = JSON.stringify(trace, null, 2);
+  const lines = json.split("\n").map((line, index) => `<span class="raw-line"><i>${index + 1}</i>${esc(line)}</span>`).join("");
+  return `<div class="raw-head">
+      <button class="rf" data-copy-raw>复制原文</button>
+      <button class="rf" data-download-raw>下载 trace</button>
+    </div>
+    <pre class="raw-pre">${lines}</pre>`;
+}
+
+function bindRailCopy() {
+  const body = document.getElementById("rail-body");
+  for (const el of body.querySelectorAll("[data-copy]")) {
+    el.addEventListener("click", async () => {
+      const ok = await copyText(el.dataset.copy);
+      toast(ok ? "哈希已复制" : "复制失败");
+    });
+  }
+  const copyRaw = body.querySelector("[data-copy-raw]");
+  if (copyRaw) {
+    copyRaw.addEventListener("click", async () => {
+      if (!currentTrace) return;
+      const ok = await copyText(JSON.stringify(currentTrace, null, 2));
+      toast(ok ? "原文已复制" : "复制失败");
+    });
+  }
+  const download = body.querySelector("[data-download-raw]");
+  if (download) {
+    download.addEventListener("click", () => {
+      if (!currentTrace) return;
+      const blob = new Blob([JSON.stringify(currentTrace, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url; link.download = "trace.json"; link.click();
+      URL.revokeObjectURL(url);
+    });
+  }
+}
+
 function renderRail(trace, check) {
   const body = document.getElementById("rail-body");
-  if (!trace) { body.innerHTML = ""; return; }
+  if (!trace) { body.innerHTML = railEmptyHtml(); return; }
   for (const button of document.querySelectorAll("#rail-tabs button")) {
     button.classList.toggle("active", button.dataset.tab === railTab);
   }
+  const events = trace.events || [];
+  const count = document.getElementById("rail-count");
+  if (count) count.textContent = events.length ? `${events.length} 事件` : "";
+  setTabCount("events", events.length);
+  setTabCount("tools", toolContracts ? toolContracts.length : "");
+  setTabCount("chain", events.length);
 
   if (railTab === "events") {
-    const all = trace.events || [];
-    const humans = all.filter(e => HUMAN_EVENTS.has(e.type));
-    const events = railHumanOnly ? humans : all;
-    body.innerHTML = `<div class="rail-tools">
-      <button class="rf${railHumanOnly ? " active" : ""}" data-rail-human>${railHumanOnly ? "只看人工" : "人工"} · ${humans.length}</button>
-      <span class="rf-hint">审批 / 修订 / 预算 / 续跑</span>
-    </div>` + (events.length ? events.map(e => `<div class="ev-item">
-      <div class="ev-line">
-        <span class="ev-seq">#${e.sequence}</span>
-        ${dot(EVENT_DOT[e.type] || "")}
-        <span class="ev-type">${esc(e.type)}</span>
-        <span class="ev-hash">${esc(shortHash(e.hash))}</span>
-      </div>
-      ${summariseEvent(e) ? `<div class="ev-detail">${summariseEvent(e)}</div>` : ""}
-    </div>`).join("") : `<div class="rail-empty">这条轨迹里还没有人工决定</div>`);
-    const toggle = body.querySelector("[data-rail-human]");
-    if (toggle) {
-      toggle.addEventListener("click", () => {
-        railHumanOnly = !railHumanOnly;
+    body.innerHTML = renderEvents(trace, check);
+    for (const chip of body.querySelectorAll("[data-rail-filter]")) {
+      chip.addEventListener("click", () => {
+        railFilter = chip.dataset.railFilter;
+        localStorage.setItem("fa.railFilter", railFilter);
         renderRail(trace, check || { ok: false, reason: "" });
       });
     }
+    for (const toggle of body.querySelectorAll("[data-ev-group]")) {
+      toggle.addEventListener("click", () => {
+        const round = Number(toggle.dataset.evGroup);
+        if (evExpanded.has(round)) evExpanded.delete(round); else evExpanded.add(round);
+        renderRail(trace, check || { ok: false, reason: "" });
+      });
+    }
+    bindRailCopy();
     return;
   }
-
   if (railTab === "tools") {
     body.innerHTML = renderTools(trace, check);
     return;
   }
-
   if (railTab === "chain") {
-    const events = trace.events || [];
-    const chain = trace.chain || {};
-    body.innerHTML = `
-      <div class="rail-sec">
-        <div class="rs-row"><span class="k">算法</span><span class="v">${esc(chain.algorithm || "sha256 · canonical json")}</span></div>
-        <div class="rs-row"><span class="k">事件数</span><span class="v">${events.length}</span></div>
-        <div class="rs-row"><span class="k">链头</span><span class="v">${esc(chain.head_hash || "")}</span></div>
-        <div class="rs-row"><span class="k">浏览器重算</span><span class="v ${check.live ? "" : (check.ok ? "ok" : "bad")}">${check.live ? "运行中…" : (check.ok ? "✔ 通过" : "✕ " + esc(check.reason))}</span></div>
-      </div>
-      <div class="rail-sec">
-        ${events.map(e => `<div class="link-row">
-          <span class="n">#${e.sequence}</span>
-          <span class="h">${esc(shortHash(e.hash))}</span>
-          <span class="arrow">←</span>
-          <span>${esc(shortHash(e.prev_hash))}${e.prev_hash ? "" : " (genesis)"}</span>
-        </div>`).join("")}
-      </div>`;
+    body.innerHTML = renderChain(trace, check);
+    bindRailCopy();
     return;
   }
-
-  body.innerHTML = `<pre>${esc(JSON.stringify(trace, null, 2))}</pre>`;
+  body.innerHTML = renderRaw(trace);
+  bindRailCopy();
 }
 
 const TOOL_DOODLE_ICON = {
@@ -728,7 +850,7 @@ function renderTools(trace, check) {
       const icon = iconName
         ? `<span class="tr-ic">${doodleSvg(iconName, contract.name === activeTool)}</span>`
         : "";
-      return `<div class="tool-row${inScope ? "" : " out-of-scope"}">
+      return `<div class="tool-row${inScope ? "" : " out-of-scope"}" title="${esc(contract.summary || "")}">
         <div class="tr-head">
           ${icon}
           <span class="tr-name">${esc(contract.name)}</span>
@@ -737,7 +859,6 @@ function renderTools(trace, check) {
           <span class="grow"></span>
           <span class="tr-scope">${inScope ? (inGrant ? "允许 · 已授权" : "允许 · 未授权") : "不在任务范围"}</span>
         </div>
-        <div class="tr-summary">${esc(contract.summary || "")}</div>
         <div class="tr-usage">${esc(usageText)}</div>
       </div>`;
     }).join("");
@@ -2257,6 +2378,7 @@ async function initLive() {
 
 async function selectRun(id) {
   ledgerOpen = false;
+  evExpanded.clear();
   const existing = sessions.get(id);
   if (existing) return openLive(id, existing.objective, existing.template);
   const run = runHistory.find(item => item.id === id);
@@ -2312,6 +2434,7 @@ async function loadTrace(key) {
 async function select(key, label) {
   if (key.startsWith("run:")) return selectRun(key.slice(4));
   ledgerOpen = false;
+  evExpanded.clear();
   if (live) detachLive();
   currentKey = key;
   renderNav();

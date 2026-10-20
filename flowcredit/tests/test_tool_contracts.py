@@ -36,7 +36,7 @@ class ToolContractTests(unittest.TestCase):
             contract = spec.contract()
             self.assertEqual(
                 set(contract),
-                {"name", "version", "effect", "parameters", "outputs"},
+                {"name", "summary", "version", "effect", "parameters", "outputs"},
             )
 
     def test_model_facing_catalog_does_not_leak_the_contract(self) -> None:

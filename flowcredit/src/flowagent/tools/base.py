@@ -102,6 +102,7 @@ class ToolSpec:
         """Full contract for operators, tests and audits (not for the model)."""
         return {
             "name": self.name,
+            "summary": self.summary,
             "version": self.version,
             "effect": self.effect,
             "parameters": {param.name: param.to_schema() for param in self.params},

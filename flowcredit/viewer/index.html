@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light">
 <title>Fcode · flowcredit console</title>
-<link rel="stylesheet" href="app.css?v=29">
+<link rel="stylesheet" href="app.css?v=31">
 </head>
 <body>
 <div class="shell app rail-open" id="app">
@@ -128,10 +128,11 @@
 
       <aside class="rail">
         <div class="rail-head">
+          <div class="rail-title"><span class="rail-kicker">案卷</span><span class="rail-count" id="rail-count"></span></div>
           <div class="seg" id="rail-tabs">
-            <button data-tab="events" class="active">事件</button>
-            <button data-tab="tools">工具</button>
-            <button data-tab="chain">链</button>
+            <button data-tab="events" class="active">事件<span class="tab-count" data-count="events"></span></button>
+            <button data-tab="tools">工具<span class="tab-count" data-count="tools"></span></button>
+            <button data-tab="chain">链<span class="tab-count" data-count="chain"></span></button>
             <button data-tab="raw">原始</button>
           </div>
         </div>
@@ -181,8 +182,8 @@
   </div>
 </div>
 
-<script src="report.js?v=29"></script>
-<script src="icons-doodle.js?v=29"></script>
-<script src="app.js?v=29"></script>
+<script src="report.js?v=31"></script>
+<script src="icons-doodle.js?v=31"></script>
+<script src="app.js?v=31"></script>
 </body>
 </html>
