@@ -2,13 +2,14 @@
 
 一个零依赖、零构建、可离线的 flowcredit agent 控制台（界面里的 agent 名字是 **Fcode**）：既能**真实运行任务**（接到 Python Runtime 上，
 事件流式进入页面），也能**只读回放**已签名的 trace。形态为「对话主视图 + 右侧常驻证据栏」，
-客户端只是 index.html + app.css + app.js 三个静态文件，由标准库 server 直接托管。
+客户端只是 index.html + app.css + app.js + report.js 四个静态文件，由标准库 server 直接托管。
 
 ```
 flowcredit/viewer/
   index.html          ← 前端外壳（零依赖、零构建）
   app.css             ← 静默化设计系统：颜色只表达状态语义，层级靠间距与字重
-  app.js              ← 全部前端逻辑（回放 / 直播 / 命令面板 / 运行管理）
+  app.js              ← 全部前端逻辑（回放 / 直播 / 建单向导 / 运行管理）
+  report.js           ← 自包含审计报告生成器（结论 / 账单 / 证据 / 人工决定 / 链附录）
   server.py           ← 本地控制台服务（标准库）：静态文件 + JSON/SSE API + 运行管理
   traces/             ← 7 个演示场景的 trace JSON（随仓库提供，可重新生成）
   runs/               ← 每次真实运行的产物（task.sqlite + trace.json + meta.json，不入库）
@@ -53,15 +54,21 @@ python3 flowcredit/viewer/server.py --repo . --pace 0.7
 
 - **composer 真的能派活**：输入任务 → Enter 发送 → Runtime 现场执行，
   Plan、预算、逐轮工具卡、事件日志**边产生边渲染**（Server-Sent Events 推送 trace 快照）。
+- **三步建单向导**：点 `＋`（或空态 CTA）打开「类型 → 说明 → 审批」向导，
+  7 个模板卡标出标准委托 / 演示、预算与轮次；提交后自动开跑并建会话标签，不必先记住模板名。
 - **模板选择器**（`▤ 完整研究 ⌄`）：7 个场景模板决定授权、预算与故障注入
   （越权拒绝 / 预算耗尽 / 预算追加续跑 / 真实 SIGKILL 崩溃恢复 / 未知对账 / 计划受阻）。
+- **运行中插话**：运行中 composer 仍可输入，消息排队到下一个轮次边界，
+  以 `operator_message` 写入同一条哈希链；排队 / 入链 / 未送达三种状态都在气泡上标明。
+- **多会话并行**：每次委托一个会话标签，后台会话保持 SSE 流式，切换标签不丢画面；
+  后台完成时用 Notification 提醒（默认关闭，可在 `⌘K` 里开启）。
 - **审批门**（`🔒 关键审批 ⌄`）：默认只在关键工具（`reconcile_basis`、`report_blocked`）执行前暂停；
   也可切到「逐步审批」或「自动」。审批卡显示倒计时、参数与策略，允许 / 拒绝都写入哈希链；
   拒绝会终止运行（`OPERATOR_DENIED`），超时自动拒绝；可勾选「本次运行内不再询问该工具」。
 - **人工控制**：运行中可调整计划（跳过 / 提前某个 todo）、追加预算（只能调高，下一轮生效）；
   失败于 `BUDGET_EXCEEDED` / `ROUND_LIMIT` 时，结果卡提供「追加预算并继续」，
-  从事件日志续跑，不重发已付的读取。右侧证据栏可只看人工事件（审批 / 修订 / 预算 / 续跑）。
-- **随时停止**：运行中发送键变为 ■，点击后在**轮次边界**停止，
+  从事件日志续跑，不重发已付的读取。右侧证据栏可只看人工事件（审批 / 修订 / 预算 / 续跑 / 消息）。
+- **随时停止**：运行中 composer 发送键变为 ↑（发送消息），顶栏的「运行中」胶囊点击后在**轮次边界**停止，
   终态记为 `failed · STOPPED_BY_OPERATOR`，已产生的事件与哈希链依然完整可验。
 - **工具卡按 runtime 的工具词汇渲染**（`read_document` / `calculate_margin` / `report_blocked` …）：
   默认折叠成「工具 + 参数 + 判定 + 一行结果预览」；运行中的卡自动展开，完成后自动收起
@@ -71,8 +78,9 @@ python3 flowcredit/viewer/server.py --repo . --pace 0.7
   状态点区分 succeeded / failed / denied / 运行中。
 - **失败运行可操作**：结果卡里的「重试」以同一目标 + 模板重新提交；「复制诊断」生成一段
   可直接粘贴的诊断文本（运行 id、模板、终态、失败码、链验证、时间）。
+- **审计报告**：运行结束后的「签发报告」生成自包含 HTML 工作底稿（结论、账单、证据、
+  人工决定、链附录），内嵌预览可打印 / 存 PDF / 下载；下载件不依赖本机即可打开与转发。
 - **完成通知**：Notification API，默认关闭（⌘K 里开启），仅在页面不聚焦时提醒。
-- **后台运行**：运行中切换到别的场景不会中断任务，侧栏持续跟踪，完成后自动变为已完成。
 
 ### 键盘与命令面板
 
@@ -84,7 +92,7 @@ python3 flowcredit/viewer/server.py --repo . --pace 0.7
 | `⌘⌫` / `Ctrl+Backspace` | 拒绝当前审批（终止运行） |
 | `Enter` / `⇧Enter` | 发送 / 换行 |
 | `R` | 重放当前场景（静态回放） |
-| `Esc` | 关闭命令面板 / 模板菜单 / 审批菜单 / 收起浮动证据栏 |
+| `Esc` | 关闭命令面板 / 建单向导 / 报告预览 / 模板菜单 / 审批菜单 / 收起浮动证据栏 |
 
 ## API（`server.py`，标准库实现）
 
@@ -97,6 +105,7 @@ python3 flowcredit/viewer/server.py --repo . --pace 0.7
 | GET | `/api/runs/{id}/stream` | SSE：`hello / snapshot / done / failed`，快照含 `pending` / `approval` |
 | POST | `/api/runs/{id}/stop` | 在下一个轮次边界停止 |
 | POST | `/api/runs/{id}/decision` | `{"approvalId": "…", "allow": true, "remember": false}` → 放行或拒绝 |
+| POST | `/api/runs/{id}/messages` | `{"text": "…"}` → 运行中插话；排队到下一轮边界写入 `operator_message` |
 | POST | `/api/runs/{id}/plan` | `{"action": "skip"\|"promote", "todoId": "t4"}` → 下一轮生效 |
 | POST | `/api/runs/{id}/budget` | `{"maxCalls": 20, "maxReads": 30, "maxCostMicrousd": 30000}` → 只能调高，下一轮生效 |
 | POST | `/api/runs/{id}/resume` | 追加预算并续跑：`{"maxCalls": …, "maxReads": …, "maxCostMicrousd": …, "extraRounds": 6}` |
@@ -114,10 +123,11 @@ WAL 只读连接上取已提交事件，重建 trace 快照（recorder 的轮次
 | 审批 allow / deny | 立即解除阻塞；暂停点在 `gate` 之后、`execute` 之前 | 拒绝 = 终止运行（`OPERATOR_DENIED`）；超时自动拒绝；`remember` 只在本次运行内对同一工具生效 |
 | 计划 `skip` / `promote` | 下一轮开始时重建计划 | 跳过不可撤销；被拒绝的指令写 `control_rejected`；跳过必要步骤会得到诚实的 `INSUFFICIENT_EVIDENCE` |
 | 预算调整 | 下一轮开始时 | 只能调高；发送前扣减的语义不变 |
+| 运行中消息 | 下一轮 `before_round` | 只写入事件链，不打断当前工具调用；消息过长或运行已结束会被拒 |
 | 续跑 | 仅接受 `BUDGET_EXCEEDED` 或 `ROUND_LIMIT` | 从旧 trace 重建工作记忆并续写同一哈希链，已付的读取不重发 |
 
 所有人工决定都进签名链：`approval_requested / approval_granted / approval_denied / approval_aborted /
-plan_steered / budget_adjusted / control_rejected / task_resumed`。右侧证据栏的「人工」筛选只显示这些事件。
+plan_steered / budget_adjusted / control_rejected / task_resumed / operator_message`。右侧证据栏的「人工」筛选只显示这些事件。
 
 ## 只读回放模式
 

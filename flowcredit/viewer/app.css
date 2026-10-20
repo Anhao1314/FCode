@@ -611,3 +611,116 @@ details.raw pre {
   .composer-wrap { padding: 0 14px 12px; }
   .result .metrics { grid-template-columns: repeat(3, 1fr); }
 }
+
+/* ================================================== 会话 tabs（多运行并行） */
+.tabs {
+  display: flex; align-items: stretch; gap: 2px; flex: none;
+  padding: 6px 14px 0; border-bottom: 1px solid var(--border-soft);
+  overflow-x: auto; scrollbar-width: none;
+}
+.tabs::-webkit-scrollbar { display: none; }
+.tab {
+  display: flex; align-items: center; gap: 7px; max-width: 220px;
+  padding: 7px 8px 7px 11px; border-radius: 8px 8px 0 0; cursor: pointer;
+  color: var(--text-3); font-size: 12.5px; white-space: nowrap;
+  border: 1px solid transparent; border-bottom: none; position: relative;
+}
+.tab:hover { color: var(--text-2); background: var(--card); }
+.tab.active {
+  color: var(--text); background: var(--card);
+  border-color: var(--border-soft);
+}
+.tab.active::after {
+  content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 1px;
+  background: var(--card);
+}
+.tdot { width: 6px; height: 6px; border-radius: 50%; flex: none; background: var(--text-3); }
+.tdot.live { background: var(--accent); animation: pulse-dot 1.2s ease-in-out infinite; }
+.tdot.ok { background: var(--green); }
+.tdot.bad { background: var(--red); }
+@keyframes pulse-dot { 50% { opacity: .35; } }
+.tlabel { overflow: hidden; text-overflow: ellipsis; }
+.tab .tx {
+  border: none; background: none; color: var(--text-3); cursor: pointer;
+  font-size: 13px; line-height: 1; padding: 1px 3px; border-radius: 4px; flex: none;
+}
+.tab .tx:hover { color: var(--text); background: var(--border-soft); }
+
+/* ============================================== 运行中消息（ZCode 式插话） */
+.msg {
+  margin: 10px 0; padding: 9px 13px; border-radius: var(--r-card);
+  border: 1px solid var(--border-soft); background: var(--well);
+}
+.msg.op { border-left: 2px solid var(--accent); }
+.msg.queued { opacity: .75; }
+.msg.failed { border-left-color: var(--red); }
+.msg-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 2px; }
+.msg-who { font-size: 11px; font-weight: 600; color: var(--accent); letter-spacing: .04em; }
+.msg-state { font-size: 11px; color: var(--text-3); }
+.msg.failed .msg-state { color: var(--red); }
+.msg-text { font-size: 13.5px; color: var(--text); white-space: pre-wrap; word-break: break-word; }
+.queued-msgs { display: flex; flex-direction: column; gap: 2px; margin: 4px 0; }
+
+/* 消息在事件流里的点色：用 accent 表达"人的输入" */
+.ev-dot.you { background: var(--accent); }
+
+/* run-chip 变成停止按钮 */
+button.run-chip { cursor: pointer; }
+button.run-chip:hover { border-color: var(--border); color: var(--text-2); }
+
+/* ============================================================ 报告签发 */
+.report-layer { position: fixed; inset: 0; z-index: 150; display: flex; }
+.report-layer[hidden] { display: none; }
+.report-scrim { position: absolute; inset: 0; background: rgba(0, 0, 0, .55); }
+.report-panel {
+  position: relative; margin: auto; width: min(920px, 92vw); height: min(86vh, 900px);
+  display: flex; flex-direction: column; background: var(--card);
+  border: 1px solid var(--border); border-radius: var(--r-card);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, .5); overflow: hidden;
+}
+.report-bar {
+  display: flex; align-items: center; gap: 8px; padding: 10px 14px; flex: none;
+  border-bottom: 1px solid var(--border-soft); background: var(--card-2);
+}
+.report-title { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.report-frame { flex: 1; border: none; background: #fff; width: 100%; }
+
+/* ============================================================ 建单向导 */
+.wizard-layer { position: fixed; inset: 0; z-index: 140; display: flex; }
+.wizard-layer[hidden] { display: none; }
+.wizard-panel {
+  position: relative; margin: auto; width: min(680px, 92vw); max-height: min(84vh, 820px);
+  display: flex; flex-direction: column; background: var(--card);
+  border: 1px solid var(--border); border-radius: var(--r-card);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, .5); overflow: hidden;
+}
+.wizard-body { flex: 1; overflow-y: auto; padding: 16px 18px; }
+.wizard-foot {
+  display: flex; align-items: center; gap: 8px; padding: 12px 18px; flex: none;
+  border-top: 1px solid var(--border-soft); background: var(--card-2);
+}
+.wz-hint { font-size: 12.5px; color: var(--text-2); margin-bottom: 12px; line-height: 1.7; }
+.wz-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.wz-card {
+  text-align: left; border: 1px solid var(--border-soft); background: var(--well);
+  border-radius: 10px; padding: 11px 13px; cursor: pointer; color: var(--text-2);
+}
+.wz-card:hover { border-color: var(--border); color: var(--text-2); }
+.wz-card.active { border-color: var(--accent); background: var(--accent-soft); color: var(--text); }
+.wz-t { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-weight: 600; font-size: 13px; }
+.wz-badge { font-size: 10px; font-weight: 700; padding: 1px 7px; border-radius: 999px;
+  background: var(--green-soft); color: var(--green); letter-spacing: .04em; flex: none; }
+.wz-badge.demo { background: var(--yellow-soft); color: var(--yellow); }
+.wz-d { font-size: 11.5px; margin-top: 4px; line-height: 1.6; }
+.wz-m { font-size: 10.5px; color: var(--text-3); margin-top: 6px; font-family: var(--mono); }
+.wz-ta {
+  width: 100%; background: var(--well); color: var(--text); border: 1px solid var(--border-soft);
+  border-radius: 10px; padding: 11px 13px; font: 13.5px/1.7 var(--sans); resize: vertical; min-height: 110px;
+}
+.wz-ta:focus { outline: none; border-color: var(--accent); }
+.wz-count { text-align: right; font-size: 11px; color: var(--text-3); margin-top: 4px; font-family: var(--mono); }
+.wz-summary { border: 1px solid var(--border-soft); border-radius: 10px; margin-top: 12px; overflow: hidden; }
+.wz-summary > div { display: flex; gap: 12px; padding: 8px 13px; border-bottom: 1px solid var(--border-soft); font-size: 12.5px; }
+.wz-summary > div:last-child { border-bottom: none; }
+.wz-summary span { color: var(--text-3); width: 44px; flex: none; }
+.wz-summary b { font-weight: 500; word-break: break-all; }

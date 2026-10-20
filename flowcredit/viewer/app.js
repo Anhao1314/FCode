@@ -19,12 +19,13 @@ const EVENT_DOT = {
   task_succeeded: "ok", task_failed: "bad", task_stopped: "warn",
   approval_requested: "warn", approval_granted: "ok", approval_denied: "bad", approval_aborted: "warn",
   plan_steered: "info", budget_adjusted: "info", control_rejected: "bad", task_resumed: "info",
+  operator_message: "you",
 };
 
-/* 人的决定：审批、计划修订、预算调整、续跑 */
+/* 人的决定：审批、计划修订、预算调整、续跑、运行中消息 */
 const HUMAN_EVENTS = new Set([
   "approval_requested", "approval_granted", "approval_denied", "approval_aborted",
-  "plan_steered", "budget_adjusted", "control_rejected", "task_resumed",
+  "plan_steered", "budget_adjusted", "control_rejected", "task_resumed", "operator_message",
 ]);
 
 const APPROVAL_MODES = [
@@ -76,8 +77,11 @@ let health = null;      // /api/health payload
 let templates = [];     // /api/templates
 let tplKey = "full";    // selected template
 let runHistory = [];    // /api/runs
-let live = null;        // attached live run: { id, es, trace, ... }
+let live = null;        // 当前激活的会话（指向 sessions 中的一项）
 let runFilter = "";     // 运行记录搜索词
+
+/* 多会话：每个 run 一个会话对象；后台会话保持 SSE 流，只是不渲染 */
+const sessions = new Map();
 
 /* --------------------------------------------------------- canonical json */
 
@@ -327,6 +331,7 @@ function summariseEvent(e) {
   }
   if (e.type === "control_rejected") return `${esc(d.kind)} · ${esc(d.reason)}`;
   if (e.type === "task_resumed") return `by ${esc(d.by || "operator")}${d.limits ? " · calls " + esc(d.limits.max_calls) : ""}`;
+  if (e.type === "operator_message") return `第 ${esc(d.round)} 轮前 · ${esc(d.text || "")}`;
   return esc(JSON.stringify(d).slice(0, 120));
 }
 
@@ -431,60 +436,88 @@ function alertDetail(kind, title, sub) {
   return `<div class="t-detail"><div class="alert ${kind}"><div class="a-title">${esc(title)}</div>${sub ? `<div class="a-sub">${esc(sub)}</div>` : ""}</div></div>`;
 }
 
-function renderToolDetail(obs) {
-  const tool = obs.tool;
+/* 工具渲染注册表：已知工具给专属视图，未知工具走通用兜底 */
+const TOOL_RENDERERS = {
+  list_documents(obs) {
+    const docs = (obs.result || {}).documents || [];
+    if (!docs.length) return "";
+    return `<div class="t-detail">${docs.map(d => `<div class="doc-row">
+      <span class="id">${esc(d.id)}</span>
+      <span class="meta2">${esc(d.kind || "")} · ${esc(d.period || "")}</span>
+      <span class="grow"></span>
+      <span class="meta2">${esc(d.unit_label || d.unit || "")} · ${esc(d.basis || "")}</span>
+    </div>`).join("")}</div>`;
+  },
+  read_document(obs) {
+    const r = obs.result || {};
+    const body = String(r.body || "");
+    return `<div class="t-detail">
+      <div class="doc-row"><span class="id">${esc(r.id || "")}</span><span class="meta2">${esc(r.title || "")}</span></div>
+      ${body ? `<pre class="doc-body">${esc(body)}</pre>` : ""}
+    </div>`;
+  },
+  normalize_units(obs) {
+    const r = obs.result || {};
+    return kvDetail([
+      ["换算", `${r.source_unit} → ${r.target_unit}`],
+      ["系数", `×${num(r.factor)}`],
+      ["毛利（元）", num(r.gross_profit_cny)],
+    ]);
+  },
+  reconcile_basis(obs) {
+    const r = obs.result || {};
+    if (r.reconciled === false) return alertDetail("warn", "无法桥接口径", r.reason || "没有公布的桥接说明");
+    return kvDetail([
+      ["期间", r.period],
+      ["口径", `${r.from_basis} → ${r.to_basis}`],
+      ["差异", `${r.delta >= 0 ? "+" : ""}${r.delta}`],
+      ["说明", r.reason || ""],
+    ]);
+  },
+  check_restatement(obs) {
+    const r = obs.result || {};
+    if (!r.restated) return kvDetail([["重述", "无重述记录"]]);
+    return kvDetail([
+      ["原值 → 重述", `${num(r.original_gross_profit)} → ${num(r.restated_gross_profit)}`],
+      ["差异", `${r.delta >= 0 ? "+" : ""}${r.delta}`],
+      ["说明", r.reason || ""],
+    ]);
+  },
+  calculate_margin(obs) {
+    const r = obs.result || {};
+    if (!r.computed) return alertDetail("bad", "无法计算", (r.blockers || []).join("；"));
+    return `<div class="t-detail"><div class="t-metrics">
+      <div><div class="k">FY2024</div><div class="v">${pct(r.margin_bp_2024)}</div></div>
+      <div><div class="k">FY2025</div><div class="v">${pct(r.margin_bp_2025)}</div></div>
+      <div><div class="k">变化</div><div class="v ${r.change_bp >= 0 ? "up" : "down"}">${pp(r.change_bp)}</div></div>
+    </div></div>`;
+  },
+  report_blocked(obs) {
+    return alertDetail("bad", "声明受阻", (obs.result || {}).reason || "");
+  },
+};
+
+/* 通用兜底：原始值铺成 KV 表，嵌套对象折叠展示——任何工具输出都至少可读 */
+function genericToolDetail(obs) {
   const r = obs.result || {};
-  switch (tool) {
-    case "list_documents": {
-      const docs = r.documents || [];
-      if (!docs.length) return "";
-      return `<div class="t-detail">${docs.map(d => `<div class="doc-row">
-        <span class="id">${esc(d.id)}</span>
-        <span class="meta2">${esc(d.kind || "")} · ${esc(d.period || "")}</span>
-        <span class="grow"></span>
-        <span class="meta2">${esc(d.unit_label || d.unit || "")} · ${esc(d.basis || "")}</span>
-      </div>`).join("")}</div>`;
-    }
-    case "read_document": {
-      const body = String(r.body || "");
-      return `<div class="t-detail">
-        <div class="doc-row"><span class="id">${esc(r.id || "")}</span><span class="meta2">${esc(r.title || "")}</span></div>
-        ${body ? `<pre class="doc-body">${esc(body)}</pre>` : ""}
-      </div>`;
-    }
-    case "normalize_units":
-      return kvDetail([
-        ["换算", `${r.source_unit} → ${r.target_unit}`],
-        ["系数", `×${num(r.factor)}`],
-        ["毛利（元）", num(r.gross_profit_cny)],
-      ]);
-    case "reconcile_basis":
-      if (r.reconciled === false) return alertDetail("warn", "无法桥接口径", r.reason || "没有公布的桥接说明");
-      return kvDetail([
-        ["期间", r.period],
-        ["口径", `${r.from_basis} → ${r.to_basis}`],
-        ["差异", `${r.delta >= 0 ? "+" : ""}${r.delta}`],
-        ["说明", r.reason || ""],
-      ]);
-    case "check_restatement":
-      if (!r.restated) return kvDetail([["重述", "无重述记录"]]);
-      return kvDetail([
-        ["原值 → 重述", `${num(r.original_gross_profit)} → ${num(r.restated_gross_profit)}`],
-        ["差异", `${r.delta >= 0 ? "+" : ""}${r.delta}`],
-        ["说明", r.reason || ""],
-      ]);
-    case "calculate_margin":
-      if (!r.computed) return alertDetail("bad", "无法计算", (r.blockers || []).join("；"));
-      return `<div class="t-detail"><div class="t-metrics">
-        <div><div class="k">FY2024</div><div class="v">${pct(r.margin_bp_2024)}</div></div>
-        <div><div class="k">FY2025</div><div class="v">${pct(r.margin_bp_2025)}</div></div>
-        <div><div class="k">变化</div><div class="v ${r.change_bp >= 0 ? "up" : "down"}">${pp(r.change_bp)}</div></div>
-      </div></div>`;
-    case "report_blocked":
-      return alertDetail("bad", "声明受阻", r.reason || "");
-    default:
-      return "";
+  if (!r || typeof r !== "object" || Object.keys(r).length === 0) return "";
+  const flat = [];
+  const nested = [];
+  for (const [k, v] of Object.entries(r)) {
+    if (v === null || v === undefined || v === "") continue;
+    if (typeof v === "object") nested.push([k, v]);
+    else flat.push([k, String(v)]);
   }
+  const kv = kvDetail(flat);
+  const extra = nested.length
+    ? `<details class="raw"><summary>嵌套字段</summary><pre>${esc(JSON.stringify(Object.fromEntries(nested), null, 2))}</pre></details>`
+    : "";
+  if (!kv && !extra) return `<div class="t-detail"><pre class="doc-body">${esc(JSON.stringify(r, null, 2))}</pre></div>`;
+  return (kv || "") + extra;
+}
+
+function renderToolDetail(obs) {
+  return (TOOL_RENDERERS[obs.tool] || genericToolDetail)(obs);
 }
 
 function outcomeText(round, ann) {
@@ -733,15 +766,7 @@ function setChainBadge(check) {
 }
 
 function bindToggles(root) {
-  for (const head of root.querySelectorAll("[data-toggle]")) {
-    if (head.dataset.bound) continue;
-    head.dataset.bound = "1";
-    head.addEventListener("click", () => {
-      const round = head.closest(".round");
-      round.dataset.open = round.dataset.open === "true" ? "false" : "true";
-      round.dataset.user = "1";
-    });
-  }
+  /* toggle 已改为 #main 上的事件委托（bind()），这里保留空实现以兼容旧调用 */
 }
 
 async function render(trace, title) {
@@ -780,13 +805,12 @@ async function render(trace, title) {
       <div class="thought-body">
         <div id="plan-slot">${renderPlan(lastPlan(trace))}</div>
         <div id="budget-slot">${renderMeters(trace)}</div>
-        <div id="rounds-slot">${rounds.map((r, i) => renderRound(r, i, anns[i])).join("")}</div>
+        <div id="rounds-slot">${rounds.map((r, i) => roundWrapHtml(messagesByRound(trace), r, anns[i])).join("")}</div>
       </div>
     </details>
     <div id="result-slot">${terminal && terminal.status ? renderResult(trace) : ""}</div>
   `;
 
-  bindToggles(document);
   document.getElementById("foot-text").textContent =
     `${model.provider || "—"} · ${currentKey && currentKey.startsWith("run:") ? "运行记录" : "只读回放"}`;
   renderRail(trace, check);
@@ -814,9 +838,10 @@ function liveShell(trace) {
     <section class="prompt">
       <div class="prompt-kicker">任务 · ${esc(task.principal || "console-operator")}</div>
       <p class="prompt-text">${esc(task.objective || "")}</p>
-      <p class="prompt-note" id="live-note">已提交，等待 Runtime 启动…</p>
+      <p class="prompt-note" id="live-note" aria-live="polite">已提交，等待 Runtime 启动…</p>
     </section>
     <div id="approval-slot"></div>
+    <div id="queued-slot"></div>
     <details class="thought" id="thought" open>
       <summary class="thought-head">
         <span class="thought-title">${ICON.thought} 思考链</span>
@@ -858,106 +883,118 @@ function thoughtMeta(trace) {
   return `${rounds} 轮 · ${events} 事件${total ? ` · ${done}/${total} 步` : ""}`;
 }
 
-function liveApply(data) {
+function liveApply(s, data) {
   const trace = data.snapshot;
   if (!trace) return;
   const stick = nearMainBottom();
-  const first = !live.trace;
-  const running = !data.finished && !live.finished;
-  live.trace = trace;
+  const first = !s.trace;
+  const running = !data.finished && !s.finished;
+  s.trace = trace;
+  s.lastData = data;
   currentTrace = trace;
-  currentKey = "run:" + live.id;
+  currentKey = "run:" + s.id;
   currentCheck = { ok: true, live: true, events: (trace.events || []).length };
 
-  const scenario = trace.task && trace.task.binding ? trace.task.binding.scenario : live.template;
+  const scenario = trace.task && trace.task.binding ? trace.task.binding.scenario : s.template;
   renderHead(trace, "运行 · " + tplTitle(scenario));
 
   if (first) {
     liveShell(trace);
-    live.planHtml = "";
-    live.budgetHtml = "";
-    live.resultHtml = "";
-    live.roundHtml = [];
-    live.eventCount = 0;
+    s.planHtml = "";
+    s.budgetHtml = "";
+    s.resultHtml = "";
+    s.roundHtml = [];
+    s.eventCount = 0;
   }
 
   const eventList = trace.events || [];
   const events = eventList.length;
 
   const pending = data.pending || null;
-  if (pending && (!live.pending || live.pending.id !== pending.id)) {
-    live.pendingDeadline = Date.now() + (Number(pending.expiresIn) || 0) * 1000;
-    live.deciding = null;
+  if (pending && (!s.pending || s.pending.id !== pending.id)) {
+    s.pendingDeadline = Date.now() + (Number(pending.expiresIn) || 0) * 1000;
+    s.deciding = null;
   }
-  if (!pending) live.deciding = null;
-  live.pending = pending;
+  if (!pending) s.deciding = null;
+  s.pending = pending;
 
   const thoughtMetaEl = document.getElementById("thought-meta");
   if (thoughtMetaEl) thoughtMetaEl.textContent = thoughtMeta(trace);
 
-  if (live.planQueued && events > live.planQueued.events) {
-    const added = eventList.slice(live.planQueued.events);
+  // 消息入链回执：排队中的消息一旦以 operator_message 事件落进快照，就移出排队区
+  if (s.queuedMsgs && s.queuedMsgs.length) {
+    const delivered = new Set(
+      eventList.filter(e => e.type === "operator_message").map(e => ((e.payload || {}).detail || {}).text)
+    );
+    const before = s.queuedMsgs.length;
+    s.queuedMsgs = s.queuedMsgs.filter(m => !delivered.has(m.text));
+    if (s.queuedMsgs.length !== before) toast("消息已入链 · 下轮生效");
+    paintQueuedMsgs();
+  }
+
+  if (s.planQueued && events > s.planQueued.events) {
+    const added = eventList.slice(s.planQueued.events);
     if (added.some(e => e.type === "plan_steered")) {
-      live.planQueued = null;
+      s.planQueued = null;
       toast("计划已修订");
     } else if (added.some(e => e.type === "control_rejected" && ((e.payload || {}).detail || {}).kind === "plan")) {
-      live.planQueued = null;
+      s.planQueued = null;
       toast("计划指令被拒绝");
     }
   }
-  if (live.budgetQueued && events > live.budgetQueued.events) {
-    const added = eventList.slice(live.budgetQueued.events);
+  if (s.budgetQueued && events > s.budgetQueued.events) {
+    const added = eventList.slice(s.budgetQueued.events);
     if (added.some(e => e.type === "budget_adjusted")) {
-      live.budgetQueued = null;
+      s.budgetQueued = null;
       toast("预算已生效");
     } else if (added.some(e => e.type === "control_rejected" && ((e.payload || {}).detail || {}).kind === "budget")) {
-      live.budgetQueued = null;
+      s.budgetQueued = null;
       toast("预算调整被拒绝");
     }
   }
 
   const planHtml = renderPlan(lastPlan(trace), {
     editable: running,
-    editing: live.planEditing,
-    confirmId: live.planConfirm,
-    queued: live.planQueued ? live.planQueued.label : "",
+    editing: s.planEditing,
+    confirmId: s.planConfirm,
+    queued: s.planQueued ? s.planQueued.label : "",
   });
-  if (planHtml !== live.planHtml) {
+  if (planHtml !== s.planHtml) {
     const slot = document.getElementById("plan-slot");
     if (slot) slot.innerHTML = planHtml;
-    live.planHtml = planHtml;
+    s.planHtml = planHtml;
   }
 
   const budgetHtml = renderMeters(trace, {
     editable: running,
-    editing: live.budgetEditing,
-    queued: !!live.budgetQueued,
+    editing: s.budgetEditing,
+    queued: !!s.budgetQueued,
   });
-  if (budgetHtml !== live.budgetHtml) {
+  if (budgetHtml !== s.budgetHtml) {
     const slot = document.getElementById("budget-slot");
     if (slot) slot.innerHTML = budgetHtml;
-    live.budgetHtml = budgetHtml;
+    s.budgetHtml = budgetHtml;
   }
 
-  syncLiveRounds(trace);
+  syncLiveRounds(s, trace);
 
   const approvalKey = pending
-    ? `${pending.id}:${live.deciding ? (live.deciding.allow ? "allow" : "deny") : ""}`
+    ? `${pending.id}:${s.deciding ? (s.deciding.allow ? "allow" : "deny") : ""}`
     : "";
-  if (approvalKey !== live.approvalKey) {
-    live.approvalKey = approvalKey;
+  if (approvalKey !== s.approvalKey) {
+    s.approvalKey = approvalKey;
     paintApproval();
   }
 
   const resultHtml = trace.terminal && trace.terminal.status ? renderResult(trace) : "";
-  if (resultHtml !== live.resultHtml) {
+  if (resultHtml !== s.resultHtml) {
     const slot = document.getElementById("result-slot");
     if (slot) slot.innerHTML = resultHtml;
-    live.resultHtml = resultHtml;
+    s.resultHtml = resultHtml;
   }
 
   const thought = document.getElementById("thought");
-  if (thought && !live.thoughtPinned) {
+  if (thought && !s.thoughtPinned) {
     const open = running || !!pending;
     if (thought.open !== open) thought.open = open;
   }
@@ -965,8 +1002,8 @@ function liveApply(data) {
   const note = document.getElementById("live-note");
   if (note) note.innerHTML = liveNote(trace);
 
-  if (events !== live.eventCount) {
-    live.eventCount = events;
+  if (events !== s.eventCount) {
+    s.eventCount = events;
     const railBody = document.getElementById("rail-body");
     const railStick = railBody.scrollHeight - railBody.scrollTop - railBody.clientHeight < 60;
     renderRail(trace, currentCheck);
@@ -974,9 +1011,9 @@ function liveApply(data) {
   }
 
   if (trace.terminal && trace.terminal.status) {
-    const runId = live.id;
+    const runId = s.id;
     verifyChain(trace).then(check => {
-      if (!live || live.id !== runId || currentKey !== "run:" + runId) return;
+      if (!sessions.has(runId) || currentKey !== "run:" + runId) return;
       currentCheck = check;
       setChainBadge(check);
       renderRail(trace, check);
@@ -998,30 +1035,65 @@ function liveApply(data) {
   if (stick) scrollMainBottom();
 }
 
-function syncLiveRounds(trace) {
+/* 已入链的运行中消息，按其生效轮次分组（detail.round = 该轮开始前） */
+function messagesByRound(trace) {
+  const map = new Map();
+  for (const e of (trace.events || [])) {
+    if (e.type !== "operator_message") continue;
+    const d = (e.payload || {}).detail || {};
+    const round = Number(d.round) || 0;
+    if (!map.has(round)) map.set(round, []);
+    map.get(round).push(String(d.text || ""));
+  }
+  return map;
+}
+
+function roundWrapHtml(msgMap, round, ann) {
+  const msgs = msgMap.get(round.index) || [];
+  const bubbles = msgs.map(text => `<div class="msg op">
+    <div class="msg-head"><span class="msg-who">你</span><span class="msg-state">已入链 · 第 ${esc(round.index)} 轮前生效</span></div>
+    <div class="msg-text">${esc(text)}</div>
+  </div>`).join("");
+  return `<div class="round-wrap">${bubbles}${renderRound(round, round.index - 1, ann)}</div>`;
+}
+
+function syncLiveRounds(s, trace) {
   const slot = document.getElementById("rounds-slot");
   if (!slot) return;
   const anns = annotateRounds(trace);
   const rounds = trace.rounds || [];
+  const msgMap = messagesByRound(trace);
   const open = new Map();
-  [...slot.children].forEach((el, i) => open.set(i, el.dataset.open));
+  [...slot.children].forEach((el, i) => {
+    const card = el.classList.contains("round") ? el : el.querySelector(".round");
+    if (card) open.set(i, { open: card.dataset.open, user: card.dataset.user });
+  });
   for (let i = 0; i < rounds.length; i++) {
-    const html = renderRound(rounds[i], i, anns[i]);
-    if (live.roundHtml[i] === html) continue;
+    const html = roundWrapHtml(msgMap, rounds[i], anns[i]);
+    if (s.roundHtml[i] === html) continue;
     const holder = document.createElement("div");
     holder.innerHTML = html;
     const node = holder.firstElementChild;
     const previous = slot.children[i];
     if (previous) {
-      const wasLive = previous.classList.contains("live");
-      const userToggled = previous.dataset.user === "1";
-      if (open.has(i)) node.dataset.open = open.get(i);
-      if (wasLive && !node.classList.contains("live") && !userToggled) node.dataset.open = "false";
+      const prevCard = previous.classList.contains("round") ? previous : previous.querySelector(".round");
+      if (prevCard) {
+        const wasLive = prevCard.classList.contains("live");
+        const userToggled = prevCard.dataset.user === "1";
+        const card = node.querySelector(".round");
+        if (card) {
+          if (open.has(i)) {
+            card.dataset.open = open.get(i).open;
+            if (open.get(i).user) card.dataset.user = "1";
+          }
+          if (wasLive && !card.classList.contains("live") && !userToggled) card.dataset.open = "false";
+        }
+      }
       previous.replaceWith(node);
     } else {
       slot.append(node);
     }
-    live.roundHtml[i] = html;
+    s.roundHtml[i] = html;
   }
 }
 
@@ -1033,19 +1105,21 @@ function setComposerRunning(running) {
   if (running) {
     chip.hidden = false;
     document.getElementById("run-chip-text").textContent = "运行中";
-    btn.classList.add("stop");
     btn.disabled = false;
-    btn.title = "停止运行";
-    btn.innerHTML = `<svg class="i" viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="1.6"/></svg>`;
-    ta.disabled = true;
+    btn.title = "发送消息 · 下一轮交给 agent";
+    btn.innerHTML = `<svg class="i" viewBox="0 0 24 24"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg>`;
+    ta.disabled = false;
+    ta.placeholder = "运行中 — 直接输入，消息将排队并在下一轮交给 agent（⌘. 停止）";
   } else {
     chip.hidden = true;
-    btn.classList.remove("stop");
     btn.title = "发送任务";
     btn.innerHTML = `<svg class="i" viewBox="0 0 24 24"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg>`;
     const enabled = !!(health && health.live);
     btn.disabled = !enabled;
     ta.disabled = !enabled;
+    // 恢复任务模式的占位符（消息模式会覆盖它）
+    const template = templates.find(t => t.key === tplKey);
+    ta.placeholder = template ? template.objective : "给 agent 派一个任务…";
   }
   document.getElementById("foot-text").textContent = running
     ? "offline-mock · 运行中"
@@ -1212,109 +1286,286 @@ async function queueBudget() {
   }
 }
 
-function openLive(id, objective, template) {
-  detachLive();
-  live = {
-    id, es: null, trace: null, objective, template, running: true, finished: false,
+function createSession(id, objective, template) {
+  return {
+    id, objective, template, es: null, trace: null, lastData: null,
+    running: true, finished: false, failed: false,
     planHtml: "", budgetHtml: "", resultHtml: "", roundHtml: [], eventCount: 0,
     pending: null, pendingDeadline: 0, deciding: null, approvalKey: "",
     planEditing: false, planConfirm: null, planQueued: null,
     budgetEditing: false, budgetQueued: null, thoughtPinned: false,
+    queuedMsgs: [],
   };
+}
+
+function tabTitle(s) {
+  return s.objective ? shortObjective(s.objective) : tplTitle(s.template);
+}
+
+function openLive(id, objective, template) {
+  const fresh = !sessions.has(id);
+  if (fresh) sessions.set(id, createSession(id, objective, template));
+  const s = sessions.get(id);
+  live = s;
   currentKey = "run:" + id;
   renderNav();
-  setComposerRunning(true);
-  document.getElementById("tb-title").textContent = "运行 · " + tplTitle(template);
-  document.getElementById("tb-chips").innerHTML = "";
-  document.getElementById("rail-body").innerHTML = "";
-  const main = document.getElementById("main");
-  main.innerHTML = `<div class="empty">任务已提交，等待 Runtime 启动…</div>`;
-  main.scrollTop = 0;
+  renderTabs();
+  if (fresh) {
+    setComposerRunning(true);
+    document.getElementById("tb-title").textContent = "运行 · " + tplTitle(template);
+    document.getElementById("tb-chips").innerHTML = "";
+    document.getElementById("rail-body").innerHTML = "";
+    const main = document.getElementById("main");
+    main.innerHTML = `<div class="empty">任务已提交，等待 Runtime 启动…</div>`;
+    main.scrollTop = 0;
+    attachStream(s);
+  } else {
+    repaintSession(s);
+  }
+}
 
-  const es = new EventSource(`/api/runs/${encodeURIComponent(id)}/stream`);
-  live.es = es;
+function attachStream(s) {
+  const es = new EventSource(`/api/runs/${encodeURIComponent(s.id)}/stream`);
+  s.es = es;
   es.addEventListener("snapshot", event => {
-    if (!live || live.id !== id) return;
+    if (s.failed || s.finished) return;
     let data;
     try { data = JSON.parse(event.data); } catch { return; }
-    liveApply(data);
-    if (data.finished) finishLive(data);
+    if (live !== s) { stashSessionUpdate(s, data); return; }
+    liveApply(s, data);
+    if (data.finished) finishSession(s, data);
   });
   es.addEventListener("done", event => {
-    if (!live || live.id !== id) return;
     let data = {};
     try { data = JSON.parse(event.data); } catch { /* empty */ }
-    finishLive(data);
+    if (live !== s) {
+      stashSessionUpdate(s, Object.assign({}, s.lastData || {}, { finished: true, status: data.status, error: data.error }));
+      return;
+    }
+    finishSession(s, data);
   });
   es.addEventListener("failed", event => {
-    if (!live || live.id !== id) return;
     let data = {};
     try { data = JSON.parse(event.data); } catch { /* empty */ }
-    if (live.es) live.es.close();
-    live.es = null;
-    live.running = false;
+    if (s.es) { s.es.close(); s.es = null; }
+    s.failed = true;
+    s.running = false;
+    refreshRuns();
+    if (live !== s) {
+      renderTabs();
+      notify("Fcode · 运行失败", String(data.error || "Runtime 未返回任何快照").slice(0, 120));
+      return;
+    }
     document.getElementById("main").innerHTML =
       `<div class="empty">运行失败：${esc(data.error || "Runtime 未返回任何快照")}
         <div class="actions" style="justify-content:center"><button class="a-btn" data-act="retry">重试</button></div>
       </div>`;
     setComposerRunning(false);
     notify("Fcode · 运行失败", String(data.error || "Runtime 未返回任何快照").slice(0, 120));
-    refreshRuns();
   });
 }
 
-function finishLive(data) {
-  if (!live || live.finished) return;
-  const runId = live.id;
-  live.finished = true;
-  live.running = false;
-  live.pending = null;
-  live.deciding = null;
-  live.approvalKey = "";
+/* 后台会话：只更新状态与标签点，不动 DOM */
+function stashSessionUpdate(s, data) {
+  if (data && data.snapshot) s.trace = data.snapshot;
+  if (data) s.lastData = data;
+  if (data && data.finished && !s.finished && !s.failed) finishSession(s, data);
+  else renderTabs();
+}
+
+/* 激活一个已有会话：从缓存状态重建画面 */
+function repaintSession(s) {
+  const main = document.getElementById("main");
+  if (!s.trace) {
+    main.innerHTML = `<div class="empty">任务已提交，等待 Runtime 启动…</div>`;
+    return;
+  }
+  if (s.finished || (s.trace.terminal && s.trace.terminal.status)) {
+    setComposerRunning(false);
+    currentTrace = s.trace;
+    render(s.trace, "运行 · " + tabTitle(s));
+    return;
+  }
+  setComposerRunning(true);
+  liveShell(s.trace);
+  s.planHtml = "";
+  s.budgetHtml = "";
+  s.resultHtml = "";
+  s.roundHtml = [];
+  s.eventCount = 0;
+  liveApply(s, s.lastData || { snapshot: s.trace, pending: null, finished: false });
+}
+
+function finishSession(s, data) {
+  if (s.finished) { if (live !== s) renderTabs(); return; }
+  s.finished = true;
+  s.running = false;
+  s.pending = null;
+  s.deciding = null;
+  s.approvalKey = "";
+  if (s.es) { s.es.close(); s.es = null; }
+  s.queuedMsgs.forEach(m => {
+    if (m.state === "queued") { m.state = "failed"; m.error = "运行已结束，消息未入链"; }
+  });
+  const trace = s.trace || (s.lastData && s.lastData.snapshot) || null;
+  s.trace = trace;
+  refreshRuns();
+  const status = (trace && trace.terminal && trace.terminal.status) || (data && data.status) || "?";
+  if (live !== s) {
+    renderTabs();
+    notify(
+      status === "succeeded" ? "Fcode · 运行完成" : `Fcode · 运行结束（${status}）`,
+      `${tabTitle(s)} · 后台完成`
+    );
+    return;
+  }
   paintApproval();
+  paintQueuedMsgs();
   const thought = document.getElementById("thought");
-  if (thought && !live.thoughtPinned) thought.open = false;
-  if (live.es) { live.es.close(); live.es = null; }
+  if (thought && !s.thoughtPinned) thought.open = false;
   setComposerRunning(false);
-  const trace = live.trace;
   if (trace) {
     if (trace.terminal && trace.terminal.status) {
       const html = renderResult(trace);
       const slot = document.getElementById("result-slot");
       if (slot) slot.innerHTML = html;
-      live.resultHtml = html;
+      s.resultHtml = html;
     }
-    cache.set("run:" + runId, trace);
+    cache.set("run:" + s.id, trace);
     verifyChain(trace).then(check => {
-      if (!live || live.id !== runId) return;
+      if (live !== s) return;
       currentCheck = check;
       setChainBadge(check);
       renderRail(trace, check);
     });
-    const status = (trace.terminal && trace.terminal.status) || data.status || "?";
     const rounds = (trace.rounds || []).length;
     document.getElementById("foot-text").textContent =
       `offline-mock · 运行${status === "succeeded" ? "完成" : "结束（" + status + "）"}`;
     notify(
       status === "succeeded" ? "Fcode · 运行完成" : `Fcode · 运行结束（${status}）`,
-      `${shortObjective(live.objective)} · ${rounds} 轮`
+      `${shortObjective(s.objective || "")} · ${rounds} 轮`
     );
   }
-  refreshRuns();
+  renderTabs();
 }
 
 function detachLive() {
-  if (live && live.es) live.es.close();
+  /* 切走：会话保留在后台继续流式，不再渲染 */
   live = null;
   setComposerRunning(false);
+  renderTabs();
+}
+
+function closeSessionTab(id) {
+  const s = sessions.get(id);
+  if (!s) return;
+  if (s.es) { s.es.close(); s.es = null; }
+  sessions.delete(id);
+  if (live === s) {
+    live = null;
+    setComposerRunning(false);
+    document.getElementById("main").innerHTML =
+      `<div class="empty">标签已关闭。运行仍在服务器上继续，可从左侧运行记录重新打开。</div>`;
+    document.getElementById("chain-badge").className = "chain-pill";
+    document.getElementById("chain-badge").innerHTML = `<span class="dot"></span><span>未加载</span>`;
+  }
+  const rest = [...sessions.values()];
+  if (rest.length) openLive(rest[rest.length - 1].id, rest[rest.length - 1].objective, rest[rest.length - 1].template);
+  else { renderNav(); renderTabs(); }
+  refreshRuns();
+}
+
+function renderTabs() {
+  const bar = document.getElementById("tabs");
+  if (!bar) return;
+  const items = [...sessions.values()];
+  bar.hidden = items.length === 0;
+  bar.innerHTML = items.map(s => {
+    const active = live === s && currentKey === "run:" + s.id;
+    const status = s.failed ? "bad"
+      : s.finished ? (((s.trace || {}).terminal || {}).status === "succeeded" ? "ok" : "bad")
+      : "live";
+    return `<div class="tab${active ? " active" : ""}" data-tab="${esc(s.id)}" title="${esc(s.objective || "")}">
+      <span class="tdot ${status}"></span>
+      <span class="tlabel">${esc(tabTitle(s))}</span>
+      <button class="tx" data-tabclose="${esc(s.id)}" title="关闭标签">×</button>
+    </div>`;
+  }).join("");
+  for (const el of bar.querySelectorAll("[data-tab]")) {
+    el.addEventListener("click", event => {
+      if (event.target.closest("[data-tabclose]")) return;
+      const id = el.dataset.tab;
+      if (currentKey === "run:" + id && live === sessions.get(id)) return;
+      const s = sessions.get(id);
+      if (s) openLive(id, s.objective, s.template);
+    });
+  }
+  for (const btn of bar.querySelectorAll("[data-tabclose]")) {
+    btn.addEventListener("click", event => {
+      event.stopPropagation();
+      closeSessionTab(btn.dataset.tabclose);
+    });
+  }
+}
+
+/* 输入框统一入口：运行中 = 发消息，空闲 = 派新任务 */
+function composerSubmit() {
+  if (live && live.running && !live.finished) return sendOperatorMessage();
+  return sendTask();
+}
+
+/* 运行中插话：乐观渲染排队气泡，入链后由 snapshot 事件确认 */
+async function sendOperatorMessage() {
+  if (!live || !live.running || live.finished) return;
+  const ta = document.getElementById("composer-ta");
+  const text = (ta.value || "").trim();
+  if (!text) return;
+  ta.value = "";
+  autosize(ta);
+  const msg = { text, state: "queued" };
+  live.queuedMsgs.push(msg);
+  paintQueuedMsgs();
+  try {
+    const response = await fetch(`/api/runs/${encodeURIComponent(live.id)}/messages`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text }),
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.error || `HTTP ${response.status}`);
+    }
+  } catch (error) {
+    msg.state = "failed";
+    msg.error = error.message;
+    paintQueuedMsgs();
+    toast("消息未送达：" + error.message);
+  }
+}
+
+function paintQueuedMsgs() {
+  const slot = document.getElementById("queued-slot");
+  if (!slot) return;
+  const msgs = live && live.queuedMsgs ? live.queuedMsgs : [];
+  slot.innerHTML = msgs.length ? `<div class="queued-msgs">${msgs.map(m => `
+    <div class="msg op ${esc(m.state)}">
+      <div class="msg-head">
+        <span class="msg-who">你</span>
+        <span class="msg-state">${m.state === "failed" ? "未送达 · " + esc(m.error || "") : "排队中 · 下一轮入链"}</span>
+      </div>
+      <div class="msg-text">${esc(m.text)}</div>
+    </div>`).join("")}</div>` : "";
 }
 
 async function sendTask() {
-  if (live && live.running) return stopRun();
   const ta = document.getElementById("composer-ta");
   const template = templates.find(t => t.key === tplKey) || {};
   const objective = ta.value.trim() || template.objective || "";
-  if (!objective || !health || !health.live) return;
+  if (!objective) return;
+  if (!health || !health.live) {
+    toast("回放模式：用 python3 viewer/server.py 启动后才能派任务");
+    return;
+  }
   const btn = document.getElementById("send");
   btn.disabled = true;
   try {
@@ -1451,6 +1702,8 @@ async function initLive() {
 }
 
 async function selectRun(id) {
+  const existing = sessions.get(id);
+  if (existing) return openLive(id, existing.objective, existing.template);
   const run = runHistory.find(item => item.id === id);
   if (run && (run.status === "running" || !run.tracePath)) {
     return openLive(id, run.objective, run.template);
@@ -1613,10 +1866,26 @@ function startRename(id, labelEl) {
   input.addEventListener("blur", () => commit(false));
 }
 
+function costChipsHtml(trace) {
+  const b = lastBudget(trace);
+  if (!b) return "";
+  const lim = b.limits || {};
+  return `<div class="chips">
+    <span class="mini">成本 ${num(b.cost_used_microusd)} µUSD</span>
+    <span class="mini">calls ${b.calls_used}/${num(lim.max_calls || 0)}</span>
+    <span class="mini">reads ${b.reads_used}/${num(lim.max_reads || 0)}</span>
+    <span class="mini">tokens ${num(b.tokens_used)}</span>
+  </div>`;
+}
+
 function runActionsHtml(trace) {
-  if (!(currentKey && currentKey.startsWith("run:"))) return "";
   const terminal = trace.terminal || {};
   const status = terminal.status || "";
+  if (!status) return "";
+  const report = `<button class="a-btn strong" data-act="report">签发报告</button>`;
+  if (!(currentKey && currentKey.startsWith("run:"))) {
+    return `<div class="chips">${costChipsHtml(trace)}</div><div class="actions">${report}</div>`;
+  }
   const failure = terminal.failure || {};
   const run = currentRun();
   const liveId = live && live.id;
@@ -1627,7 +1896,200 @@ function runActionsHtml(trace) {
   const resume = resumable ? `<button class="a-btn strong" data-act="resume">追加预算并继续</button>` : "";
   const retry = status && status !== "succeeded"
     ? `<button class="a-btn" data-act="retry">重试</button>` : "";
-  return `<div class="actions">${resume}${retry}<button class="a-btn" data-act="diag">复制诊断</button></div>`;
+  return `<div class="chips">${costChipsHtml(trace)}</div><div class="actions">${resume}${retry}${report}<button class="a-btn" data-act="diag">复制诊断</button></div>`;
+}
+
+/* ------------------------------------------------------------- 报告签发 */
+
+let lastReportHtml = null;
+let lastReportName = "fcode-report.html";
+
+async function openReport() {
+  if (!currentTrace || !(currentTrace.terminal && currentTrace.terminal.status)) {
+    toast("运行结束后才能签发报告");
+    return;
+  }
+  const check = await verifyChain(currentTrace);
+  const run = currentRun();
+  const task = currentTrace.task || {};
+  const title = run ? (run.name || shortObjective(run.objective)) : shortObjective(task.objective || "工作底稿");
+  lastReportHtml = FCReport.build(currentTrace, {
+    title,
+    runId: run ? run.id : (currentKey || "trace"),
+    check,
+    generatedAt: new Date().toISOString().replace("T", " ").slice(0, 19) + "Z",
+  });
+  lastReportName = "fcode-report-" + String(run ? run.id : (currentKey || "trace")).replace(/[^a-zA-Z0-9-]+/g, "-") + ".html";
+  document.getElementById("report-title").textContent = title;
+  document.getElementById("report-frame").srcdoc = lastReportHtml;
+  document.getElementById("report-layer").hidden = false;
+}
+
+function closeReport() {
+  const layer = document.getElementById("report-layer");
+  if (layer) layer.hidden = true;
+  const frame = document.getElementById("report-frame");
+  if (frame) frame.srcdoc = "";
+  lastReportHtml = null;
+}
+
+function downloadReport() {
+  if (!lastReportHtml) return;
+  const blob = new Blob([lastReportHtml], { type: "text/html" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = lastReportName; a.click();
+  URL.revokeObjectURL(url);
+  toast("报告已下载 · 可离线打开与转发");
+}
+
+function printReport() {
+  const frame = document.getElementById("report-frame");
+  try {
+    frame.contentWindow.focus();
+    frame.contentWindow.print();
+  } catch {
+    toast("此环境不支持内嵌打印，请下载后打开打印");
+  }
+}
+
+/* --------------------------------------------------------------- 建单向导 */
+
+const wizard = { step: 1, tplKey: "full", objective: "", approval: approvalMode, submitting: false };
+
+function wizardTemplate() {
+  return templates.find(t => t.key === wizard.tplKey) || {};
+}
+
+function openWizard() {
+  if (!health || !health.live) {
+    toast("回放模式：用 python3 viewer/server.py 启动后才能创建委托");
+    return;
+  }
+  wizard.step = 1;
+  wizard.tplKey = tplKey || "full";
+  wizard.objective = "";
+  wizard.approval = approvalMode;
+  wizard.submitting = false;
+  renderWizard();
+  document.getElementById("wizard-layer").hidden = false;
+}
+
+function closeWizard() {
+  document.getElementById("wizard-layer").hidden = true;
+}
+
+function renderWizard() {
+  const body = document.getElementById("wizard-body");
+  const foot = document.getElementById("wizard-foot");
+  if (!body || !foot) return;
+  document.getElementById("wizard-step").textContent = `${wizard.step} / 3`;
+  const template = wizardTemplate();
+  const limits = template.limits || {};
+
+  if (wizard.step === 1) {
+    body.innerHTML = `<div class="wz-hint">第一步 · 选择委托类型。类型决定授权范围、预算与轮次；带演示标记的类型会注入特定故障，用于观察运行时的防护。</div>
+      <div class="wz-cards">${templates.map(t => `
+        <button class="wz-card${t.key === wizard.tplKey ? " active" : ""}" data-wz-tpl="${esc(t.key)}">
+          <div class="wz-t"><span>${esc(tplTitle(t.key))}</span>
+            <span class="wz-badge${t.key === "full" ? "" : " demo"}">${t.key === "full" ? "标准委托" : "演示"}</span></div>
+          <div class="wz-d">${esc(t.story || "")}</div>
+          <div class="wz-m">${t.limits ? num(t.limits.max_calls) + " calls · " + num(t.limits.max_cost_microusd) + " µUSD · " : ""}${t.max_rounds || "?"} 轮</div>
+        </button>`).join("")}</div>`;
+    foot.innerHTML = `<button class="a-btn" data-wz-close2>取消</button><span class="grow"></span><button class="a-btn strong" data-wz-next>下一步</button>`;
+    return;
+  }
+
+  if (wizard.step === 2) {
+    body.innerHTML = `<div class="wz-hint">第二步 · 委托说明。写清楚要判断什么、依据什么口径；留空将使用模板默认目标。</div>
+      <textarea class="wz-ta" id="wz-objective" maxlength="600" rows="4"
+        placeholder="${esc(template.objective || "描述这项委托…")}">${esc(wizard.objective)}</textarea>
+      <div class="wz-count"><span id="wz-count">${wizard.objective.length} / 600</span></div>`;
+    foot.innerHTML = `<button class="a-btn" data-wz-prev>上一步</button><span class="grow"></span><button class="a-btn strong" data-wz-next>下一步</button>`;
+    const ta = document.getElementById("wz-objective");
+    if (ta) ta.focus();
+    return;
+  }
+
+  body.innerHTML = `<div class="wz-hint">第三步 · 审批档位。审批只发生在轮次边界，拒绝会终止运行并写入签名链。</div>
+    <div class="wz-cards wz-modes">${APPROVAL_MODES.map(([key, t, d]) => `
+      <button class="wz-card${key === wizard.approval ? " active" : ""}" data-wz-mode="${esc(key)}">
+        <div class="wz-t"><span>${esc(t)}</span></div>
+        <div class="wz-d">${esc(d)}</div>
+      </button>`).join("")}</div>
+    <div class="wz-summary">
+      <div><span>类型</span><b>${esc(tplTitle(wizard.tplKey))}</b></div>
+      <div><span>预算</span><b>${limits.max_calls ? num(limits.max_calls) + " calls · " + num(limits.max_cost_microusd) + " µUSD（可在运行中调高）" : "—"}</b></div>
+      <div><span>轮次</span><b>至多 ${template.max_rounds || "?"} 轮</b></div>
+      <div><span>审批</span><b>${esc(approvalTitle(wizard.approval))}</b></div>
+      <div><span>目标</span><b>${esc(wizard.objective || template.objective || "—")}</b></div>
+    </div>`;
+  foot.innerHTML = `<button class="a-btn" data-wz-prev>上一步</button><span class="grow"></span><button class="a-btn strong" data-wz-submit>提交委托</button>`;
+}
+
+function wizardNext() {
+  if (wizard.step === 2) {
+    const ta = document.getElementById("wz-objective");
+    wizard.objective = ta ? ta.value.trim() : wizard.objective;
+  }
+  wizard.step = Math.min(3, wizard.step + 1);
+  renderWizard();
+}
+
+async function submitWizard() {
+  if (wizard.submitting) return;
+  const template = wizardTemplate();
+  const objective = wizard.objective || template.objective || "";
+  if (!objective) { toast("请填写委托说明"); return; }
+  wizard.submitting = true;
+  const submit = document.querySelector("[data-wz-submit]");
+  if (submit) { submit.disabled = true; submit.textContent = "提交中…"; }
+  try {
+    const response = await fetch("/api/runs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ objective, template: wizard.tplKey, approval: wizard.approval }),
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.error || `HTTP ${response.status}`);
+    }
+    const run = await response.json();
+    setApprovalMode(wizard.approval);
+    setTemplate(wizard.tplKey);
+    closeWizard();
+    toast("委托已受理 · 开始执行");
+    openLive(run.id, objective, run.template);
+    refreshRuns();
+  } catch (error) {
+    toast("委托提交失败：" + error.message);
+    if (submit) { submit.disabled = false; submit.textContent = "提交委托"; }
+  } finally {
+    wizard.submitting = false;
+  }
+}
+
+function bindWizard() {
+  const layer = document.getElementById("wizard-layer");
+  if (!layer) return;
+  layer.addEventListener("click", event => {
+    if (event.target.closest("[data-wz-close]")) { closeWizard(); return; }
+    if (event.target.closest("#wizard-close") || event.target.closest("[data-wz-close2]")) { closeWizard(); return; }
+    const tpl = event.target.closest("[data-wz-tpl]");
+    if (tpl) { wizard.tplKey = tpl.dataset.wzTpl; renderWizard(); return; }
+    const mode = event.target.closest("[data-wz-mode]");
+    if (mode) { wizard.approval = mode.dataset.wzMode; renderWizard(); return; }
+    if (event.target.closest("[data-wz-prev]")) { wizard.step = Math.max(1, wizard.step - 1); renderWizard(); return; }
+    if (event.target.closest("[data-wz-next]")) { wizardNext(); return; }
+    if (event.target.closest("[data-wz-submit]")) { submitWizard(); return; }
+  });
+  document.getElementById("wizard-body").addEventListener("input", event => {
+    if (event.target.id === "wz-objective") {
+      wizard.objective = event.target.value;
+      const count = document.getElementById("wz-count");
+      if (count) count.textContent = `${event.target.value.length} / 600`;
+    }
+  });
 }
 
 function openResumeForm() {
@@ -1696,6 +2158,10 @@ async function resumeRun() {
     const objective = (run && run.objective) || (currentTrace && currentTrace.task && currentTrace.task.objective) || "";
     const template = (run && run.template) || ((currentTrace && currentTrace.task && currentTrace.task.binding || {}).scenario) || "full";
     toast("预算已追加 · 从事件日志续跑");
+    // 续跑让同一个 run 恢复运行：丢弃旧会话缓存，重新以运行态打开
+    const stale = sessions.get(id);
+    if (stale) { if (stale.es) stale.es.close(); sessions.delete(id); }
+    cache.delete("run:" + id);
     openLive(id, objective, template);
     refreshRuns();
   } catch (error) {
@@ -1856,13 +2322,17 @@ function focusComposer() {
 
 function paletteActions() {
   const actions = [
-    { ic: "＋", label: "新任务 · 聚焦输入框", run: focusComposer },
+    { ic: "＋", label: "新委托 · 建单向导", run: openWizard },
+    { ic: "✎", label: "新任务 · 聚焦输入框", run: focusComposer },
   ];
   if (live && live.running) actions.push({ ic: "■", label: "停止当前运行", run: stopRun });
   if (currentRun() && !(live && live.running)) actions.push({ ic: "↻", label: "重试当前运行", run: retryCurrent });
   if (currentTrace) {
     actions.push({ ic: "⧉", label: "复制运行诊断", run: copyDiagnostics });
     actions.push({ ic: "↓", label: "导出 trace JSON", run: exportTrace });
+    if (currentTrace.terminal && currentTrace.terminal.status) {
+      actions.push({ ic: "⎘", label: "签发审计报告", run: openReport });
+    }
     actions.push({ ic: "✓", label: "重新验证签名链", run: reverify });
     actions.push({ ic: "▾", label: "展开全部轮次", run: () => setAllRounds(true) });
     actions.push({ ic: "▸", label: "折叠全部轮次", run: () => setAllRounds(false) });
@@ -1968,7 +2438,8 @@ function runPaletteItem(index) {
 
 function bind() {
   document.getElementById("open-file").addEventListener("click", () => document.getElementById("pick").click());
-  document.getElementById("composer-open").addEventListener("click", () => document.getElementById("pick").click());
+  document.getElementById("composer-open").addEventListener("click", openWizard);
+  bindWizard();
   document.getElementById("pick").addEventListener("change", event => {
     if (event.target.files[0]) fromFile(event.target.files[0]);
   });
@@ -1976,17 +2447,18 @@ function bind() {
   const ta = document.getElementById("composer-ta");
   ta.addEventListener("input", () => {
     autosize(ta);
-    if (!(live && live.running)) {
+    if (!(live && live.running && !live.finished)) {
       document.getElementById("send").disabled = !(health && health.live);
     }
   });
   ta.addEventListener("keydown", event => {
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
-      sendTask();
+      composerSubmit();
     }
   });
-  document.getElementById("send").addEventListener("click", sendTask);
+  document.getElementById("send").addEventListener("click", composerSubmit);
+  document.getElementById("run-chip").addEventListener("click", stopRun);
   const tplBtn = document.getElementById("template-btn");
   const tplMenu = document.getElementById("tpl-menu");
   const apvBtn = document.getElementById("approval-btn");
@@ -2007,6 +2479,10 @@ function bind() {
   });
   document.getElementById("export").addEventListener("click", exportTrace);
   document.getElementById("reverify").addEventListener("click", reverify);
+  document.getElementById("report-close").addEventListener("click", closeReport);
+  document.querySelector(".report-scrim").addEventListener("click", closeReport);
+  document.getElementById("report-print").addEventListener("click", printReport);
+  document.getElementById("report-download").addEventListener("click", downloadReport);
   document.getElementById("run-search").addEventListener("input", event => {
     runFilter = event.target.value;
     renderRuns();
@@ -2022,6 +2498,16 @@ function bind() {
     else if (event.key === "Escape") { event.preventDefault(); closePalette(); }
   });
   document.getElementById("main").addEventListener("click", event => {
+    if (event.target.closest("[data-wizard-open]")) { openWizard(); return; }
+    const toggleHead = event.target.closest("[data-toggle]");
+    if (toggleHead) {
+      const round = toggleHead.closest(".round");
+      if (round) {
+        round.dataset.open = round.dataset.open === "true" ? "false" : "true";
+        round.dataset.user = "1";
+        return;
+      }
+    }
     const decision = event.target.closest("[data-decision]");
     if (decision) { decideApproval(decision.dataset.decision === "allow"); return; }
     const planEdit = event.target.closest("[data-plan-edit]");
@@ -2075,6 +2561,7 @@ function bind() {
     if (!button) return;
     if (button.dataset.act === "retry") retryCurrent();
     else if (button.dataset.act === "diag") copyDiagnostics();
+    else if (button.dataset.act === "report") openReport();
     else if (button.dataset.act === "resume") openResumeForm();
   });
   const app = document.getElementById("app");
@@ -2113,6 +2600,10 @@ function bind() {
     }
     const typing = e.target && /INPUT|TEXTAREA/.test(e.target.tagName);
     if (e.key === "Escape") {
+      const reportLayer = document.getElementById("report-layer");
+      if (reportLayer && !reportLayer.hidden) { closeReport(); return; }
+      const wizardLayer = document.getElementById("wizard-layer");
+      if (wizardLayer && !wizardLayer.hidden) { closeWizard(); return; }
       const palette = document.getElementById("palette");
       if (palette && !palette.hidden) { closePalette(); return; }
       const menu = document.getElementById("tpl-menu");

@@ -166,6 +166,35 @@ class ScriptedControl:
         return ToolControl(task=task, allowed=True)
 
 
+class QueuedMessageControl:
+    """Queues an operator message once, like the console's composer does.
+
+    The message must survive the round boundary: it is drained by the loop at
+    the next ``before_round`` and committed to the chain, and the memory
+    rebuild — which only replays ``tool_succeeded`` — must ignore it cleanly.
+    """
+
+    def __init__(self, harness: Harness, *, text: str) -> None:
+        self.harness = harness
+        self.text = text
+        self._sent = False
+
+    def before_round(self, *, round_no: int, task, plan: Plan) -> RoundControl:
+        if round_no >= 2 and not self._sent:
+            task = self.harness.record(
+                task,
+                "operator_message",
+                {"round": round_no, "text": self.text, "by": "operator"},
+            )
+            self._sent = True
+        return RoundControl(task=task, plan=plan)
+
+    def before_tool(self, *, round_no: int, task, step: dict, decision) -> ToolControl:
+        if task.status == "planned":
+            task = self.harness.transition(task, "running", "execution_started", {})
+        return ToolControl(task=task, allowed=True)
+
+
 class ControlTests(unittest.TestCase):
     def setUp(self) -> None:
         self.stack = Stack()
@@ -226,6 +255,20 @@ class ControlTests(unittest.TestCase):
             self.assertIn("budget_adjusted", [event["type"] for event in stack.events()])
         finally:
             stack.close()
+
+    def test_operator_message_is_chained_and_ignored_by_memory(self) -> None:
+        control = QueuedMessageControl(self.stack.harness, text="请重点核对两期口径")
+        task = self.stack.loop(control).run(self.stack.task.id)
+        self.assertEqual(task.status, "succeeded")
+        events = self.stack.events()
+        messages = [event for event in events if event["type"] == "operator_message"]
+        self.assertEqual(len(messages), 1)
+        self.assertEqual(messages[0]["payload"]["detail"]["text"], "请重点核对两期口径")
+        self.assertGreater(messages[0]["sequence"], 1)
+        # memory 与计划重建只消费工具结果：消息不得改变恢复语义
+        loop = self.stack.loop()
+        plan = loop.rebuild_plan(task, loop.restore(task))
+        self.assertEqual(plan.revision, 1)
 
     def test_resume_after_budget_failure_does_not_repeat_reads(self) -> None:
         stack = Stack(limits=BudgetLimits(5, 20, 20_000, 20_000))

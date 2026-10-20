@@ -58,7 +58,7 @@ python demo.py all           # 顺序跑完并打印汇总表
 
 ## 人工控制
 
-`runtime/control.py` 定义了控制协议：审批门在门控之后、执行之前暂停，拒绝会终止运行（`OPERATOR_DENIED`），超时自动拒绝；计划 `skip` / `promote` 与预算调高在下一轮开始生效；失败于 `BUDGET_EXCEEDED` / `ROUND_LIMIT` 时，可以追加预算并从事件日志续跑，已付的读取不重发。所有人工决定（审批、计划修订、预算调整、续跑）都写入同一条哈希链。
+`runtime/control.py` 定义了控制协议：审批门在门控之后、执行之前暂停，拒绝会终止运行（`OPERATOR_DENIED`），超时自动拒绝；计划 `skip` / `promote` 与预算调高在下一轮开始生效；失败于 `BUDGET_EXCEEDED` / `ROUND_LIMIT` 时，可以追加预算并从事件日志续跑，已付的读取不重发。控制台还可以在运行中插话：消息排队到下一轮边界，作为 `operator_message` 写入同一条哈希链。所有人工决定（审批、计划修订、预算调整、续跑、消息）都写入同一条哈希链。
 
 ## 看轨迹
 
@@ -90,7 +90,7 @@ python viewer/server.py --repo ..   # 打开 http://127.0.0.1:8642/
 python -m unittest discover -s tests -v
 ```
 
-41 项，覆盖计划层与权限门控（未注册 / 越权 / 超 grant / 参数非法）、预算三个维度、状态机非法迁移、并发写 CAS、事件篡改、收据伪造、独立重算拒绝伪造观测、trace 篡改、审批放行与拒绝、计划跳过 / 提前、预算追加、失败续跑，以及七个场景的端到端断言（其中崩溃场景用真实 SIGKILL，断言"没有任何一轮被重复提议"）。
+42 项，覆盖计划层与权限门控（未注册 / 越权 / 超 grant / 参数非法）、预算三个维度、状态机非法迁移、并发写 CAS、事件篡改、收据伪造、独立重算拒绝伪造观测、trace 篡改、审批放行与拒绝、计划跳过 / 提前、预算追加、失败续跑、运行中操作员消息入链，以及七个场景的端到端断言（其中崩溃场景用真实 SIGKILL，断言"没有任何一轮被重复提议"）。
 
 CI 在 Ubuntu 与 macOS 上跑 Python 3.11 与 3.13，包含 `python demo.py all` 与零配置入口冒烟。
 
@@ -106,7 +106,7 @@ src/flowagent/
   trajectory/  recorder、exporter（导出与独立重算）
   demo/        CLI、终端渲染、七个场景、崩溃 worker
 viewer/        实时控制台 + Trace 回放（零依赖零构建）
-tests/         41 项 unittest
+tests/         42 项 unittest
 ```
 
 ## 现在还没有的

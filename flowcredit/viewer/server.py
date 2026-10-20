@@ -626,6 +626,8 @@ class RunControl:
                 task, plan = self._apply_plan(task, plan, round_no, command)
             elif command["kind"] == "budget":
                 task = self._apply_budget(task, round_no, command)
+            elif command["kind"] == "message":
+                task = self._apply_message(task, round_no, command)
         return self.RoundControl(task=task, plan=plan)
 
     def before_tool(self, *, round_no: int, task, step: dict, decision):
@@ -820,6 +822,20 @@ class RunControl:
                 "after": new.to_dict(),
                 "by": "operator",
             },
+        )
+
+    def _apply_message(self, task, round_no: int, command: dict):
+        # A mid-run operator note. The deterministic mock cannot read free
+        # text, so this does not steer the planner yet — but it is committed
+        # to the same hash chain as every other human decision, and a real
+        # provider consumes it from the event log like any other input.
+        text = str(command.get("text") or "").strip()
+        if not text:
+            return task
+        return self.harness.record(
+            task,
+            "operator_message",
+            {"round": round_no, "text": text[:600], "by": "operator"},
         )
 
 
@@ -1128,6 +1144,24 @@ class Handler(SimpleHTTPRequestHandler):
             ):
                 return self._json({"error": "no pending approval with that id"}, 409)
             return self._json({"ok": True})
+        if path.startswith("/api/runs/") and path.endswith("/messages"):
+            run_id = path[len("/api/runs/") : -len("/messages")]
+            run = mgr.get(run_id)
+            if run is None:
+                return self._json({"error": "no such run"}, 404)
+            if run.finished:
+                return self._json({"error": "run has finished"}, 409)
+            control = getattr(run, "controller", None)
+            if control is None:
+                return self._json({"error": "run has no live control"}, 409)
+            body = self._read_body()
+            text = str(body.get("text") or "").strip()
+            if not text:
+                return self._json({"error": "text is required"}, 400)
+            if len(text) > 600:
+                return self._json({"error": "message too long"}, 400)
+            control.queue({"kind": "message", "text": text})
+            return self._json({"queued": True, "id": run.id}, 202)
         if path.startswith("/api/runs/") and path.endswith("/plan"):
             run_id = path[len("/api/runs/") : -len("/plan")]
             run = mgr.get(run_id)
