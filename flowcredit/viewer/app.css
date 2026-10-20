@@ -1361,3 +1361,23 @@ body { background: #ffffff; }
 .rail-empty-doc .d-icon { width: 38px; height: 38px; opacity: .7; }
 .rail-empty-doc .t { font-family: var(--serif); font-size: 16px; color: var(--text); }
 .tool-row.out-of-scope .tr-name { text-decoration: line-through; text-decoration-thickness: 1px; opacity: .55; }
+
+/* ============================================================== 圆角统一
+   纸面上更柔和的边角：卡片 12px、弹层 14px、按钮与列表行 8-10px。
+   搜索保持下划线形态，不强行加框。 */
+:root { --r-card: 12px; --r-btn: 8px; }
+.card, .round, .led-card { border-radius: 12px; overflow: hidden; }
+.led-card { border-radius: 12px; }
+.composer-box { border-radius: 16px; }
+.side-new, .side-desk { border-radius: 8px; }
+.session.run-row { border-radius: 8px; }
+.side-new:hover, .side-desk:hover { border-radius: 8px; }
+.a-btn, .a-btn.strong { border-radius: 8px; }
+.row-menu { border-radius: 10px; overflow: hidden; }
+.tpl-menu, .slash-menu, .palette-box, .wizard-panel, .report-panel { border-radius: 14px; }
+.wz-card { border-radius: 10px; }
+.seal { border-radius: 10px; }
+.raw-pre { border-radius: 8px; }
+.c-btn, .kbtn, .chip, .mini, .badge { border-radius: 999px; }
+.ev-item.human { border-radius: 0 6px 6px 0; }
+.row-more { border-radius: 6px; }
