@@ -5,6 +5,8 @@ FCode 的界面不是聊天窗口，而是一张**可复核的工作底稿**。�
 
 在线样式页：`flowcredit/viewer/design.html`（本地启动 console 后访问 `/design.html`）。
 
+Agent 面向的架构与交互约束：`.agents/skills/fcode-design/SKILL.md`。改 UI 前先读它。
+
 ## 六条原则
 
 1. **纸是底稿。** 白底、留白、细线、虚线分隔；界面像一张可以归档的纸，不是仪表盘。
