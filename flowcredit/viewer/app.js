@@ -79,6 +79,8 @@ let tplKey = "full";    // selected template
 let runHistory = [];    // /api/runs
 let live = null;        // 当前激活的会话（指向 sessions 中的一项）
 let runFilter = "";     // 运行记录搜索词
+let olderOpen = false;  // 「更早」分组是否展开
+let scenesOpen = localStorage.getItem("fa.scenesOpen"); // null | "1" | "0"
 
 /* 多会话：每个 run 一个会话对象；后台会话保持 SSE 流，只是不渲染 */
 const sessions = new Map();
@@ -196,53 +198,154 @@ function renderNav() {
   renderRuns();
 }
 
+function applyScenesOpen(open) {
+  const section = document.getElementById("scene-section");
+  const toggle = document.getElementById("scene-toggle");
+  if (!section || !toggle) return;
+  section.classList.toggle("open", open);
+  toggle.setAttribute("aria-expanded", open ? "true" : "false");
+}
+
+function scenesDefaultOpen() {
+  if (scenesOpen === "1") return true;
+  if (scenesOpen === "0") return false;
+  return runHistory.length === 0;
+}
+
+function setScenesOpen(open, persist = true) {
+  applyScenesOpen(open);
+  if (!persist) return;
+  scenesOpen = open ? "1" : "0";
+  localStorage.setItem("fa.scenesOpen", scenesOpen);
+}
+
+function runGroupOf(created) {
+  const when = new Date(created || "");
+  if (Number.isNaN(when.getTime())) return 2;
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  if (when.getTime() >= today) return 0;
+  if (when.getTime() >= today - 86400000) return 1;
+  return 2;
+}
+
+function runTimeText(created) {
+  const when = new Date(created || "");
+  if (Number.isNaN(when.getTime())) return "—";
+  if (runGroupOf(created) === 2) {
+    return `${String(when.getMonth() + 1).padStart(2, "0")}-${String(when.getDate()).padStart(2, "0")}`;
+  }
+  return when.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false });
+}
+
+function setFoot(text, cls = "") {
+  const label = document.getElementById("foot-text");
+  if (label) label.textContent = text;
+  const dotEl = document.getElementById("foot-dot");
+  if (dotEl) dotEl.className = "fdot" + (cls ? " " + cls : "");
+}
+
 function renderScenarios() {
   const nav = document.getElementById("nav");
+  if (!nav) return;
   nav.innerHTML = SCENARIOS.map(([key, label]) => {
     const trace = cache.get(key);
     const meta = trace ? `${(trace.rounds || []).length} 轮` : "";
-    return `<button class="session${key === currentKey ? " active" : ""}" data-key="${key}">
-      <span class="sdot"></span>
+    return `<button class="session scene-row${key === currentKey ? " active" : ""}" data-key="${key}">
       <span class="slabel">${esc(label)}</span>
       <span class="smeta">${meta}</span>
     </button>`;
   }).join("");
   for (const button of nav.querySelectorAll("button")) {
-    button.addEventListener("click", () => select(button.dataset.key, labelOf(button.dataset.key)));
+    button.addEventListener("click", () => {
+      setScenesOpen(true);
+      select(button.dataset.key, labelOf(button.dataset.key));
+    });
   }
+  const count = document.getElementById("scene-count");
+  if (count) count.textContent = String(SCENARIOS.length);
+  applyScenesOpen(scenesDefaultOpen());
+}
+
+function runRowHtml(run) {
+  const active = currentKey === "run:" + run.id;
+  const running = run.status === "running";
+  const cls = running ? "live" : stateClass(run.status);
+  const meta = running ? "运行中" : runTimeText(run.created);
+  return `<div class="session run-row${active ? " active" : ""}${run.pinned ? " pinned" : ""}" data-run="${esc(run.id)}" title="${esc(run.objective)}${run.rounds ? " · " + run.rounds + " 轮" : ""}">
+    <span class="sdot ${cls}"></span>
+    <span class="slabel" data-name>${esc(runLabel(run))}</span>
+    <span class="smeta">${meta}</span>
+    <button class="pin" data-pin="${esc(run.id)}" title="${run.pinned ? "取消固定" : "固定"}">${run.pinned ? "★" : "☆"}</button>
+    <button class="rename-act" data-rename="${esc(run.id)}" title="重命名">✎</button>
+  </div>`;
 }
 
 function renderRuns() {
-  const group = document.getElementById("run-group");
   const runNav = document.getElementById("run-nav");
-  if (!group || !runNav) return;
-  group.hidden = runHistory.length === 0;
+  if (!runNav) return;
   const query = runFilter.trim().toLowerCase();
   const runs = runHistory
     .filter(run => !query || `${run.name || ""} ${run.objective} ${run.id}`.toLowerCase().includes(query))
     .slice()
     .sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
-  runNav.innerHTML = runs.length ? runs.map(run => {
-    const active = currentKey === "run:" + run.id;
-    const running = run.status === "running";
-    const cls = running ? "live" : stateClass(run.status);
-    return `<div class="session run-row${active ? " active" : ""}${run.pinned ? " pinned" : ""}" data-run="${esc(run.id)}" title="${esc(run.objective)}">
-      <span class="sdot ${running ? "live" : cls}"></span>
-      <span class="slabel" data-name>${esc(runLabel(run))}</span>
-      <span class="smeta">${running ? "运行中" : (run.rounds ? run.rounds + " 轮" : "—")}</span>
-      <button class="pin" data-pin="${esc(run.id)}" title="${run.pinned ? "取消固定" : "固定"}">${run.pinned ? "★" : "☆"}</button>
-    </div>`;
-  }).join("") : `<div class="side-empty">没有匹配的运行</div>`;
+
+  if (!runs.length) {
+    runNav.innerHTML = query
+      ? `<div class="side-empty">没有匹配的运行</div>`
+      : `<div class="side-empty">还没有运行记录<br>点上方「新建委托」开始</div>`;
+    return;
+  }
+
+  let html = "";
+  if (query) {
+    html += `<div class="side-head-label">${runs.length} 条结果</div>`;
+    html += runs.map(runRowHtml).join("");
+  } else {
+    const pinned = runs.filter(run => run.pinned);
+    if (pinned.length) {
+      html += `<div class="side-head-label">已固定</div>`;
+      html += pinned.map(runRowHtml).join("");
+    }
+    const groups = [
+      { label: "今天", items: [] },
+      { label: "昨天", items: [] },
+      { label: "更早", items: [] },
+    ];
+    for (const run of runs) {
+      if (run.pinned) continue;
+      groups[runGroupOf(run.created)].items.push(run);
+    }
+    for (const group of groups) {
+      if (!group.items.length) continue;
+      html += `<div class="side-head-label">${group.label}</div>`;
+      const visible = group.label === "更早" && !olderOpen ? group.items.slice(0, 5) : group.items;
+      html += visible.map(runRowHtml).join("");
+      if (group.label === "更早" && group.items.length > 5) {
+        html += olderOpen
+          ? `<button class="side-more" data-collapse-older>收起</button>`
+          : `<button class="side-more" data-more-older>显示全部 ${group.items.length} 条</button>`;
+      }
+    }
+  }
+  runNav.innerHTML = html;
+
   for (const row of runNav.querySelectorAll(".run-row")) {
     row.addEventListener("click", event => {
-      if (event.target.closest("[data-pin]") || event.target.closest(".rename-input")) return;
+      if (event.target.closest("[data-pin]") || event.target.closest("[data-rename]") || event.target.closest(".rename-input")) return;
       selectRun(row.dataset.run);
     });
     const label = row.querySelector("[data-name]");
     label.addEventListener("dblclick", event => { event.stopPropagation(); startRename(row.dataset.run, label); });
     const pin = row.querySelector("[data-pin]");
     pin.addEventListener("click", event => { event.stopPropagation(); togglePin(row.dataset.run); });
+    const rename = row.querySelector("[data-rename]");
+    rename.addEventListener("click", event => { event.stopPropagation(); startRename(row.dataset.run, label); });
   }
+  const more = runNav.querySelector("[data-more-older]");
+  if (more) more.addEventListener("click", () => { olderOpen = true; renderRuns(); });
+  const collapse = runNav.querySelector("[data-collapse-older]");
+  if (collapse) collapse.addEventListener("click", () => { olderOpen = false; renderRuns(); });
 }
 
 /* ------------------------------------------------------------------ rail */
@@ -811,8 +914,10 @@ async function render(trace, title) {
     <div id="result-slot">${terminal && terminal.status ? renderResult(trace) : ""}</div>
   `;
 
-  document.getElementById("foot-text").textContent =
-    `${model.provider || "—"} · ${currentKey && currentKey.startsWith("run:") ? "运行记录" : "只读回放"}`;
+  setFoot(
+    `${model.provider || "—"} · ${currentKey && currentKey.startsWith("run:") ? "运行记录" : "只读回放"}`,
+    ""
+  );
   renderRail(trace, check);
 }
 
@@ -1121,9 +1226,11 @@ function setComposerRunning(running) {
     const template = templates.find(t => t.key === tplKey);
     ta.placeholder = template ? template.objective : "给 agent 派一个任务…";
   }
-  document.getElementById("foot-text").textContent = running
-    ? "offline-mock · 运行中"
-    : (health && health.live ? "offline-mock · 可运行" : "offline-mock · 只读回放");
+  setFoot(
+    running ? "offline-mock · 运行中"
+      : (health && health.live ? "offline-mock · 可运行" : "offline-mock · 只读回放"),
+    running ? "live" : (health && health.live ? "ok" : "")
+  );
 }
 
 /* ------------------------------------------------------------- 审批 */
@@ -1439,8 +1546,10 @@ function finishSession(s, data) {
       renderRail(trace, check);
     });
     const rounds = (trace.rounds || []).length;
-    document.getElementById("foot-text").textContent =
-      `offline-mock · 运行${status === "succeeded" ? "完成" : "结束（" + status + "）"}`;
+    setFoot(
+      `offline-mock · 运行${status === "succeeded" ? "完成" : "结束（" + status + "）"}`,
+      status === "succeeded" ? "ok" : ""
+    );
     notify(
       status === "succeeded" ? "Fcode · 运行完成" : `Fcode · 运行结束（${status}）`,
       `${shortObjective(s.objective || "")} · ${rounds} 轮`
@@ -1687,9 +1796,7 @@ async function initLive() {
     document.getElementById("template-btn").disabled = true;
     document.getElementById("approval-btn").disabled = true;
     document.getElementById("send").disabled = true;
-    document.getElementById("foot-text").textContent = "offline-mock · 只读回放";
-    const group = document.getElementById("run-group");
-    if (group) group.hidden = true;
+    setFoot("offline-mock · 只读回放", "");
     return;
   }
   setTemplate(templates.some(t => t.key === "full") ? "full" : templates[0].key);
@@ -2330,6 +2437,9 @@ function paletteActions() {
   if (currentTrace) {
     actions.push({ ic: "⧉", label: "复制运行诊断", run: copyDiagnostics });
     actions.push({ ic: "↓", label: "导出 trace JSON", run: exportTrace });
+    if (!(currentKey || "").startsWith("run:")) {
+      actions.push({ ic: "⟲", label: "重放当前场景", run: replay });
+    }
     if (currentTrace.terminal && currentTrace.terminal.status) {
       actions.push({ ic: "⎘", label: "签发审计报告", run: openReport });
     }
@@ -2360,8 +2470,8 @@ function paletteMatches() {
     run: () => selectRun(run.id),
   });
   for (const [key, label] of SCENARIOS) {
-    if (!query || label.toLowerCase().includes(query)) push("演示场景", {
-      label, hint: "场景", run: () => select(key, label),
+    if (!query || label.toLowerCase().includes(query)) push("示例场景", {
+      label, hint: "场景", run: () => { setScenesOpen(true); select(key, label); },
     });
   }
   return out;
@@ -2437,13 +2547,12 @@ function runPaletteItem(index) {
 }
 
 function bind() {
-  document.getElementById("open-file").addEventListener("click", () => document.getElementById("pick").click());
+  document.getElementById("new-run").addEventListener("click", openWizard);
   document.getElementById("composer-open").addEventListener("click", openWizard);
   bindWizard();
   document.getElementById("pick").addEventListener("change", event => {
     if (event.target.files[0]) fromFile(event.target.files[0]);
   });
-  document.getElementById("replay-side").addEventListener("click", replay);
   const ta = document.getElementById("composer-ta");
   ta.addEventListener("input", () => {
     autosize(ta);
@@ -2477,8 +2586,7 @@ function bind() {
     if (!tplMenu.hidden && !tplBtn.contains(event.target) && !tplMenu.contains(event.target)) tplMenu.hidden = true;
     if (!apvMenu.hidden && !apvBtn.contains(event.target) && !apvMenu.contains(event.target)) apvMenu.hidden = true;
   });
-  document.getElementById("export").addEventListener("click", exportTrace);
-  document.getElementById("reverify").addEventListener("click", reverify);
+  document.getElementById("chain-badge").addEventListener("click", reverify);
   document.getElementById("report-close").addEventListener("click", closeReport);
   document.querySelector(".report-scrim").addEventListener("click", closeReport);
   document.getElementById("report-print").addEventListener("click", printReport);
@@ -2486,6 +2594,10 @@ function bind() {
   document.getElementById("run-search").addEventListener("input", event => {
     runFilter = event.target.value;
     renderRuns();
+  });
+  document.getElementById("scene-toggle").addEventListener("click", () => {
+    const section = document.getElementById("scene-section");
+    setScenesOpen(!(section && section.classList.contains("open")));
   });
   document.getElementById("palette-btn").addEventListener("click", openPalette);
   document.querySelector(".palette-scrim").addEventListener("click", closePalette);
