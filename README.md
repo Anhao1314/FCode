@@ -26,7 +26,7 @@ Python 3.11+，零第三方依赖，零配置，离线。在终端里给出场�
 
 ## 理念
 
-**智能可以外包，责任不能外包。** FCode 不追求更会说话的 AI，而追求能被复核、能被签字的结论。用户、交互、审美与架构的完整论述见 [philosophy.md](flowcredit/docs/philosophy.md)。
+**智能可以外包，责任不能外包。** FCode 不替专家做判断，而是放大专家的判断：让她做更多只有她能做的判断，并让这些判断可复用。用户、交互、审美与架构的完整论述见 [philosophy.md](flowcredit/docs/philosophy.md)。
 
 ## 三个卖点
 
