@@ -1642,6 +1642,15 @@ body.reduce-motion *, body.reduce-motion *::before, body.reduce-motion *::after 
 }
 .intake-q { font-family: var(--serif); font-size: 18px !important; font-weight: 500; line-height: 1.4 !important; }
 .intake-desc { color: var(--text-3) !important; font-size: 11px !important; line-height: 1.6 !important; }
+.intake-reply { font-size: 13.5px !important; line-height: 1.7 !important; }
+.intake-thought {
+  display: flex; align-items: baseline; gap: 7px; margin-top: 2px;
+  padding: 6px 8px; border-left: 2px solid var(--border-soft);
+  background: #faf9f7; font-size: 10.5px; line-height: 1.55; color: var(--text-3);
+}
+.intake-thought span { flex: none; font: 8.5px var(--mono); letter-spacing: .08em; color: var(--text-2); }
+.intake-thinking { opacity: .65; }
+.intake-thinking .intake-reply::after { content: "…"; animation: blink 1.1s ease-in-out infinite; }
 .intake-choices { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 6px; }
 .intake-choice {
   display: flex; flex-direction: column; gap: 3px; width: 100%;

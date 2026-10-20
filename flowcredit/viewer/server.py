@@ -107,6 +107,8 @@ class Runtime:
         self.FactStore = m.FactStore
         m = imp("flowagent.tools.finance.facts")
         self.project_facts = m.project_facts
+        m = imp("flowagent.intake")
+        self.clarify = m.clarify
         m = imp("flowagent.domains")
         self.get_domain = m.get_domain
         self.list_domains = m.list_domains
@@ -1329,6 +1331,26 @@ class Handler(SimpleHTTPRequestHandler):
         if not self._authorized():
             return self._json({"error": "unauthorized"}, 401)
         mgr = self.manager
+        if path == "/api/intake":
+            if mgr.runtime is None:
+                return self._json({"error": f"live mode unavailable: {mgr.runtime_error}"}, 503)
+            body = self._read_body()
+            message = str(body.get("message") or "")[:2000]
+            spec = body.get("spec") if isinstance(body.get("spec"), dict) else {}
+            choice = body.get("choice") if isinstance(body.get("choice"), dict) else None
+            history = body.get("history") if isinstance(body.get("history"), list) else []
+            if len(json.dumps(spec, ensure_ascii=False).encode("utf-8")) > 4096:
+                return self._json({"error": "spec is too large"}, 400)
+            try:
+                turn = mgr.runtime.clarify(
+                    message=message,
+                    history=history[-20:],
+                    spec=spec,
+                    choice=choice,
+                )
+            except Exception as error:  # noqa: BLE001
+                return self._json({"error": f"intake failed: {error}"}, 400)
+            return self._json(turn)
         if path == "/api/runs":
             if mgr.runtime is None:
                 return self._json({"error": f"live mode unavailable: {mgr.runtime_error}"}, 503)

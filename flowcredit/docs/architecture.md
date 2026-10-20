@@ -153,6 +153,7 @@ hash_n = sha256(canonical_json({sequence, type, payload, prev_hash, at}))
 | `memory/facts.py` | 双时态事实簿 | 修正追加不覆盖；valid-time / transaction-time 分离 |
 | `tools/finance/facts.py` | 金融事实抽取 + 重建 CLI | 只读已提交观测；事实带事件哈希 |
 | `tools/connectors.py` | 主机源注册表 + 安全抓取 | 模型只点名；HTTP / Crawl4AI 两种 adapter；凭证不落链 |
+| `intake.py` | 澄清式委托 | 无状态；回复 + 选项 + TaskSpec；字段白名单校验 |
 | `providers/oracle.py` | 文件式实验 Provider | 复用真实 prompt；缺回复即 unknown |
 | `demo/oracle.py` | LLM 层实验运行器 | 隔离 workdir；不污染控制台记忆 |
 | `trajectory/exporter.py` | 导出 + 重算 | 与 viewer 算法一致 |

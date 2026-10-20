@@ -2174,46 +2174,18 @@ function renderTabs() {
 }
 
 /* --------------------------------------------------------------- 委托入口
-   选择优先：先问三个高价值问题，再把选择收敛成任务卡。自由输入始终保留。 */
+   用户先说话，后端 clarifier 再回复并给选项。前端不预设问卷。 */
 
 const INTAKE_KEY = "fa.intake";
 const INTAKE_INTENTS = {
-  compare: {
-    label: "判断两期能不能直接比",
-    short: "两期可比性",
-    desc: "核对单位、口径、重述后，再决定能不能算",
-    template: "full",
-  },
-  restatement: {
-    label: "重点看重述与口径变化",
-    short: "重述与口径",
-    desc: "解释 FY2024 重述和 FY2025 的桥接口径",
-    template: "full",
-  },
-  missing: {
-    label: "资料可能不全，先看能否下结论",
-    short: "资料不全",
-    desc: "缺证据时明确阻塞，不编数字",
-    template: "open-ended",
-  },
+  compare: { label: "判断两期能不能直接比", short: "两期可比性" },
+  restatement: { label: "重点看重述与口径变化", short: "重述与口径" },
+  missing: { label: "资料可能不全，先看能否下结论", short: "资料不全" },
 };
 const INTAKE_OUTPUTS = {
-  memo: {
-    label: "一页结论 + 审计底稿",
-    short: "结论 + 底稿",
-    desc: "完成后自动打开可签发的底稿",
-    badge: "推荐",
-  },
-  trace: {
-    label: "详细过程 + 原始 trace",
-    short: "详细过程",
-    desc: "保留运行现场，自己检查证据链",
-  },
-  conclusion: {
-    label: "只要结论",
-    short: "只要结论",
-    desc: "不自动打开底稿，需要时再签发",
-  },
+  memo: { label: "一页结论 + 审计底稿", short: "结论 + 底稿" },
+  trace: { label: "详细过程 + 原始 trace", short: "详细过程" },
+  conclusion: { label: "只要结论", short: "只要结论" },
 };
 
 function loadIntakePrefs() {
@@ -2223,176 +2195,133 @@ function loadIntakePrefs() {
     return {
       stored: !!raw,
       intent: INTAKE_INTENTS[parsed.intent] ? parsed.intent : "",
-      output: INTAKE_OUTPUTS[parsed.output] ? parsed.output : "memo",
-      approval: APPROVAL_MODES.some(([key]) => key === parsed.approval) ? parsed.approval : approvalMode,
+      output: INTAKE_OUTPUTS[parsed.output] ? parsed.output : "",
+      approval: APPROVAL_MODES.some(([key]) => key === parsed.approval) ? parsed.approval : "",
     };
   } catch {
-    return { stored: false, intent: "", output: "memo", approval: approvalMode };
+    return { stored: false, intent: "", output: "", approval: "" };
   }
 }
 
 const intakePrefs = loadIntakePrefs();
 const intake = {
   active: false,
-  original: "",
-  step: "intent",
-  intent: "",
-  output: intakePrefs.output,
-  approval: intakePrefs.approval,
+  messages: [],
+  spec: {},
+  choices: [],
+  readyTask: null,
+  thinking: false,
+  snapshots: [],
   returnKey: null,
   returnLabel: "",
-  note: "",
 };
 
-function inferIntakeIntent(text) {
-  const value = String(text || "");
-  if (/重述|调整后|口径|桥接/.test(value)) return "restatement";
-  if (/不全|缺|没有|找不到|不足/.test(value)) return "missing";
-  if (/可比|对比|比较|毛利率|两期|变化/.test(value)) return "compare";
-  return "";
+function intakeBadge(choice) {
+  if (intakePrefs.stored) {
+    const preferred = intakePrefs[choice.field];
+    if (preferred && preferred === choice.value) return "上次选择";
+  }
+  return choice.badge || "";
 }
 
 function intakeTemplateKey() {
-  return (INTAKE_INTENTS[intake.intent] || INTAKE_INTENTS.compare).template;
+  if (intake.readyTask && intake.readyTask.template) return intake.readyTask.template;
+  return intake.spec.intent === "missing" ? "open-ended" : "full";
 }
 
 function intakeTemplate() {
   return templates.find(t => t.key === intakeTemplateKey()) || {};
 }
 
-function intakeSavePrefs() {
-  try {
-    localStorage.setItem(INTAKE_KEY, JSON.stringify({
-      intent: intake.intent,
-      output: intake.output,
-      approval: intake.approval,
-    }));
-    intakePrefs.stored = true;
-    intakePrefs.intent = intake.intent;
-    intakePrefs.output = intake.output;
-    intakePrefs.approval = intake.approval;
-  } catch { /* quota */ }
-}
-
-function intakePickedHtml() {
-  const picked = [];
-  if (intake.intent) picked.push(INTAKE_INTENTS[intake.intent].short);
-  if (intake.step === "approval" || intake.step === "summary") picked.push(INTAKE_OUTPUTS[intake.output].short);
-  if (intake.step === "summary") picked.push(approvalTitle(intake.approval));
-  if (!picked.length) return "";
-  return `<div class="intake-picked">${picked.map(item => `<span>${esc(item)}</span>`).join("")}</div>`;
-}
-
-function intakeQuestion() {
-  if (intake.step === "intent") {
-    return {
-      title: "你更想要哪一种结果？",
-      desc: "我先按内置合成资料来理解；选中的关注点会写进任务卡。",
-      field: "intent",
-      options: Object.entries(INTAKE_INTENTS).map(([key, item]) => ({
-        value: key,
-        label: item.label,
-        desc: item.desc,
-        badge: intakePrefs.stored && intakePrefs.intent === key ? "上次选择" : (key === "compare" ? "推荐" : ""),
-      })),
-    };
-  }
-  if (intake.step === "output") {
-    return {
-      title: "结果怎么用？",
-      desc: "这只改变运行结束后的呈现，不改变证据与计算。",
-      field: "output",
-      options: Object.entries(INTAKE_OUTPUTS).map(([key, item]) => ({
-        value: key,
-        label: item.label,
-        desc: item.desc,
-        badge: intakePrefs.stored && intakePrefs.output === key ? "上次选择" : (item.badge || ""),
-      })),
-    };
-  }
-  if (intake.step === "approval") {
-    return {
-      title: "审批怎么设？",
-      desc: "关键步骤停下来等你确认；自动模式下权限门控与预算仍然生效。",
-      field: "approval",
-      options: APPROVAL_MODES.map(([key, title, desc]) => ({
-        value: key,
-        label: title,
-        desc,
-        badge: key === approvalMode ? "当前默认" : "",
-      })),
-    };
-  }
-  return null;
+function intakeSavePrefs(spec) {
+  const value = {
+    intent: spec.intent || "",
+    output: spec.output || "",
+    approval: spec.approval || "",
+  };
+  try { localStorage.setItem(INTAKE_KEY, JSON.stringify(value)); } catch { /* quota */ }
+  intakePrefs.stored = true;
+  intakePrefs.intent = value.intent;
+  intakePrefs.output = value.output;
+  intakePrefs.approval = value.approval;
 }
 
 function intakeDraftHtml() {
   const template = intakeTemplate();
   const limits = template.limits || {};
-  const intent = intake.intent ? INTAKE_INTENTS[intake.intent].label : "待选择";
-  const output = INTAKE_OUTPUTS[intake.output] ? INTAKE_OUTPUTS[intake.output].short : "待选择";
+  const intent = intake.spec.intent ? INTAKE_INTENTS[intake.spec.intent].label : "待选择";
+  const output = intake.spec.output ? INTAKE_OUTPUTS[intake.spec.output].short : "待选择";
+  const approval = intake.spec.approval ? approvalTitle(intake.spec.approval) : "待选择";
   const budget = limits.max_calls
     ? `${num(limits.max_calls)} calls · ${num(limits.max_reads)} reads · ${num(limits.max_cost_microusd)} µUSD`
     : "—";
-  const canStart = intake.step === "summary";
+  const ready = !!intake.readyTask;
   return `<div class="intake-draft">
     <div class="intake-draft-head"><span>任务草稿</span><span class="intake-draft-tag">内置合成资料 · 恒星智算</span></div>
     <div class="intake-row"><span>问题</span><b>${esc(intent)}</b></div>
     <div class="intake-row"><span>输出</span><b>${esc(output)}</b></div>
-    <div class="intake-row"><span>审批</span><b>${esc(approvalTitle(intake.approval))}</b></div>
+    <div class="intake-row"><span>审批</span><b>${esc(approval)}</b></div>
     <div class="intake-row"><span>预算</span><b>${esc(budget)}</b></div>
     <div class="intake-actions">
       <button class="a-btn" data-intake-cancel>取消</button>
-      ${intake.step !== "intent" ? `<button class="a-btn" data-intake-back>上一步</button>` : ""}
+      ${intake.snapshots.length ? `<button class="a-btn" data-intake-back>上一步</button>` : ""}
       <span class="grow"></span>
-      <button class="a-btn strong" data-intake-start${canStart ? "" : " disabled"}>${canStart ? "开始委托" : "还差一步"}</button>
+      <button class="a-btn strong" data-intake-start${ready ? "" : " disabled"}>${ready ? "开始委托" : "继续选择"}</button>
     </div>
   </div>`;
+}
+
+function intakeChoicesHtml(choices) {
+  return `<div class="intake-choices">${choices.map(choice => {
+    const badge = intakeBadge(choice);
+    return `<button class="intake-choice" type="button"
+      data-intake-choice data-intake-field="${esc(choice.field)}" data-intake-value="${esc(choice.value)}"
+      data-intake-label="${esc(choice.label)}">
+      <span class="t"><b>${esc(choice.label)}</b>${badge ? `<span class="intake-badge">${esc(badge)}</span>` : ""}</span>
+      <small>${esc(choice.description || "")}</small>
+    </button>`;
+  }).join("")}</div>`;
 }
 
 function renderIntake() {
   const main = document.getElementById("main");
   if (!intake.active) return;
-  const question = intakeQuestion();
-  const choices = question ? question.options.map(option => {
-    const selected = intake[question.field] === option.value;
-    return `<button class="intake-choice${selected ? " selected" : ""}" type="button"
-      data-intake-choice data-intake-field="${esc(question.field)}" data-intake-value="${esc(option.value)}">
-      <span class="t"><b>${esc(option.label)}</b>${option.badge ? `<span class="intake-badge">${esc(option.badge)}</span>` : ""}</span>
-      <small>${esc(option.desc)}</small>
-    </button>`;
-  }).join("") : "";
-  const original = intake.original
-    ? `<div class="intake-msg user"><span class="who">你</span><p>${esc(intake.original)}</p></div>`
+  const messages = intake.messages.map((message, index) => {
+    if (message.role === "user") {
+      return `<div class="intake-msg user"><span class="who">你</span><p>${esc(message.text)}</p></div>`;
+    }
+    const last = index === intake.messages.length - 1;
+    const thought = message.thought
+      ? `<div class="intake-thought"><span>理解</span>${esc(message.thought)}</div>` : "";
+    const choices = last && !intake.thinking && intake.choices.length
+      ? intakeChoicesHtml(intake.choices) : "";
+    return `<div class="intake-msg agent"><span class="who">FCode</span>
+      <p class="intake-reply">${esc(message.text)}</p>${thought}${choices}</div>`;
+  }).join("");
+  const thinking = intake.thinking
+    ? `<div class="intake-msg agent intake-thinking"><span class="who">FCode</span><p class="intake-reply">正在理解你的任务…</p></div>`
     : "";
-  const agent = question
-    ? `<div class="intake-msg agent"><span class="who">FCode</span>
-        <p class="intake-q">${esc(question.title)}</p>
-        <p class="intake-desc">${esc(question.desc)}</p>
-        <div class="intake-choices">${choices}</div>
-      </div>`
-    : `<div class="intake-msg agent"><span class="who">FCode</span>
-        <p class="intake-q">我准备这样执行</p>
-        <p class="intake-desc">确认后才会创建运行；任务卡会随委托写入哈希链。</p>
-      </div>`;
   main.innerHTML = `<div class="intake">
     <div class="intake-head">
       <div>
         <div class="intake-kicker"><span data-doodle="list-checks"></span> NEW DELEGATION</div>
         <h1 class="intake-title">先说清楚，再开始</h1>
-        <p class="intake-sub">三个选择就够了。也可以直接在下方描述。</p>
+        <p class="intake-sub">你先描述，我再给选项。最多三轮就能确认。</p>
       </div>
     </div>
-    <div class="intake-thread">
-      ${original}
-      ${intakePickedHtml()}
-      ${agent}
-      ${intake.note ? `<p class="intake-note">${esc(intake.note)}</p>` : ""}
-      ${intakeDraftHtml()}
-    </div>
+    <div class="intake-thread">${messages}${thinking}${intakeDraftHtml()}</div>
   </div>`;
   hydrateDoodles(main);
   main.scrollTop = main.scrollHeight;
+}
+
+function intakeSnapshot() {
+  intake.snapshots.push({
+    messages: intake.messages.map(message => ({ ...message })),
+    spec: { ...intake.spec },
+    choices: intake.choices.map(choice => ({ ...choice })),
+    readyTask: intake.readyTask ? { ...intake.readyTask } : null,
+  });
 }
 
 function startIntake(text = "") {
@@ -2406,22 +2335,37 @@ function startIntake(text = "") {
   }
   if (settingsOpen) closeSettingsPage(false);
   intake.active = true;
-  intake.original = String(text || "").trim();
+  intake.messages = [];
+  intake.spec = {};
+  intake.choices = [];
+  intake.readyTask = null;
+  intake.thinking = false;
+  intake.snapshots = [];
   intake.returnKey = currentKey;
   intake.returnLabel = document.getElementById("tb-title").textContent || "当前视图";
-  intake.intent = inferIntakeIntent(intake.original);
-  intake.output = intakePrefs.output;
-  intake.approval = intakePrefs.approval;
-  intake.step = intake.intent ? "output" : "intent";
-  intake.note = intake.intent ? "已从你的描述里识别到关注点。" : "";
   document.getElementById("app").classList.add("intake-mode");
   document.getElementById("tb-title").textContent = "新委托 · 需求确认";
   document.getElementById("tb-chips").innerHTML = `<span class="chip">需求确认</span>`;
   const ta = document.getElementById("composer-ta");
   ta.value = "";
   autosize(ta);
-  ta.placeholder = "也可以直接输入你的需求，Enter 交给 agent…";
+  ta.placeholder = "说说你想做什么，Enter 交给 agent…";
+  const value = String(text || "").trim();
+  if (!value) {
+    intake.messages.push({
+      role: "assistant",
+      text: "先说说你想做什么。比如：帮我看看这两份财报能不能直接比。",
+      thought: "还没有收到任务描述。",
+      choices: [],
+    });
+    renderIntake();
+    ta.focus();
+    return;
+  }
+  intakeSnapshot();
+  intake.messages.push({ role: "user", text: value });
   renderIntake();
+  intakeRequest(value, null);
 }
 
 function closeIntake(restore = true) {
@@ -2444,83 +2388,112 @@ function closeIntake(restore = true) {
   }
 }
 
-function intakeChoose(field, value) {
-  if (!intake.active) return;
-  if (field === "intent" && INTAKE_INTENTS[value]) {
-    intake.intent = value;
-    intake.step = "output";
-  } else if (field === "output" && INTAKE_OUTPUTS[value]) {
-    intake.output = value;
-    intake.step = "approval";
-  } else if (field === "approval" && APPROVAL_MODES.some(([key]) => key === value)) {
-    intake.approval = value;
-    intake.step = "summary";
-  }
-  intake.note = "";
+async function intakeRequest(message, choice) {
+  if (intake.thinking) return;
+  intake.thinking = true;
+  intake.choices = [];
   renderIntake();
+  const started = performance.now();
+  try {
+    const response = await fetch("/api/intake", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message,
+        choice,
+        spec: intake.spec,
+        history: intake.messages.slice(-16),
+      }),
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.error || `HTTP ${response.status}`);
+    }
+    const data = await response.json();
+    // Keep the thinking state readable even when the local clarifier answers
+    // instantly; a real model will naturally take longer.
+    const elapsed = performance.now() - started;
+    if (elapsed < 650) await new Promise(resolve => setTimeout(resolve, 650 - elapsed));
+    intake.spec = data.spec || {};
+    intake.choices = Array.isArray(data.choices) ? data.choices : [];
+    intake.readyTask = data.task || null;
+    intake.messages.push({
+      role: "assistant",
+      text: data.reply || "我在。继续说。",
+      thought: data.thought || "",
+      choices: intake.choices,
+    });
+  } catch (error) {
+    intake.messages.push({
+      role: "assistant",
+      text: `我没接上理解服务：${error.message}。你可以重试，或直接换一种说法。`,
+      thought: "请求失败，未更新任务草稿。",
+      choices: [],
+    });
+  } finally {
+    intake.thinking = false;
+    renderIntake();
+  }
 }
 
-function intakeBack() {
-  if (intake.step === "summary") intake.step = "approval";
-  else if (intake.step === "approval") intake.step = "output";
-  else if (intake.step === "output") intake.step = "intent";
-  intake.note = "";
+function intakeChoose(field, value, label) {
+  if (!intake.active || intake.thinking) return;
+  intakeSnapshot();
+  intake.messages.push({ role: "user", text: label });
+  intake.spec = { ...intake.spec, [field]: value };
   renderIntake();
+  intakeRequest("", { field, value });
 }
 
 function intakeFreeText(text) {
+  if (!intake.active || intake.thinking) return;
   const value = String(text || "").trim();
-  if (!value || !intake.active) return;
-  intake.original = intake.original ? `${intake.original}\n${value}` : value;
-  const inferred = inferIntakeIntent(value);
-  if (inferred) {
-    intake.intent = inferred;
-    intake.step = "output";
-    intake.note = "已根据你的补充更新关注点。";
-  } else {
-    intake.note = "没识别到具体关注点，先选一个最接近的。";
-    if (!intake.intent) intake.step = "intent";
-  }
+  if (!value) return;
+  intakeSnapshot();
+  intake.messages.push({ role: "user", text: value });
+  renderIntake();
+  intakeRequest(value, null);
+}
+
+function intakeBack() {
+  const snapshot = intake.snapshots.pop();
+  if (!snapshot) return;
+  intake.messages = snapshot.messages;
+  intake.spec = snapshot.spec;
+  intake.choices = snapshot.choices;
+  intake.readyTask = snapshot.readyTask;
+  intake.thinking = false;
   renderIntake();
 }
 
 async function startIntakeRun() {
-  if (!intake.active || intake.step !== "summary") return;
-  const templateKey = intakeTemplateKey();
-  const template = intakeTemplate();
-  const base = intake.original || template.objective || "";
-  const objective = `${base}${base ? "；" : ""}关注点：${INTAKE_INTENTS[intake.intent].label}`;
-  const spec = {
-    version: "fcode.intake/v1",
-    task: "financial-check",
-    intent: intake.intent,
-    output: intake.output,
-    approval: intake.approval,
-    materials: "builtin-synthetic",
-    subject: "恒星智算",
-    periods: ["FY2024", "FY2025"],
-    source: "console-intake",
-  };
+  if (!intake.active || !intake.readyTask) return;
+  const task = intake.readyTask;
   const button = document.querySelector("[data-intake-start]");
   if (button) { button.disabled = true; button.textContent = "提交中…"; }
   try {
     const response = await fetch("/api/runs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ objective, template: templateKey, approval: intake.approval, spec }),
+      body: JSON.stringify({
+        objective: task.objective,
+        template: task.template,
+        approval: task.approval,
+        spec: task.spec,
+      }),
     });
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
       throw new Error(error.error || `HTTP ${response.status}`);
     }
     const run = await response.json();
-    intakeSavePrefs();
+    intakeSavePrefs(task.spec);
     intake.active = false;
     document.getElementById("app").classList.remove("intake-mode");
     setComposerRunning(false);
     toast("委托已受理 · 开始执行");
-    openLive(run.id, objective, run.template);
-    if (live) live.autoReport = intake.output === "memo";
+    openLive(run.id, task.objective, run.template);
+    if (live) live.autoReport = task.spec.output === "memo";
     refreshRuns();
   } catch (error) {
     toast("委托提交失败：" + error.message);
@@ -3946,7 +3919,7 @@ function bind() {
   document.getElementById("main").addEventListener("click", event => {
     const intakeChoice = event.target.closest("[data-intake-choice]");
     if (intakeChoice) {
-      intakeChoose(intakeChoice.dataset.intakeField, intakeChoice.dataset.intakeValue);
+      intakeChoose(intakeChoice.dataset.intakeField, intakeChoice.dataset.intakeValue, intakeChoice.dataset.intakeLabel || "");
       return;
     }
     if (event.target.closest("[data-intake-start]")) { startIntakeRun(); return; }
