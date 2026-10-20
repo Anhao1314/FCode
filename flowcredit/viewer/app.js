@@ -21,12 +21,14 @@ const EVENT_DOT = {
   plan_steered: "info", budget_adjusted: "info", control_rejected: "bad", task_resumed: "info",
   operator_message: "you", memory_recalled: "info",
   policy_requested: "info", policy_decided: "info", auto_action: "ok",
+  review_decided: "you",
 };
 
-/* 人的决定：审批、计划修订、预算调整、续跑、运行中消息 */
+/* 人的决定：审批、计划修订、预算调整、续跑、运行中消息、判断记录 */
 const HUMAN_EVENTS = new Set([
   "approval_requested", "approval_granted", "approval_denied", "approval_aborted",
   "plan_steered", "budget_adjusted", "control_rejected", "task_resumed", "operator_message",
+  "review_decided",
 ]);
 
 const APPROVAL_MODES = [
@@ -61,6 +63,16 @@ const FAILURE_REASONS = {
   INSUFFICIENT_EVIDENCE: "证据不足，Runtime 拒绝给出未经证明的数字",
   STOPPED_BY_OPERATOR: "操作员停止了运行",
 };
+
+/* 判断记录：决定写进签名链，标签同时用于结果面与事件摘要。 */
+const REVIEW_DECISIONS = [
+  { key: "accept", label: "接受判断", requiresReason: false, hint: "理由可选", placeholder: "可补充接受依据（可选）" },
+  { key: "needs_evidence", label: "需要补材料", requiresReason: true, hint: "写明缺什么", placeholder: "缺哪份材料、哪个口径，下一步由谁补" },
+  { key: "qualified", label: "保留意见", requiresReason: true, hint: "写明保留措辞", placeholder: "保留意见的措辞与适用范围" },
+  { key: "redo", label: "退回重做", requiresReason: true, hint: "写明退回原因", placeholder: "退回原因与需要重做的范围" },
+];
+const REVIEW_LABEL = Object.fromEntries(REVIEW_DECISIONS.map(item => [item.key, item.label]));
+const REVIEW_DECISION = Object.fromEntries(REVIEW_DECISIONS.map(item => [item.key, item]));
 const dot = cls => `<span class="ev-dot ${cls || ""}"></span>`;
 
 /* 桌面壳桥：浏览器里返回 null，桌面端返回 pywebview 原生 API */
@@ -877,6 +889,11 @@ function renderTools(trace, check) {
 }
 
 function summariseEvent(e) {
+  if (e.type === "review_decided") {
+    const detail = (e.payload && e.payload.detail) || (e.payload || {});
+    const label = REVIEW_LABEL[detail.decision] || detail.decision || "判断记录";
+    return detail.reason ? `${esc(label)} · ${esc(detail.reason)}` : esc(label);
+  }
   const d = e.payload && e.payload.detail;
   if (!d || Object.keys(d).length === 0) return "";
   if (e.type === "tool_started" || e.type === "tool_succeeded") return `${esc(d.tool || "")} ${d.arguments && Object.keys(d.arguments).length ? "(" + Object.entries(d.arguments).map(([k, v]) => `${esc(k)}=${esc(v)}`).join(", ") + ")" : "()"}`;
@@ -1263,6 +1280,304 @@ function failureConclusion(failure) {
   return `未能给出结论：${reason}。`;
 }
 
+/* --------------------------------------------------------------- 判断面 */
+
+function resultUnit(result) {
+  if (result.unit) return result.unit;
+  const periods = result.periods || [];
+  if (periods.some(period => period && (period.gross_profit_cny !== undefined || period.revenue_cny !== undefined))) return "CNY";
+  if ((result.citations || []).some(citation => citation && citation.value_cny !== undefined)) return "CNY";
+  return "—";
+}
+
+/* 判断只属于当前打开的运行；静态 trace 没有可写入的 run id。 */
+function reviewRunId() {
+  const key = currentKey || "";
+  if (!key.startsWith("run:")) return null;
+  const run = currentRun();
+  if (run && run.id) return run.id;
+  if (live && live.id && key === "run:" + live.id) return live.id;
+  return null;
+}
+
+const reviewStates = new Map();
+
+function reviewStateFor(runId) {
+  if (!reviewStates.has(runId)) {
+    reviewStates.set(runId, { decision: "", reason: "", sending: false, error: "", recorded: null });
+  }
+  return reviewStates.get(runId);
+}
+
+function recordedReview(trace, runId) {
+  const state = reviewStates.get(runId);
+  if (state && state.recorded) return state.recorded;
+  const events = (trace && trace.events) || [];
+  for (let i = events.length - 1; i >= 0; i--) {
+    const event = events[i];
+    if (!event || event.type !== "review_decided") continue;
+    const detail = (event.payload && event.payload.detail) || (event.payload || {});
+    return {
+      decision: detail.decision || "",
+      reason: detail.reason || "",
+      reviewer: detail.reviewer || "reviewer",
+      sequence: event.sequence !== undefined ? event.sequence : detail.sequence,
+    };
+  }
+  return null;
+}
+
+function reviewReasonId(runId) {
+  return "review-reason-" + String(runId).replace(/[^a-zA-Z0-9_-]/g, "-");
+}
+
+function reviewPanelElement(runId) {
+  return [...document.querySelectorAll("[data-review-panel]")]
+    .find(panel => panel.dataset.reviewRun === runId) || null;
+}
+
+function reviewRecordedHtml(recorded) {
+  const sequence = recorded.sequence === undefined || recorded.sequence === null ? "—" : recorded.sequence;
+  const label = REVIEW_LABEL[recorded.decision] || recorded.decision || "判断记录";
+  return `<div class="review-recorded" role="status">
+    <span class="review-stamp">已记录</span>
+    <span class="rr-sep">·</span>
+    <span class="rr-line">${esc(label)} <span class="rr-sep">·</span> #${esc(sequence)}</span>
+    <span class="rr-meta">${esc(recorded.reviewer || "reviewer")}</span>
+    ${recorded.reason ? `<p class="rr-reason">${esc(recorded.reason)}</p>` : ""}
+  </div>`;
+}
+
+function reviewPanelInnerHtml(trace, runId) {
+  const recorded = recordedReview(trace, runId);
+  if (recorded) return reviewRecordedHtml(recorded);
+
+  const state = reviewStateFor(runId);
+  const selected = REVIEW_DECISION[state.decision] || null;
+  const disabled = state.sending ? " disabled" : "";
+  const reason = String(state.reason || "");
+  const choices = REVIEW_DECISIONS.map(item => {
+    const active = item.key === state.decision;
+    return `<button type="button" class="review-choice${active ? " selected" : ""}" data-review-decision="${esc(item.key)}" aria-pressed="${active ? "true" : "false"}"${disabled}>
+      <span class="rc-label">${esc(item.label)}</span>
+      <span class="rc-hint">${esc(item.hint)}</span>
+    </button>`;
+  }).join("");
+  const reasonHtml = selected
+    ? `<div class="review-reason">
+        <div class="review-reason-head">
+          <label class="review-reason-label" for="${reviewReasonId(runId)}">判断理由</label>
+          <span class="${selected.requiresReason ? "review-required" : "review-optional"}">${selected.requiresReason ? "必填" : "可选"}</span>
+        </div>
+        <textarea class="review-textarea" id="${reviewReasonId(runId)}" data-review-reason rows="2" maxlength="1000"
+          placeholder="${esc(selected.placeholder)}"${disabled}>${esc(reason)}</textarea>
+        <div class="review-foot">
+          <span class="review-error" data-review-error role="alert"${state.error ? "" : " hidden"}>${esc(state.error || "")}</span>
+          <span class="grow"></span>
+          <span class="review-count" data-review-count>${reason.length} 字</span>
+          <button type="button" class="a-btn strong" data-review-submit${disabled || (selected.requiresReason && !reason.trim()) ? " disabled" : ""}>${state.sending ? "记录中…" : "记录判断"}</button>
+        </div>
+      </div>`
+    : `<p class="review-prompt">先选择你的判断，再写理由。</p>`;
+  return `<div class="review-head">
+    <span class="review-kicker">REVIEW · 判断记录</span>
+    <span class="review-hint">reviewer · 写入签名链</span>
+  </div>
+  <div class="review-choices" role="group" aria-label="判断决定">${choices}</div>
+  ${reasonHtml}`;
+}
+
+function reviewPanelHtml(trace) {
+  const runId = reviewRunId();
+  if (!runId) {
+    return `<div class="review review-readonly">
+      <div class="review-head">
+        <span class="review-kicker">REVIEW · 判断记录</span>
+        <span class="review-hint">只读</span>
+      </div>
+      <p>只读回放 · 没有可写入的运行 id，判断不会进入签名链。</p>
+    </div>`;
+  }
+  return `<div class="review" data-review-panel data-review-run="${esc(runId)}">${reviewPanelInnerHtml(trace, runId)}</div>`;
+}
+
+function paintReviewPanel(runId) {
+  const panel = reviewPanelElement(runId);
+  if (!panel) return;
+  const trace = currentTrace || (live && live.trace) || {};
+  panel.innerHTML = reviewPanelInnerHtml(trace, runId);
+}
+
+function chooseReviewDecision(runId, decision) {
+  if (!runId || !REVIEW_DECISION[decision]) return;
+  const state = reviewStateFor(runId);
+  if (state.sending || state.recorded) return;
+  state.decision = decision;
+  state.error = "";
+  paintReviewPanel(runId);
+  const panel = reviewPanelElement(runId);
+  const textarea = panel && panel.querySelector("[data-review-reason]");
+  if (textarea) textarea.focus();
+}
+
+function syncReviewDraft(runId, panel, input) {
+  const state = reviewStateFor(runId);
+  state.reason = input.value;
+  state.error = "";
+  const selected = REVIEW_DECISION[state.decision];
+  const submit = panel.querySelector("[data-review-submit]");
+  if (submit) submit.disabled = !!state.sending || !!(selected && selected.requiresReason && !input.value.trim());
+  const count = panel.querySelector("[data-review-count]");
+  if (count) count.textContent = `${input.value.length} 字`;
+  const error = panel.querySelector("[data-review-error]");
+  if (error && !error.hidden) {
+    error.hidden = true;
+    error.textContent = "";
+  }
+}
+
+function reviewErrorText(data, status) {
+  const raw = data && (data.error || data.message || data.detail);
+  if (typeof raw === "string" && raw.trim()) return raw.trim();
+  if (raw) {
+    try { return JSON.stringify(raw); } catch { return String(raw); }
+  }
+  return `HTTP ${status}`;
+}
+
+async function submitReview(runId) {
+  if (!runId) return;
+  const state = reviewStateFor(runId);
+  const decision = REVIEW_DECISION[state.decision];
+  if (!decision || state.sending || state.recorded) return;
+  const reason = String(state.reason || "").trim();
+  if (decision.requiresReason && !reason) {
+    state.error = "请填写判断理由：说明缺什么材料、保留什么，或为什么退回。";
+    paintReviewPanel(runId);
+    const panel = reviewPanelElement(runId);
+    const textarea = panel && panel.querySelector("[data-review-reason]");
+    if (textarea) textarea.focus();
+    return;
+  }
+  state.sending = true;
+  state.error = "";
+  paintReviewPanel(runId);
+  try {
+    const response = await fetch(`/api/runs/${encodeURIComponent(runId)}/review`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ decision: state.decision, reason, reviewer: "reviewer" }),
+    });
+    let data = {};
+    try { data = await response.json(); } catch { /* 非 JSON 错误也走可读提示 */ }
+    if (!response.ok || (data && data.ok === false)) {
+      throw new Error(reviewErrorText(data, response.status));
+    }
+    const event = data.event || {};
+    const sequence = data.sequence !== undefined ? data.sequence : event.sequence;
+    state.recorded = {
+      decision: data.decision || state.decision,
+      reason,
+      reviewer: "reviewer",
+      sequence,
+    };
+    state.sending = false;
+    state.decision = "";
+    state.reason = "";
+    state.error = "";
+    paintReviewPanel(runId);
+    const label = REVIEW_LABEL[state.recorded.decision] || state.recorded.decision;
+    toast(`已记录 · ${label} · #${sequence === undefined || sequence === null ? "—" : sequence}`);
+  } catch (error) {
+    state.sending = false;
+    state.error = `记录失败：${error && error.message ? error.message : "网络错误"}`;
+    paintReviewPanel(runId);
+  }
+}
+
+function judgmentFactsHtml(result) {
+  const periods = result.periods || [];
+  const first = periods[0] || {};
+  const second = periods[1] || {};
+  const sources = (result.citations || [])
+    .filter(citation => citation && citation.doc_id)
+    .map(citation => `${citation.period ? citation.period + " " : ""}${citation.doc_id}`);
+  return `<div class="judgment-facts">
+    <span class="jf"><span class="jk">${esc(first.period || "FY2024")}</span><span class="jv">${pct(result.margin_bp_2024)}</span></span>
+    <span class="jf"><span class="jk">${esc(second.period || "FY2025")}</span><span class="jv">${pct(result.margin_bp_2025)}</span></span>
+    <span class="jf"><span class="jk">变化</span><span class="jv">${pp(result.change_bp)}</span></span>
+    ${sources.length ? `<span class="judgment-source">来源 ${esc(sources.join(" · "))}</span>` : ""}
+  </div>`;
+}
+
+function judgmentRowsHtml(result) {
+  const comparable = result.comparable === true ? "可比" : result.comparable === false ? "不可比" : "未标注";
+  const basis = result.basis || "—";
+  const restatement = result.restatement_applied ? "已应用重述" : "未应用重述";
+  return `<div class="judgment-rows">
+    <div class="jrow"><span class="jk">可比性</span><span class="jv"><b>${esc(comparable)}</b> · 准则 ${esc(basis)} · ${esc(restatement)}</span></div>
+    <div class="jrow"><span class="jk">单位/准则</span><span class="jv"><b>已归一</b> · ${esc(resultUnit(result))} · ${esc(basis)}</span></div>
+  </div>`;
+}
+
+function judgmentSurfaceHtml(trace, result) {
+  const citations = (result.citations || []).length;
+  return `<section class="judgment" aria-label="判断面">
+    <div class="judgment-head">
+      <span class="judgment-kicker">JUDGMENT · 判断面</span>
+      <span class="judgment-meta">${esc(result.verification || "runtime-recomputed")}${citations ? ` · ${citations} 处引用` : ""}</span>
+    </div>
+    ${judgmentFactsHtml(result)}
+    ${judgmentRowsHtml(result)}
+    <div class="judgment-block">
+      <div class="jk">解释候选</div>
+      <div class="j-explanations">
+        <div class="j-exp">
+          <div class="j-exp-head"><span class="j-exp-title">经营变化</span><span class="j-tag pending">剩余解释</span></div>
+          <div class="j-exp-note">缺分产品/销量数据，无法区分价格 vs 结构</div>
+        </div>
+        <div class="j-exp">
+          <div class="j-exp-head"><span class="j-exp-title">口径/重述</span><span class="j-tag ok">已核对 · 已排除</span></div>
+        </div>
+        <div class="j-exp">
+          <div class="j-exp-head"><span class="j-exp-title">单位/准则</span><span class="j-tag ok">已核对 · 已排除</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="judgment-block">
+      <div class="jk">待判断</div>
+      <ol class="j-pending">
+        <li>是否接受“经营变化”</li>
+        <li>是否需要补充分产品数据</li>
+      </ol>
+    </div>
+    <div class="judgment-impact">
+      <span class="jk">会影响结论</span>
+      <span>分产品毛利缺失时，应保留意见</span>
+    </div>
+    ${reviewPanelHtml(trace)}
+  </section>`;
+}
+
+function failureJudgmentHtml(trace, terminal) {
+  const failure = terminal.failure || {};
+  const code = failure.code || String(terminal.status || "failed").toUpperCase();
+  const message = failure.message || FAILURE_REASONS[failure.code] || "";
+  return `<section class="judgment judgment-fail" aria-label="判断面">
+    <div class="judgment-head">
+      <span class="judgment-kicker">JUDGMENT · 判断面</span>
+      <span class="judgment-meta">${esc(terminal.status || "failed")} · 未产出可签字结论</span>
+    </div>
+    <div class="judgment-fail-note">
+      <span class="jk">失败依据</span>
+      <code>${esc(code)}</code>
+      ${message ? `<span class="jv">${esc(message)}</span>` : ""}
+    </div>
+    <p class="judgment-empty">失败不补解释；只记录你对失败依据的判断。</p>
+    ${reviewPanelHtml(trace)}
+  </section>`;
+}
+
 function renderResult(trace) {
   const terminal = trace.terminal || {};
   const result = terminal.result || {};
@@ -1291,6 +1606,7 @@ function renderResult(trace) {
         <span class="proof-sep">·</span>
         <span>${(trace.events || []).length} 个事件</span>
       </div>
+      ${judgmentSurfaceHtml(trace, result)}
       <div class="result-foot">
         <div class="chips" style="margin-top:2px">
           <span class="mini">口径 ${esc(result.basis)} · ${esc(result.consolidation)}</span>
@@ -1328,6 +1644,7 @@ function renderResult(trace) {
       <span class="code">${esc(failure.code || "—")}</span>
       <span class="msg">${esc(failure.message || "")}</span>
     </div>
+    ${failureJudgmentHtml(trace, terminal)}
     <div class="result-foot">${runActionsHtml(trace)}</div>
   </div>`;
 }
@@ -3940,6 +4257,17 @@ function bind() {
     if (event.target.closest("[data-intake-back]")) { intakeBack(); return; }
     if (event.target.closest("[data-intake-cancel]")) { closeIntake(true); return; }
     if (event.target.closest("[data-wizard-open]")) { startIntake(""); return; }
+    const reviewChoice = event.target.closest("[data-review-decision]");
+    if (reviewChoice) {
+      const panel = reviewChoice.closest("[data-review-panel]");
+      if (panel) chooseReviewDecision(panel.dataset.reviewRun, reviewChoice.dataset.reviewDecision);
+      return;
+    }
+    if (event.target.closest("[data-review-submit]")) {
+      const panel = event.target.closest("[data-review-panel]");
+      if (panel) submitReview(panel.dataset.reviewRun);
+      return;
+    }
     const ledDel = event.target.closest("[data-led-del]");
     if (ledDel) {
       const id = ledDel.dataset.ledDel;
@@ -4013,6 +4341,12 @@ function bind() {
     else if (button.dataset.act === "diag") copyDiagnostics();
     else if (button.dataset.act === "report") openReport();
     else if (button.dataset.act === "resume") openResumeForm();
+  });
+  document.getElementById("main").addEventListener("input", event => {
+    const input = event.target.closest("[data-review-reason]");
+    if (!input) return;
+    const panel = input.closest("[data-review-panel]");
+    if (panel) syncReviewDraft(panel.dataset.reviewRun, panel, input);
   });
   const app = document.getElementById("app");
   app.classList.toggle("rail-open", railOpen);

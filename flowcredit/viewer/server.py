@@ -21,6 +21,8 @@ Endpoints
     POST /api/runs/{id}/plan      {"action": "skip"|"promote", "todoId": "t4"}
     POST /api/runs/{id}/budget    raise limits; applies at the next round
     POST /api/runs/{id}/resume    add budget and continue a failed run
+    POST /api/runs/{id}/review    {"decision": "accept", "reason": "...", "reviewer": "..."}
+                                  append a human decision to a terminal run's chain
     POST /api/runs/{id}/meta      {"name": "...", "pinned": true} -> updated record
 
 Standard library only, the same constraint as the rest of this viewer. The
@@ -65,6 +67,9 @@ RUNS_DIR = Path(os.environ.get("FCODE_RUNS_DIR") or (VIEWER_DIR / "runs"))
 os.environ.setdefault("FCODE_MEMORY_DB", str(RUNS_DIR.parent / "memory" / "cases.sqlite"))
 
 TERMINAL_STATUS = ("succeeded", "failed", "denied", "recovery_required")
+#: Run statuses a review may be recorded against. ``stopped`` and ``error`` are
+#: terminal in the console even though the task itself ends as ``failed``.
+REVIEWABLE_STATUS = ("succeeded", "failed", "denied", "stopped", "error")
 
 
 class StopRequested(Exception):
@@ -140,6 +145,11 @@ class Runtime:
         self.verify_trace = m.verify_trace
         m = imp("flowagent.trajectory.recorder")
         self.TraceRecorder = m.TraceRecorder
+        m = imp("flowagent.review")
+        self.record_review = m.record_review
+        self.REVIEW_DECISIONS = m.DECISIONS
+        self.MAX_REASON = m.MAX_REASON
+        self.MAX_REVIEWER = m.MAX_REVIEWER
 
     def tool_contracts(self) -> list[dict]:
         """The registered contracts (name, effect, version, schemas)."""
@@ -421,6 +431,95 @@ class RunManager:
         )
         thread.start()
         return run
+
+    def record_review(self, run_id: str, decision: str, reason: str, reviewer: str) -> dict:
+        """Append a human decision to a finished run and re-export its trace.
+
+        This is a new event on the existing hash chain, not a status change:
+        the run stays terminal, and the trace is rebuilt from the store so the
+        reviewer's judgement sits beside the evidence it is judging.
+        """
+        rt = self.runtime
+        if rt is None:
+            raise ValueError("live runtime is unavailable")
+        run = self.runs.get(run_id)
+        if run is None:
+            raise KeyError(run_id)
+        with run.lock:
+            status = run.status
+            finished = run.finished
+            task_id = run.task_id
+        if not finished or status == "running":
+            raise ValueError("run is still running; a review can only be recorded after it finishes")
+        if status not in REVIEWABLE_STATUS:
+            raise ValueError(f"run is {status}; only a terminal run can be reviewed")
+        if not task_id:
+            raise ValueError("run has no durable task to review")
+        run_dir = RUNS_DIR / run.id
+        trace_path = run_dir / "trace.json"
+        db = run_dir / "task.sqlite"
+        if not trace_path.exists():
+            raise ValueError("run has no trace.json; a review needs the exported trace")
+        if not db.exists():
+            raise ValueError("run has no task.sqlite; a review needs the durable event chain")
+        try:
+            trace = json.loads(trace_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            raise ValueError(f"cannot read trace.json: {exc}") from exc
+
+        store = rt.TaskStore(db)
+        try:
+            try:
+                final, event = rt.record_review(
+                    store,
+                    task_id,
+                    trace,
+                    decision=decision,
+                    reason=reason,
+                    reviewer=reviewer,
+                )
+            except rt.AgentError as exc:
+                raise ValueError(f"cannot record review: {exc}") from exc
+            except ValueError:
+                raise
+            except Exception as exc:  # noqa: BLE001 — a damaged trace is a 409, not a crash
+                raise ValueError(f"cannot record review: {type(exc).__name__}: {exc}") from exc
+            rt.export_trace(final, trace_path)
+            try:
+                verification = rt.verify_trace(final)
+                verified = bool(verification.get("ok", verification.get("valid", True)))
+            except Exception:  # verification must never lose the recorded decision
+                verified = False
+            with run.lock:
+                run.snapshot = final
+                run.rounds = len(final["rounds"])
+                run.event_count = len(final["events"])
+                run.trace_path = f"runs/{run.id}/trace.json"
+                run.trace_verified = verified
+                run.cost = _budget_summary(final)
+                run.bump()
+            self._write_meta(run)
+            if self.case_index is not None:
+                try:
+                    self.case_index.upsert(final, run_id=run.id)
+                except Exception:  # noqa: BLE001 — memory must never lose a review
+                    traceback.print_exc()
+            return {
+                "ok": True,
+                "decision": decision,
+                "sequence": event["sequence"],
+                "event": {
+                    "sequence": event["sequence"],
+                    "type": event["type"],
+                    "hash": event["hash"],
+                },
+                "tracePath": run.trace_path,
+            }
+        finally:
+            try:
+                store.close()
+            except Exception:  # noqa: BLE001
+                pass
 
     # ------------------------------------------------------------- run driver
 
@@ -1376,6 +1475,43 @@ class Handler(SimpleHTTPRequestHandler):
                     return self._json({"error": "spec is too large"}, 400)
             run = mgr.create(objective, template, approval, spec)
             return self._json(run.to_json(detail=True), 202)
+        if path.startswith("/api/runs/") and path.endswith("/review"):
+            if mgr.runtime is None:
+                return self._json({"error": f"live mode unavailable: {mgr.runtime_error}"}, 503)
+            run_id = path[len("/api/runs/") : -len("/review")]
+            run = mgr.get(run_id)
+            if run is None:
+                return self._json({"error": "no such run"}, 404)
+            body = self._read_body()
+            decision = body.get("decision")
+            if decision not in mgr.runtime.REVIEW_DECISIONS:
+                return self._json(
+                    {"error": f"decision must be one of {', '.join(mgr.runtime.REVIEW_DECISIONS)}"},
+                    400,
+                )
+            reason = body.get("reason")
+            if reason is None:
+                reason = ""
+            if not isinstance(reason, str) or len(reason) > mgr.runtime.MAX_REASON:
+                return self._json(
+                    {"error": f"reason must be a string of at most {mgr.runtime.MAX_REASON} characters"},
+                    400,
+                )
+            reviewer = body.get("reviewer")
+            if reviewer is None:
+                reviewer = ""
+            if not isinstance(reviewer, str) or len(reviewer) > mgr.runtime.MAX_REVIEWER:
+                return self._json(
+                    {"error": f"reviewer must be a string of at most {mgr.runtime.MAX_REVIEWER} characters"},
+                    400,
+                )
+            try:
+                payload = mgr.record_review(run.id, decision, reason, reviewer)
+            except KeyError:
+                return self._json({"error": "no such run"}, 404)
+            except ValueError as exc:
+                return self._json({"error": str(exc)}, 409)
+            return self._json(payload)
         if path.startswith("/api/runs/") and path.endswith("/stop"):
             run_id = path[len("/api/runs/") : -len("/stop")]
             run = mgr.get(run_id)

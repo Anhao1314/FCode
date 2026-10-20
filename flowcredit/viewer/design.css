@@ -167,3 +167,175 @@ body { background: var(--paper); color: var(--ink); font-family: var(--font-body
   .guide-title { font-size: 30px; }
   .guide-grid, .guide-principles, .guide-dodont { grid-template-columns: 1fr; }
 }
+
+/* ------------------------------------------------------------ 判断面
+   结论之后留给签字人的一页：事实、解释候选、待判断、影响与判断记录。
+   只用细线/虚线分区，不加阴影；状态色必须和文字标签同时出现。 */
+.judgment {
+  margin: 2px 14px 12px;
+  padding-top: 13px;
+  border-top: 1px dashed var(--rule);
+}
+.judgment-head {
+  display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.judgment-kicker {
+  font: 600 9px/1.4 var(--font-mono); letter-spacing: .16em;
+  color: var(--ink-2); text-transform: uppercase;
+}
+.judgment-meta {
+  margin-left: auto; font: 9.5px/1.5 var(--font-mono);
+  color: var(--ink-3); letter-spacing: .02em;
+}
+.judgment-facts {
+  display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px 16px;
+  padding: 9px 12px; border: 1px solid var(--rule); border-radius: var(--radius-card);
+  background: var(--paper-wash);
+}
+.jf { display: inline-flex; align-items: baseline; gap: 6px; }
+.jf .jk, .jrow .jk, .judgment-block > .jk, .judgment-impact .jk, .judgment-fail-note .jk {
+  font: 9.5px/1.5 var(--font-mono); letter-spacing: .06em;
+  color: var(--ink-3); text-transform: uppercase;
+}
+.jf .jv {
+  font: 12.5px/1.5 var(--font-mono); color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.judgment-source {
+  margin-left: auto; font: 9.5px/1.5 var(--font-mono);
+  color: var(--ink-3);
+}
+.judgment-rows {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 0 18px;
+  margin-top: 9px;
+}
+.jrow {
+  display: grid; grid-template-columns: 58px 1fr; gap: 8px;
+  align-items: baseline; padding: 8px 0;
+  border-bottom: 1px dashed var(--rule);
+}
+.jrow .jk { padding-top: 2px; }
+.jrow .jv { font-size: 12px; line-height: 1.6; color: var(--ink-2); }
+.jrow .jv b { font-weight: 500; color: var(--ink); }
+.judgment-block { margin-top: 12px; }
+.judgment-block > .jk { display: block; margin-bottom: 6px; }
+.j-explanations {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px;
+}
+.j-exp {
+  padding: 9px 11px; border: 1px solid var(--rule);
+  border-radius: var(--radius-card); background: var(--paper);
+}
+.j-exp-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.j-exp-title { font-size: 12px; color: var(--ink); }
+.j-exp-note { margin-top: 4px; font-size: 11px; line-height: 1.6; color: var(--ink-3); }
+.j-tag {
+  display: inline-flex; align-items: center; padding: 1px 7px;
+  border: 1px solid var(--rule-strong); border-radius: var(--radius-chip);
+  font: 9px/1.5 var(--font-mono); color: var(--ink-3); white-space: nowrap;
+}
+.j-tag.pending { color: var(--pending); border-color: var(--pending); background: var(--pending-wash); }
+.j-tag.ok { color: var(--verified); border-color: var(--verified); background: var(--verified-wash); }
+.j-pending { list-style: none; margin: 0; padding: 0; counter-reset: j-pending; }
+.j-pending li {
+  position: relative; counter-increment: j-pending;
+  padding: 6px 0 6px 26px; border-bottom: 1px dashed var(--rule);
+  font-size: 12px; line-height: 1.6; color: var(--ink);
+}
+.j-pending li::before {
+  content: counter(j-pending, decimal-leading-zero);
+  position: absolute; left: 0; top: 7px;
+  font: 9px var(--font-mono); color: var(--ink-3); letter-spacing: .06em;
+}
+.judgment-impact {
+  display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+  margin-top: 12px; padding: 9px 11px;
+  border: 1px dashed var(--rule-strong); border-radius: var(--radius-card);
+  background: var(--paper-wash); font-size: 12px; line-height: 1.6; color: var(--ink);
+}
+.judgment-impact .jk { color: var(--pending); }
+.judgment-empty { margin: 8px 0 0; font-size: 11.5px; line-height: 1.65; color: var(--ink-3); }
+.judgment-fail-note {
+  display: flex; align-items: baseline; gap: 9px; flex-wrap: wrap;
+  padding: 9px 12px; border: 1px solid var(--rule);
+  border-radius: var(--radius-card); background: var(--paper-wash);
+}
+.judgment-fail-note code { font: 11.5px/1.5 var(--font-mono); color: var(--alert); }
+.judgment-fail-note .jv { font-size: 12px; line-height: 1.6; color: var(--ink-2); }
+
+/* 判断记录：四个决定是人的动作，选中用墨色边框，不用彩色填充 */
+.review { margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--rule); }
+.review-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+.review-kicker {
+  font: 600 9px/1.4 var(--font-mono); letter-spacing: .16em;
+  color: var(--ink-2); text-transform: uppercase;
+}
+.review-hint { margin-left: auto; font: 9.5px/1.5 var(--font-mono); color: var(--ink-3); }
+.review-choices { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.review-choice {
+  text-align: left; padding: 8px 10px;
+  border: 1px solid var(--rule-strong); border-radius: var(--radius-control);
+  background: var(--paper); color: var(--ink-2); cursor: pointer;
+  transition: background-color var(--motion-fast) var(--ease-paper),
+    border-color var(--motion-fast) var(--ease-paper), color var(--motion-fast) var(--ease-paper);
+}
+.review-choice:hover:not(:disabled) { background: var(--paper-wash); border-color: var(--ink-2); }
+.review-choice.selected { background: var(--paper-wash); border-color: var(--ink); color: var(--ink); }
+.review-choice:disabled { opacity: .55; cursor: not-allowed; }
+.review-choice .rc-label { display: block; font-size: 12px; line-height: 1.5; }
+.review-choice .rc-hint {
+  display: block; margin-top: 2px;
+  font: 9px/1.5 var(--font-mono); color: var(--ink-3);
+}
+.review-choice.selected .rc-hint { color: var(--ink-2); }
+.review-reason { margin-top: 10px; }
+.review-reason-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 6px; }
+.review-reason-label { font-size: 11.5px; color: var(--ink-2); }
+.review-required { font: 9px var(--font-mono); color: var(--pending); letter-spacing: .04em; }
+.review-optional { font: 9px var(--font-mono); color: var(--ink-3); letter-spacing: .04em; }
+.review-textarea {
+  display: block; width: 100%; min-height: 62px; resize: vertical;
+  padding: 8px 10px; border: 1px solid var(--rule-strong);
+  border-radius: var(--radius-control); background: var(--paper); color: var(--ink);
+  font: 12.5px/1.65 var(--font-body);
+}
+.review-textarea::placeholder { color: var(--ink-3); }
+.review-textarea:focus { outline: none; border-color: var(--ink); }
+.review-textarea:disabled { background: var(--paper-wash); color: var(--ink-3); }
+.review-foot { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 8px; }
+.review-error { font-size: 11.5px; line-height: 1.5; color: var(--alert); }
+.review-error[hidden] { display: none; }
+.review-count {
+  font: 9.5px var(--font-mono); color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+.review-prompt { margin: 8px 0 0; font-size: 11.5px; color: var(--ink-3); }
+.review-recorded {
+  display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
+  padding: 10px 12px; border: 1px dashed var(--rule-strong);
+  border-radius: var(--radius-card); background: var(--paper-wash);
+}
+.review-stamp {
+  display: inline-flex; align-items: center; padding: 2px 7px;
+  border: 1px solid var(--ink); border-radius: 3px;
+  font: 600 9px/1.5 var(--font-mono); letter-spacing: .08em; color: var(--ink);
+}
+.review-recorded .rr-line { font-size: 12px; color: var(--ink); }
+.review-recorded .rr-sep { color: var(--rule-strong); }
+.review-recorded .rr-meta { font: 9.5px var(--font-mono); color: var(--ink-3); }
+.review-recorded .rr-reason {
+  flex-basis: 100%; margin: 3px 0 0;
+  font-size: 11.5px; line-height: 1.65; color: var(--ink-2);
+}
+.review-readonly p { margin: 0; font: 10.5px/1.7 var(--font-mono); color: var(--ink-3); }
+
+@media (max-width: 900px) {
+  .j-explanations { grid-template-columns: 1fr; }
+}
+@media (max-width: 760px) {
+  .judgment { margin-left: 12px; margin-right: 12px; }
+  .judgment-rows { grid-template-columns: 1fr; gap: 0; }
+  .judgment-meta, .judgment-source, .review-hint { margin-left: 0; }
+  .review-choices { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}

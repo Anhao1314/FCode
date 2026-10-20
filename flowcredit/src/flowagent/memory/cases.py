@@ -32,7 +32,7 @@ __all__ = ["CaseRecord", "CaseIndex", "project_case", "default_db_path"]
 HUMAN_EVENTS = {
     "approval_requested", "approval_granted", "approval_denied", "approval_aborted",
     "plan_steered", "budget_adjusted", "control_rejected", "task_resumed",
-    "operator_message",
+    "operator_message", "review_decided",
 }
 
 SCHEMA = """
