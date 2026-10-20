@@ -52,6 +52,9 @@
   --card-2: var(--paper);
   --well: var(--paper);
   --active: var(--paper-wash);
+  --accent: #171717;
+  --accent-soft: rgba(23, 23, 23, .06);
+  --accent-fill: #f2f0ec;
   --border: var(--rule-strong);
   --border-soft: var(--rule);
   --text: var(--ink);
@@ -80,7 +83,7 @@ body { background: var(--paper); color: var(--ink); font-family: var(--font-body
 
 /* 展示位用楷体；机器元信息用等宽；正文用无衬线 */
 .side-brand, .prompt-text, .result-answer, .empty,
-.intake-title, .setpage-title, .set-section h2, .intake-q, .intake-reply,
+.intake-title, .setpage-title, .set-section h2, .intake-reply,
 .report-title, .rail-title {
   font-family: var(--font-display);
 }

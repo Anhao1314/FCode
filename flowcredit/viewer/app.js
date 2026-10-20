@@ -193,6 +193,15 @@ async function verifyChain(trace) {
 
 /* ---------------------------------------------------------------- helpers */
 
+function renderMain(html, { mode = "run", scroll = null } = {}) {
+  const main = document.getElementById("main");
+  if (!main) return;
+  main.innerHTML = html;
+  main.dataset.view = mode;
+  if (scroll === "top") main.scrollTop = 0;
+  else if (scroll === "bottom") main.scrollTop = main.scrollHeight;
+}
+
 const esc = value => String(value).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const pct = bp => (bp / 100).toFixed(2) + "%";
 const pp = bp => (bp >= 0 ? "+" : "") + (bp / 100).toFixed(2) + " pp";
@@ -316,7 +325,7 @@ function openLedger() {
 async function renderLedger() {
   const main = document.getElementById("main");
   if (!main || !ledgerOpen) return;
-  main.innerHTML = `<div class="empty">统计账本…</div>`;
+  renderMain(`<div class="empty">统计账本…</div>`, { mode: "ledger" });
   // 旧运行 meta 里没有成本摘要：按需拉 trace 补齐（有缓存）
   const missing = runHistory.filter(run => !run.cost && run.tracePath);
   await Promise.all(missing.map(async run => {
@@ -362,7 +371,7 @@ async function renderLedger() {
     </tr>`;
   }).join("");
 
-  main.innerHTML = `
+  renderMain(`
     <section class="prompt">
       <div class="prompt-kicker"><span class="kicker-label">WORKBENCH</span><span>委托账本</span></div>
       <p class="prompt-text">委托账本</p>
@@ -380,7 +389,7 @@ async function renderLedger() {
         <tr><th>状态</th><th>委托</th><th>类型</th><th>轮次</th><th>成本</th><th>创建</th><th></th></tr>
         ${rows || `<tr><td colspan="7" class="dim" style="text-align:center;padding:22px">还没有委托 — 点上方「新建委托」开始</td></tr>`}
       </table>
-    </div>`;
+    </div>`, { mode: "ledger" });
   updateStatusline();
 }
 
@@ -1946,7 +1955,7 @@ async function render(trace, title) {
   const events = (trace.events || []).length;
   const note = `Fcode · ${rounds.length} 轮 · ${events} 个事件 · ${check.ok ? "全链验证通过" : "链验证失败"}${started ? " · " + started + "Z" : ""}`;
 
-  document.getElementById("main").innerHTML = `
+  renderMain(`
     <section class="prompt">
       <div class="prompt-kicker"><span class="kicker-label">CASE FILE</span><span>${esc(task.principal || "console-operator")}</span></div>
       <p class="prompt-text">${esc(task.objective || "")}</p>
@@ -1968,7 +1977,7 @@ async function render(trace, title) {
       </div>
     </details>
     <div id="result-slot">${terminal && terminal.status ? renderResult(trace) : ""}</div>
-  `;
+  `, { mode: "run" });
 
   if (terminal && terminal.status) loadReviewProfile(trace);
   setFoot(
@@ -1997,7 +2006,7 @@ function autosize(ta) {
 
 function liveShell(trace) {
   const task = trace.task || {};
-  document.getElementById("main").innerHTML = `
+  renderMain(`
     <section class="prompt">
       <div class="prompt-kicker"><span class="kicker-label">CASE FILE</span><span>${esc(task.principal || "console-operator")}</span></div>
       <p class="prompt-text">${esc(task.objective || "")}</p>
@@ -2019,7 +2028,7 @@ function liveShell(trace) {
         <div id="rounds-slot"></div>
       </div>
     </details>
-    <div id="result-slot"></div>`;
+    <div id="result-slot"></div>`, { mode: "run" });
   const summary = document.querySelector("#thought > summary");
   if (summary) summary.addEventListener("click", () => { if (live) live.thoughtPinned = true; });
 }
@@ -2486,9 +2495,7 @@ function openLive(id, objective, template) {
     document.getElementById("tb-title").textContent = "运行 · " + tplTitle(template);
     document.getElementById("tb-chips").innerHTML = "";
     document.getElementById("rail-body").innerHTML = "";
-    const main = document.getElementById("main");
-    main.innerHTML = `<div class="empty">任务已提交，等待 Runtime 启动…</div>`;
-    main.scrollTop = 0;
+    renderMain(`<div class="empty">任务已提交，等待 Runtime 启动…</div>`, { mode: "loading", scroll: "top" });
     attachStream(s);
   } else {
     repaintSession(s);
@@ -2559,10 +2566,12 @@ function attachStream(s) {
       notify("Fcode · 运行失败", String(data.error || "Runtime 未返回任何快照").slice(0, 120));
       return;
     }
-    document.getElementById("main").innerHTML =
+    renderMain(
       `<div class="empty">运行失败：${esc(data.error || "Runtime 未返回任何快照")}
         <div class="actions" style="justify-content:center"><button class="a-btn" data-act="retry">重试</button></div>
-      </div>`;
+      </div>`,
+      { mode: "error" }
+    );
     setComposerRunning(false);
     notify("Fcode · 运行失败", String(data.error || "Runtime 未返回任何快照").slice(0, 120));
   });
@@ -2578,9 +2587,8 @@ function stashSessionUpdate(s, data) {
 
 /* 激活一个已有会话：从缓存状态重建画面 */
 function repaintSession(s) {
-  const main = document.getElementById("main");
   if (!s.trace) {
-    main.innerHTML = `<div class="empty">任务已提交，等待 Runtime 启动…</div>`;
+    renderMain(`<div class="empty">任务已提交，等待 Runtime 启动…</div>`, { mode: "loading" });
     return;
   }
   if (s.finished || (s.trace.terminal && s.trace.terminal.status)) {
@@ -2675,8 +2683,7 @@ function closeSessionTab(id) {
   if (live === s) {
     live = null;
     setComposerRunning(false);
-    document.getElementById("main").innerHTML =
-      `<div class="empty">标签已关闭。运行仍在服务器上继续，可从左侧运行记录重新打开。</div>`;
+    renderMain(`<div class="empty">标签已关闭。运行仍在服务器上继续，可从左侧运行记录重新打开。</div>`, { mode: "run" });
     document.getElementById("chain-badge").className = "chain-pill";
     document.getElementById("chain-badge").innerHTML = `<span class="dot"></span><span>未加载</span>`;
   }
@@ -2847,7 +2854,7 @@ function renderIntake() {
   const thinking = intake.thinking
     ? `<div class="intake-msg agent intake-thinking"><span class="who">FCode</span><p class="intake-reply">正在理解你的任务…</p></div>`
     : "";
-  main.innerHTML = `<div class="intake">
+  renderMain(`<div class="intake">
     <div class="intake-head">
       <div>
         <div class="intake-kicker"><span data-doodle="list-checks"></span> NEW DELEGATION</div>
@@ -2856,9 +2863,8 @@ function renderIntake() {
       </div>
     </div>
     <div class="intake-thread">${messages}${thinking}${intakeDraftHtml()}</div>
-  </div>`;
+  </div>`, { mode: "intake", scroll: "bottom" });
   hydrateDoodles(main);
-  main.scrollTop = main.scrollHeight;
 }
 
 function intakeSnapshot() {
@@ -2922,12 +2928,12 @@ function closeIntake(restore = true) {
   if (restore && intake.returnKey) {
     select(intake.returnKey, intake.returnLabel);
   } else if (restore) {
-    document.getElementById("main").innerHTML = `<div class="empty empty-doodle">
+    renderMain(`<div class="empty empty-doodle">
       <span class="empty-doodle-icon" data-doodle="book-open" data-doodle-anim="1"></span>
       <p>给 agent 派一个工作委托，或从左侧打开运行记录。</p>
       <p class="dim">每个数字有来源，每次计算被复算，每份底稿不可篡改。</p>
       <button class="a-btn strong" data-intake-open style="margin-top:14px">创建第一个委托</button>
-    </div>`;
+    </div>`, { mode: "empty" });
     document.getElementById("tb-title").textContent = "—";
     document.getElementById("tb-chips").innerHTML = "";
     hydrateDoodles(document.getElementById("main"));
@@ -3262,13 +3268,12 @@ async function selectRun(id) {
   if (live) detachLive();
   currentKey = "run:" + id;
   renderNav();
-  const main = document.getElementById("main");
   const cached = cache.get("run:" + id);
   if (cached) {
     await render(cached, "运行 · " + tplTitle(run ? run.template : ""));
     return;
   }
-  main.innerHTML = `<div class="empty">加载运行记录…</div>`;
+  renderMain(`<div class="empty">加载运行记录…</div>`, { mode: "loading" });
   try {
     const path = (run && run.tracePath) || `runs/${id}/trace.json`;
     const trace = await fetch(path, { cache: "no-store" }).then(response => {
@@ -3279,7 +3284,7 @@ async function selectRun(id) {
     await render(trace, "运行 · " + tplTitle(run ? run.template : ""));
     renderNav();
   } catch (error) {
-    main.innerHTML = `<div class="empty">无法加载运行记录：${esc(error.message)}</div>`;
+    renderMain(`<div class="empty">无法加载运行记录：${esc(error.message)}</div>`, { mode: "error" });
   }
 }
 
@@ -3314,15 +3319,14 @@ async function select(key, label) {
   if (live) detachLive();
   currentKey = key;
   renderNav();
-  const main = document.getElementById("main");
-  main.innerHTML = `<div class="empty">加载 ${esc(label)}…</div>`;
+  renderMain(`<div class="empty">加载 ${esc(label)}…</div>`, { mode: "loading" });
   const trace = await loadTrace(key);
   if (!trace) {
     document.getElementById("chain-badge").className = "chain-pill";
     document.getElementById("chain-badge").innerHTML = `<span class="dot"></span><span>无数据</span>`;
-    main.innerHTML = `<div class="empty">
+    renderMain(`<div class="empty">
       ${esc(key)} 还没有 trace。先运行 <code>python demo.py ${esc(key)}</code>，或 <code>python demo.py all</code> 一次生成全部。
-    </div>`;
+    </div>`, { mode: "error" });
     return;
   }
   await render(trace, label);
@@ -4547,8 +4551,7 @@ async function fromFile(file) {
     renderNav();
     await render(trace, file.name);
   } catch (error) {
-    document.getElementById("main").innerHTML =
-      `<div class="empty">无法解析 ${esc(file.name)}：${esc(error.message)}</div>`;
+    renderMain(`<div class="empty">无法解析 ${esc(file.name)}：${esc(error.message)}</div>`, { mode: "error" });
   }
 }
 
@@ -4562,8 +4565,7 @@ document.addEventListener("DOMContentLoaded", () => {
       .then(r => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
       .then(trace => render(trace, param.split("/").pop()))
       .catch(error => {
-        document.getElementById("main").innerHTML =
-          `<div class="empty">无法加载 ${esc(param)}：${esc(error.message)}</div>`;
+        renderMain(`<div class="empty">无法加载 ${esc(param)}：${esc(error.message)}</div>`, { mode: "error" });
       });
   } else {
     select("full", "完整研究");

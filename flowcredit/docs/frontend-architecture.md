@@ -29,11 +29,20 @@ Overlay（report / palette）
 
 净减约 **220 行**（JS 154、HTML 17、CSS 约 60）。
 
+第二轮继续：
+- 全部主区写入收口到 `renderMain(html, { mode, scroll })`，16 个直接写入点归零；
+- 删除 Manus / 早期纸墨两个废弃 `:root`，补齐 `design.css` 三个 accent 别名；
+- 删除 11 个无引用 CSS 类和 21 处死 selector，CSS 净减 **75 行**；
+- 主区新增 `data-view`：`run` / `loading` / `error` / `intake` / `empty` / `ledger`。
+
+当前数字：`app.js` 4,577 行、`app.css` 1,584 行、`design.css` 394 行、`index.html` 333 行；
+`main.innerHTML` 直接写入点 1 个（helper 内），`addEventListener` 仍为 73 个，`!important` 6 处。
+
 ## 仍待收敛
 
 1. `app.css` 仍有 Codex / Manus / 早期纸墨等历史层；下一步按“组件 vs 布局”迁移，而不是再加 override。
 2. `app.js` 仍有 `currentTrace/currentCheck/live/sessions` 多份状态；下一步引入单一 store 和 `renderMode()`。
-3. `main.innerHTML` 仍有多个直接写入点；下一步收敛到视图函数。
+3. `renderMain` 已收口 DOM 写入，但视图仍由多个函数拼 HTML；下一步拆视图模块。
 4. 75 个分散的 `addEventListener` 还未改为根委托。
 5. 旧向导留下的历史注释需要随 CSS 清理一起删除。
 

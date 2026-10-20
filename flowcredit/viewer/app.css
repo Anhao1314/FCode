@@ -133,12 +133,6 @@ svg.i { width: 15px; height: 15px; flex: none; stroke: currentColor; stroke-widt
 .run-row:hover .pin { display: inline; }
 .run-row.pinned .pin { display: inline; color: var(--yellow); }
 .run-row .pin:hover { color: var(--text-2); }
-.run-row .rename-act {
-  display: none; border: 0; background: none; padding: 0 0 0 2px;
-  color: #8b8b93; font-size: 12px; line-height: 1; cursor: pointer;
-}
-.run-row:hover .rename-act { display: inline; }
-.run-row .rename-act:hover { color: var(--text-2); }
 .run-row:hover .smeta { display: none; }
 .rename-input {
   flex: 1; min-width: 0; background: var(--well); border: 1px solid var(--border);
@@ -489,12 +483,10 @@ details.raw pre {
 .ev-item { padding: 6.5px 2px; border-bottom: 1px solid var(--border-soft); }
 .ev-item:last-child { border-bottom: 0; }
 .ev-line { display: flex; align-items: center; gap: 8px; }
-.ev-seq { font-family: var(--mono); font-size: 10.5px; color: var(--text-3); min-width: 26px; }
 .ev-dot { width: 6px; height: 6px; border-radius: 50%; background: #c9c9d2; flex: none; }
 .ev-dot.ok { background: var(--green); } .ev-dot.bad { background: var(--red); }
 .ev-dot.warn { background: var(--yellow); } .ev-dot.info { background: var(--accent); }
 .ev-type { font-family: var(--mono); font-size: 11.5px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.ev-hash { margin-left: auto; font-family: var(--mono); font-size: 10px; color: #8b8b93; }
 .ev-detail {
   margin: 3px 0 0 34px; font-family: var(--mono); font-size: 10.5px; color: var(--text-3);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -510,11 +502,6 @@ details.raw pre {
 .rail-empty { padding: 24px 4px; color: var(--text-3); font-size: 12px; }
 .rail-sec { margin: 10px 2px; padding-top: 10px; border-top: 1px solid var(--border-soft); }
 .rail-sec:first-child { border-top: 0; margin-top: 0; }
-.rs-row { display: flex; align-items: baseline; gap: 10px; padding: 5px 2px; font-size: 12px; }
-.rs-row .k { color: var(--text-3); width: 62px; flex: none; }
-.rs-row .v { font-family: var(--mono); font-size: 11px; color: var(--text-2); word-break: break-all; }
-.rs-row .v.ok { color: var(--green); }
-.rs-row .v.bad { color: var(--red); }
 .link-row { display: flex; align-items: center; gap: 7px; padding: 5px 2px; font-family: var(--mono); font-size: 10.5px; color: var(--text-3); border-bottom: 1px solid var(--border-soft); }
 .link-row:last-child { border-bottom: 0; }
 .link-row .n { color: var(--text-3); min-width: 26px; }
@@ -770,7 +757,7 @@ body { font-size: 13px; line-height: 1.55; }
 
 /* 元信息一律等宽：这是终端气质的来源，也是 Codex 的信息层级做法 */
 .side-head-label, .session .smeta, .chip, .mini, .badge, .card-meta, .args, .rno,
-.tb-chips, .foot-text, .kbtn, .ev-seq, .ev-hash, .m-k, .m-v, .metric .k,
+.tb-chips, .foot-text, .kbtn, .m-k, .m-v, .metric .k,
 .result .k, .led-table th, .led-stat .k, .smeta, .c-btn.static { font-family: var(--mono); }
 .side-head-label { font-size: 10px; letter-spacing: .09em; text-transform: uppercase; }
 
@@ -807,7 +794,6 @@ body { font-size: 13px; line-height: 1.55; }
 .slash-item.active .cmd { color: #0b1b33; }
 .slash-item .desc { font-size: 11.5px; color: var(--text-2); }
 .slash-item.active .desc { color: #0b1b33; }
-.slash-empty { padding: 8px 12px; font-size: 11.5px; color: var(--text-3); }
 
 /* 已提交的用户消息：比输入框更淡一档（Codex 的 history fill 做法） */
 .msg { border-radius: 6px; }
@@ -846,7 +832,6 @@ body { font-size: 13px; line-height: 1.55; }
 .eff-network { background: var(--accent-soft); color: var(--accent); }
 .tr-ver { font: 10px var(--mono); color: var(--text-3); }
 .tr-scope { font: 10px var(--mono); color: var(--text-3); }
-.tr-summary { font-size: 11.5px; color: var(--text-2); margin-top: 3px; line-height: 1.5; }
 .tr-usage { font: 10px var(--mono); color: var(--text-3); margin-top: 4px; }
 
 /* ========================================================== 模块分组 */
@@ -858,30 +843,6 @@ body { font-size: 13px; line-height: 1.55; }
 /* ============================================================== Manus 审美层
    暖纸色画布、白卡片浮起、衬线大标题、炭黑主按钮、陶土色强调、大圆角与
    极轻的暖阴影。结构不变，只换表层语言。 */
-:root {
-  --bg: #f7f4ee;
-  --well: #efeae1;
-  --card: #ffffff;
-  --card-2: #faf8f4;
-  --active: #ece7dd;
-  --border: rgba(28, 22, 14, .12);
-  --border-soft: rgba(28, 22, 14, .07);
-  --text: #1c1a17;
-  --text-2: #6b645a;
-  --text-3: #9a9286;
-  --accent: #a8552f;
-  --accent-soft: rgba(168, 85, 47, .10);
-  --accent-fill: #f3e2d6;
-  --green: #3f7d4e;
-  --green-soft: rgba(63, 125, 78, .10);
-  --red: #b04432;
-  --red-soft: rgba(176, 68, 50, .10);
-  --yellow: #8a6a1f;
-  --yellow-soft: rgba(138, 106, 31, .10);
-  --serif: "Iowan Old Style", "Palatino", "Songti SC", "STSong", Georgia, "Times New Roman", serif;
-  --r-card: 14px;
-  --r-btn: 10px;
-}
 
 /* 衬线只用于展示级文字，界面正文保持无衬线 */
 .side-brand, .prompt-text, .result-answer, .empty {
@@ -929,30 +890,6 @@ body { font-size: 13px; line-height: 1.55; }
 /* ============================================================ 纸墨审美层（早期）
    纯白纸面、近黑墨色、手写体标题、拉宽字距的等宽标签、零阴影小圆角、
    手绘线稿与极安静的动效。颜色只表达状态，其余一律让给留白。 */
-:root {
-  --bg: #ffffff;
-  --well: #ffffff;
-  --card: #ffffff;
-  --card-2: #ffffff;
-  --active: #f6f4f0;
-  --border: rgba(23, 23, 23, .26);
-  --border-soft: rgba(23, 23, 23, .12);
-  --text: #171717;
-  --text-2: #4b4b4b;
-  --text-3: #8d8d8d;
-  --accent: #171717;
-  --accent-soft: rgba(23, 23, 23, .06);
-  --accent-fill: #f2f0ec;
-  --green: #2f7d4f;
-  --green-soft: rgba(47, 125, 79, .10);
-  --red: #a83a2a;
-  --red-soft: rgba(168, 58, 42, .10);
-  --yellow: #8a6a1f;
-  --yellow-soft: rgba(138, 106, 31, .10);
-  --serif: "Kaiti SC", "STKaiti", "KaiTi", "Songti SC", "STSong", Georgia, serif;
-  --r-card: 2px;
-  --r-btn: 2px;
-}
 
 /* 手写体只出现在展示位 */
 .side-brand, .prompt-text, .result-answer, .empty {
@@ -1011,12 +948,6 @@ body { background: #ffffff; }
 .tool-row { border-bottom: 1px dashed var(--border-soft); }
 
 /* ---- 手绘元素 ---- */
-.hdoodle {
-  width: 118px; height: 88px; display: block; margin: 0 auto 18px;
-  stroke: #171717; stroke-width: 1.6; fill: none;
-  stroke-linecap: round; stroke-linejoin: round; opacity: .9;
-  animation: htBreathe 2.6s steps(2, end) infinite;
-}
 .empty-doodle p { margin: 4px 0; }
 .run-doodle {
   width: 17px; height: 17px; flex: none;
@@ -1596,8 +1527,6 @@ body.reduce-motion *, body.reduce-motion *::before, body.reduce-motion *::after 
   border: 1px solid var(--border-soft); border-radius: 3px 12px 12px 12px;
   background: #ffffff;
 }
-.intake-q { font-family: var(--serif); font-size: 18px !important; font-weight: 500; line-height: 1.4 !important; }
-.intake-desc { color: var(--text-3) !important; font-size: 11px !important; line-height: 1.6 !important; }
 .intake-reply { font-size: 13.5px !important; line-height: 1.7 !important; }
 .intake-thought {
   display: flex; align-items: baseline; gap: 7px; margin-top: 2px;
@@ -1624,13 +1553,6 @@ body.reduce-motion *, body.reduce-motion *::before, body.reduce-motion *::after 
   font: 8.5px var(--mono); letter-spacing: .04em; color: var(--text-3);
 }
 .intake-choice.selected .intake-badge { border-color: rgba(23,23,23,.3); color: var(--text-2); }
-
-.intake-picked { display: flex; flex-wrap: wrap; gap: 5px; margin: 2px 0 0; }
-.intake-picked span {
-  padding: 2px 8px; border: 1px dashed var(--border-soft); border-radius: 999px;
-  font: 9.5px var(--mono); color: var(--text-3);
-}
-.intake-note { margin: 0; font-size: 10.5px; color: var(--text-3); }
 
 .intake-draft {
   margin-top: 8px; padding: 14px;
