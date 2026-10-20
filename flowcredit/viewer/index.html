@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light">
 <title>Fcode · flowcredit console</title>
-<link rel="stylesheet" href="app.css?v=35">
+<link rel="stylesheet" href="app.css?v=36">
 </head>
 <body>
 <div class="shell app rail-open" id="app">
@@ -51,6 +51,45 @@
     <div class="side-foot">
       <span class="fdot" id="foot-dot"></span>
       <span class="foot-text" id="foot-text">offline-mock · 只读回放</span>
+      <button class="side-gear" id="settings-btn" type="button" title="设置 (⌘,)" aria-label="设置" aria-expanded="false" aria-controls="settings-panel">
+        <span data-doodle="gear"></span>
+      </button>
+    </div>
+
+    <div class="settings-panel" id="settings-panel" role="dialog" aria-label="设置" hidden>
+      <div class="set-head">
+        <span class="set-kicker">PREFERENCES</span>
+        <span class="set-title">设置</span>
+        <button class="set-close" id="settings-close" type="button" title="关闭 (Esc)" aria-label="关闭设置">
+          <span data-doodle="x"></span>
+        </button>
+      </div>
+      <div class="set-body">
+        <section class="set-sec">
+          <div class="set-label">新委托默认审批</div>
+          <div class="set-modes" id="settings-modes"></div>
+          <p class="set-hint">只影响下一份委托；运行中的审批仍按原档位执行。</p>
+        </section>
+        <section class="set-sec">
+          <div class="set-label">本机偏好</div>
+          <div class="set-row">
+            <span class="set-row-text"><b>界面动效</b><small>手绘图标与进入动画</small></span>
+            <button class="set-switch" id="settings-motion" type="button" role="switch" aria-checked="true" aria-label="界面动效"><span></span></button>
+          </div>
+          <div class="set-row">
+            <span class="set-row-text"><b>完成通知</b><small>页面在后台时提醒</small></span>
+            <button class="set-switch" id="settings-notify" type="button" role="switch" aria-checked="false" aria-label="完成通知"><span></span></button>
+          </div>
+        </section>
+        <section class="set-sec">
+          <button class="set-action" id="settings-clear" type="button">清空输入历史</button>
+          <p class="set-hint">只清除本机 ↑↓ 历史；运行记录与签名链不受影响。</p>
+        </section>
+      </div>
+      <div class="set-foot">
+        <span>FCode · local runtime</span>
+        <span id="settings-state">offline</span>
+      </div>
     </div>
   </aside>
 
@@ -150,7 +189,7 @@
   <div class="palette-box" role="dialog" aria-label="命令面板">
     <input class="palette-input" id="palette-input" placeholder="输入命令，或搜索运行与场景…" autocomplete="off" spellcheck="false">
     <div class="palette-list" id="palette-list"></div>
-    <div class="palette-foot"><span>↑↓ 选择</span><span>↵ 执行</span><span>esc 关闭</span><div class="grow"></div><span>⌘K 面板 · ⌘. 停止 · 审批 ⌘↵ 允许 / ⌘⌫ 拒绝</span></div>
+    <div class="palette-foot"><span>↑↓ 选择</span><span>↵ 执行</span><span>esc 关闭</span><div class="grow"></div><span>⌘K 面板 · ⌘, 设置 · ⌘. 停止 · 审批 ⌘↵ 允许 / ⌘⌫ 拒绝</span></div>
   </div>
 </div>
 <div class="toast" id="toast" hidden></div>
@@ -182,8 +221,8 @@
   </div>
 </div>
 
-<script src="report.js?v=35"></script>
-<script src="icons-doodle.js?v=35"></script>
-<script src="app.js?v=35"></script>
+<script src="report.js?v=36"></script>
+<script src="icons-doodle.js?v=36"></script>
+<script src="app.js?v=36"></script>
 </body>
 </html>

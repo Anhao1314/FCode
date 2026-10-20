@@ -119,6 +119,8 @@ if (!["all", "human", "key"].includes(railFilter)) railFilter = "key";
 const evExpanded = new Set();
 let approvalMode = localStorage.getItem("fa.approval") || "consequential";
 if (!APPROVAL_MODES.some(([key]) => key === approvalMode)) approvalMode = "consequential";
+const MOTION_KEY = "fa.motion";
+let motionOn = localStorage.getItem(MOTION_KEY) !== "0";
 
 /* live console state */
 const TPL_FALLBACK = { full: "完整研究", "tool-denied": "越权工具", budget: "预算耗尽", "budget-resume": "预算追加", crash: "崩溃恢复", unknown: "未知对账", "open-ended": "开放问题" };
@@ -2300,6 +2302,7 @@ function setApprovalMode(mode) {
   const label = document.getElementById("approval-label");
   if (label) label.textContent = approvalTitle();
   renderApprovalMenu();
+  syncSettings();
 }
 
 function renderApprovalMenu() {
@@ -2949,10 +2952,12 @@ async function toggleNotify() {
   if (notifyOn) {
     notifyOn = false;
     localStorage.setItem(NOTIFY_KEY, "0");
+    syncSettings();
     toast("完成通知已关闭");
     return;
   }
   if (!("Notification" in window)) {
+    syncSettings();
     toast("此浏览器不支持系统通知");
     return;
   }
@@ -2960,12 +2965,96 @@ async function toggleNotify() {
     ? "granted"
     : await Notification.requestPermission();
   if (permission !== "granted") {
+    syncSettings();
     toast("通知权限未授予");
     return;
   }
   notifyOn = true;
   localStorage.setItem(NOTIFY_KEY, "1");
+  syncSettings();
   toast("完成通知已开启");
+}
+
+/* --------------------------------------------------------------- 设置 */
+
+function applyMotion() {
+  document.body.classList.toggle("reduce-motion", !motionOn);
+  const toggle = document.getElementById("settings-motion");
+  if (toggle) toggle.setAttribute("aria-checked", motionOn ? "true" : "false");
+}
+
+function setMotion(on) {
+  motionOn = !!on;
+  localStorage.setItem(MOTION_KEY, motionOn ? "1" : "0");
+  applyMotion();
+  toast(motionOn ? "界面动效已开启" : "界面动效已关闭");
+}
+
+function syncSettings() {
+  const modes = document.getElementById("settings-modes");
+  if (modes) {
+    for (const button of modes.querySelectorAll("[data-set-approval]")) {
+      const active = button.dataset.setApproval === approvalMode;
+      button.classList.toggle("active", active);
+      button.setAttribute("aria-checked", active ? "true" : "false");
+    }
+  }
+  const motion = document.getElementById("settings-motion");
+  if (motion) motion.setAttribute("aria-checked", motionOn ? "true" : "false");
+  const notifyToggle = document.getElementById("settings-notify");
+  if (notifyToggle) notifyToggle.setAttribute("aria-checked", notifyOn ? "true" : "false");
+  const state = document.getElementById("settings-state");
+  if (state) {
+    const online = !!(health && health.live);
+    state.textContent = online ? "live · local" : "offline";
+    state.classList.toggle("on", online);
+  }
+}
+
+function renderSettings() {
+  const modes = document.getElementById("settings-modes");
+  if (modes && modes.dataset.ready !== "1") {
+    modes.innerHTML = APPROVAL_MODES.map(([key, title, desc]) =>
+      `<button class="set-mode" type="button" role="radio" data-set-approval="${esc(key)}" aria-checked="false">
+        <span class="set-dot"></span>
+        <span><b>${esc(title)}</b><small>${esc(desc)}</small></span>
+      </button>`).join("");
+    modes.addEventListener("click", event => {
+      const button = event.target.closest("[data-set-approval]");
+      if (!button) return;
+      setApprovalMode(button.dataset.setApproval);
+      syncSettings();
+    });
+    modes.dataset.ready = "1";
+  }
+  syncSettings();
+}
+
+function openSettings() {
+  renderSettings();
+  const panel = document.getElementById("settings-panel");
+  const button = document.getElementById("settings-btn");
+  if (!panel || !button) return;
+  panel.hidden = false;
+  button.setAttribute("aria-expanded", "true");
+}
+
+function closeSettings(returnFocus = false) {
+  const panel = document.getElementById("settings-panel");
+  const button = document.getElementById("settings-btn");
+  if (!panel || panel.hidden) return;
+  panel.hidden = true;
+  if (button) {
+    button.setAttribute("aria-expanded", "false");
+    if (returnFocus) button.focus({ preventScroll: true });
+  }
+}
+
+function toggleSettings() {
+  const panel = document.getElementById("settings-panel");
+  if (!panel) return;
+  if (panel.hidden) openSettings();
+  else closeSettings(true);
 }
 
 function notify(title, body) {
@@ -3145,7 +3234,7 @@ const SLASH_COMMANDS = [
   { cmd: "/stop", desc: "在轮次边界停止当前运行", run: () => stopRun() },
   { cmd: "/allow", desc: "批准挂起的审批请求", run: () => decideApproval(true) },
   { cmd: "/deny", desc: "拒绝挂起的审批请求", run: () => decideApproval(false) },
-  { cmd: "/help", desc: "快捷键与命令说明", run: () => toast("⌘K 命令面板 · ⌘N 新建委托 · ⌘. 停止 · ⌘↵ 允许 · ⌘⌫ 拒绝 · ↑↓ 历史") },
+  { cmd: "/help", desc: "快捷键与命令说明", run: () => toast("⌘K 面板 · ⌘N 新建委托 · ⌘, 设置 · ⌘. 停止 · ⌘↵ 允许 · ⌘⌫ 拒绝 · ↑↓ 历史") },
   { cmd: "/clear", desc: "清空输入框", run: () => { const ta = document.getElementById("composer-ta"); ta.value = ""; autosize(ta); } },
 ];
 let slashIndex = 0;
@@ -3234,6 +3323,27 @@ function hydrateDoodles(root = document) {
 
 function bind() {
   hydrateDoodles();
+  applyMotion();
+  document.getElementById("settings-btn").addEventListener("click", toggleSettings);
+  document.getElementById("settings-close").addEventListener("click", () => closeSettings(true));
+  document.getElementById("settings-motion").addEventListener("click", () => setMotion(!motionOn));
+  document.getElementById("settings-notify").addEventListener("click", async () => {
+    await toggleNotify();
+    syncSettings();
+  });
+  document.getElementById("settings-clear").addEventListener("click", () => {
+    promptHistory.length = 0;
+    historyIndex = -1;
+    try { localStorage.removeItem("fa.history"); } catch { /* quota */ }
+    toast("输入历史已清空");
+  });
+  document.addEventListener("pointerdown", event => {
+    const panel = document.getElementById("settings-panel");
+    const button = document.getElementById("settings-btn");
+    if (panel && !panel.hidden && !panel.contains(event.target) && !button.contains(event.target)) {
+      closeSettings();
+    }
+  });
   document.getElementById("new-run").addEventListener("click", openWizard);
   document.getElementById("desk-btn").addEventListener("click", openLedger);
   document.getElementById("composer-open").addEventListener("click", openWizard);
@@ -3448,6 +3558,7 @@ function bind() {
     const mod = e.metaKey || e.ctrlKey;
     if (mod && e.key.toLowerCase() === "k") { e.preventDefault(); togglePalette(); return; }
     if (mod && e.key.toLowerCase() === "n") { e.preventDefault(); openWizard(); return; }
+    if (mod && e.key === ",") { e.preventDefault(); toggleSettings(); return; }
     if (mod && e.key === ".") { e.preventDefault(); if (live && live.running) stopRun(); return; }
     if (mod && live && live.pending && !live.deciding && (e.key === "Enter" || e.key === "Backspace" || e.key === "Delete")) {
       const palette = document.getElementById("palette");
@@ -3495,6 +3606,8 @@ function bind() {
       if (menu && !menu.hidden) { menu.hidden = true; return; }
       const approval = document.getElementById("approval-menu");
       if (approval && !approval.hidden) { approval.hidden = true; return; }
+      const settings = document.getElementById("settings-panel");
+      if (settings && !settings.hidden) { closeSettings(true); return; }
       if (!typing && innerWidth <= 1100 && railOpen) {
         railOpen = false;
         const app = document.getElementById("app");
