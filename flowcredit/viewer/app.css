@@ -1134,3 +1134,21 @@ body { background: #ffffff; }
 .badge .d-icon { width: 11px; height: 11px; margin-right: 4px; vertical-align: -1px; }
 .card-title .d-icon { width: 13px; height: 13px; margin-right: 3px; vertical-align: -2px; }
 .tr-ic .d-icon-anim { width: 14px; height: 14px; }
+
+/* 图标放大一档：手绘线条在小尺寸下会糊掉 */
+.d-icon { width: 18px; height: 18px; vertical-align: -3px; }
+.side-new .d-icon, .side-desk .d-icon { width: 17px; height: 17px; }
+.side-search .d-icon { width: 15px; height: 15px; }
+.c-btn .d-icon, .c-icon .d-icon { width: 16px; height: 16px; }
+.send .d-icon { width: 18px; height: 18px; }
+.chain-pill .d-icon { width: 15px; height: 15px; }
+.tr-ic .d-icon { width: 16px; height: 16px; }
+.badge .d-icon { width: 13px; height: 13px; margin-right: 5px; }
+.card-title .d-icon { width: 15px; height: 15px; }
+.empty-doodle-icon .d-icon { width: 52px; height: 52px; }
+
+/* 放大图标后保持工具行单行不换行 */
+.tr-head { flex-wrap: nowrap; }
+.tr-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tr-scope { white-space: nowrap; flex: none; }
+.tr-ver { flex: none; }
