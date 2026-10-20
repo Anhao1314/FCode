@@ -73,6 +73,13 @@ const REVIEW_DECISIONS = [
 ];
 const REVIEW_LABEL = Object.fromEntries(REVIEW_DECISIONS.map(item => [item.key, item.label]));
 const REVIEW_DECISION = Object.fromEntries(REVIEW_DECISIONS.map(item => [item.key, item]));
+/* 历史判断的计数行用短标签，避免在窄屏上折成两行 */
+const REVIEW_COUNT_LABEL = {
+  accept: "接受",
+  needs_evidence: "补材料",
+  qualified: "保留意见",
+  redo: "退回",
+};
 const dot = cls => `<span class="ev-dot ${cls || ""}"></span>`;
 
 /* 桌面壳桥：浏览器里返回 null，桌面端返回 pywebview 原生 API */
@@ -1301,16 +1308,19 @@ function reviewRunId() {
 }
 
 const reviewStates = new Map();
+/* reviewer profile 按作用域缓存；同 module/template/outcome 的同类判断只取一次 */
+const reviewProfiles = new Map();
 
 function reviewStateFor(runId) {
   if (!reviewStates.has(runId)) {
-    reviewStates.set(runId, { decision: "", reason: "", sending: false, error: "", recorded: null });
+    reviewStates.set(runId, { decision: "", reason: "", sending: false, error: "", recorded: null, appending: false });
   }
   return reviewStates.get(runId);
 }
 
 function recordedReview(trace, runId) {
   const state = reviewStates.get(runId);
+  if (state && state.appending) return null;
   if (state && state.recorded) return state.recorded;
   const events = (trace && trace.events) || [];
   for (let i = events.length - 1; i >= 0; i--) {
@@ -1336,6 +1346,134 @@ function reviewPanelElement(runId) {
     .find(panel => panel.dataset.reviewRun === runId) || null;
 }
 
+/* --------------------------------------------------------- 你的历史判断
+   历史只做参考，不替人拍板：显示同类运行里她以前怎么判，最多把上次的
+   决定和理由放回判断面板，提交仍然要她自己点。 */
+
+function reviewProfileParams(trace) {
+  const task = (trace && trace.task) || {};
+  const binding = task.binding || {};
+  const terminal = (trace && trace.terminal) || {};
+  return {
+    module: binding.module || "",
+    template: binding.scenario || "",
+    outcome: terminal.status || "",
+  };
+}
+
+function reviewProfileKey(params) {
+  return JSON.stringify([params.module, params.template, params.outcome]);
+}
+
+function truncateReviewText(value, max) {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  const chars = Array.from(text);
+  return chars.length > max ? chars.slice(0, max).join("") + "…" : text;
+}
+
+function latestRecentReview(recent) {
+  let best = null;
+  let bestKey = -Infinity;
+  for (const item of recent) {
+    if (!item) continue;
+    const sequence = Number(item.sequence);
+    const at = Date.parse(item.at);
+    const key = Number.isFinite(sequence) ? sequence : (Number.isFinite(at) ? at : -Infinity);
+    if (!best || key > bestKey) {
+      best = item;
+      bestKey = key;
+    }
+  }
+  return best;
+}
+
+function reviewProfileHtml(data) {
+  const counts = data.counts || {};
+  const countText = REVIEW_DECISIONS
+    .map(item => `${REVIEW_COUNT_LABEL[item.key]} <b>${Number(counts[item.key] || 0)}</b>`)
+    .join(" · ");
+  const suggested = data.suggested && REVIEW_DECISION[data.suggested.decision] ? data.suggested : null;
+  const recent = Array.isArray(data.recent) ? data.recent : [];
+  const latest = latestRecentReview(recent);
+  let latestDecision = "";
+  let latestReason = "";
+  if (latest) {
+    latestDecision = latest.decision || "";
+    latestReason = latest.reason || "";
+  } else if (suggested) {
+    latestDecision = suggested.decision || "";
+    latestReason = suggested.last_reason || "";
+  }
+  const label = REVIEW_LABEL[latestDecision] || latestDecision;
+  const reasonText = truncateReviewText(latestReason, 72);
+  const writable = !!reviewRunId();
+  return `<div class="rp-head">
+    <span class="rp-kicker">REVIEW PROFILE</span>
+    <span class="rp-title">你的历史判断</span>
+    <span class="rp-total">同类 <b>${Number(data.total) || 0}</b> 次</span>
+  </div>
+  <div class="rp-counts">${countText}</div>
+  ${label ? `<div class="rp-last"><span class="rp-last-k">上次：</span>${esc(label)}${reasonText ? ` · <span class="rp-reason" title="${esc(latestReason)}">${esc(reasonText)}</span>` : ""}</div>` : ""}
+  ${writable && suggested ? `<div class="rp-actions"><button type="button" class="review-apply" data-review-apply="${esc(suggested.decision)}" data-review-apply-reason="${esc(suggested.last_reason || "")}" title="只选中这个判断并填入上次理由，不会自动提交">采用上次判断</button></div>` : ""}`;
+}
+
+function paintReviewProfile(key, data) {
+  const el = document.querySelector("[data-review-profile]");
+  if (!el || el.dataset.reviewProfileKey !== key) return;
+  if (!data || !(Number(data.total) > 0)) {
+    el.hidden = true;
+    el.innerHTML = "";
+    return;
+  }
+  el.innerHTML = reviewProfileHtml(data);
+  el.hidden = false;
+}
+
+function loadReviewProfile(trace, options = {}) {
+  const el = document.querySelector("[data-review-profile]");
+  if (!el) return;
+  const params = reviewProfileParams(trace);
+  if (!params.module && !params.template) {
+    el.hidden = true;
+    return;
+  }
+  const key = reviewProfileKey(params);
+  el.dataset.reviewProfileKey = key;
+  let entry = reviewProfiles.get(key);
+  if (!entry) {
+    entry = { data: null, promise: null, token: 0 };
+    reviewProfiles.set(key, entry);
+  }
+  if (entry.data) paintReviewProfile(key, entry.data);
+  if (entry.promise && !options.force) return;
+  const token = ++entry.token;
+  const query = new URLSearchParams();
+  if (params.module) query.set("module", params.module);
+  if (params.template) query.set("template", params.template);
+  if (params.outcome) query.set("outcome", params.outcome);
+  const promise = fetch(`/api/review-profile?${query.toString()}`, {
+    cache: "no-store",
+    headers: { Accept: "application/json" },
+  })
+    .then(response => (response.ok ? response.json() : null))
+    .then(data => {
+      if (entry.token !== token) return;
+      entry.promise = null;
+      if (!data || typeof data !== "object" || !(Number(data.total) > 0)) {
+        entry.data = { total: 0, counts: {}, recent: [], suggested: null };
+        paintReviewProfile(key, entry.data);
+        return;
+      }
+      entry.data = data;
+      paintReviewProfile(key, data);
+    })
+    .catch(() => {
+      if (entry.token === token) entry.promise = null;
+      /* 历史判断加载失败不打扰用户：保持隐藏，不弹错误。 */
+    });
+  entry.promise = promise;
+}
+
 function reviewRecordedHtml(recorded) {
   const sequence = recorded.sequence === undefined || recorded.sequence === null ? "—" : recorded.sequence;
   const label = REVIEW_LABEL[recorded.decision] || recorded.decision || "判断记录";
@@ -1344,6 +1482,7 @@ function reviewRecordedHtml(recorded) {
     <span class="rr-sep">·</span>
     <span class="rr-line">${esc(label)} <span class="rr-sep">·</span> #${esc(sequence)}</span>
     <span class="rr-meta">${esc(recorded.reviewer || "reviewer")}</span>
+    <button type="button" class="review-append" data-review-append title="在签名链末尾追加一次判断，不覆盖这次记录">追加判断</button>
     ${recorded.reason ? `<p class="rr-reason">${esc(recorded.reason)}</p>` : ""}
   </div>`;
 }
@@ -1381,7 +1520,7 @@ function reviewPanelInnerHtml(trace, runId) {
     : `<p class="review-prompt">先选择你的判断，再写理由。</p>`;
   return `<div class="review-head">
     <span class="review-kicker">REVIEW · 判断记录</span>
-    <span class="review-hint">reviewer · 写入签名链</span>
+    <span class="review-hint">${state.appending ? "追加判断 · 写入签名链" : "reviewer · 写入签名链"}</span>
   </div>
   <div class="review-choices" role="group" aria-label="判断决定">${choices}</div>
   ${reasonHtml}`;
@@ -1411,13 +1550,51 @@ function paintReviewPanel(runId) {
 function chooseReviewDecision(runId, decision) {
   if (!runId || !REVIEW_DECISION[decision]) return;
   const state = reviewStateFor(runId);
-  if (state.sending || state.recorded) return;
+  if (state.sending || (state.recorded && !state.appending)) return;
   state.decision = decision;
   state.error = "";
   paintReviewPanel(runId);
   const panel = reviewPanelElement(runId);
   const textarea = panel && panel.querySelector("[data-review-reason]");
   if (textarea) textarea.focus();
+}
+
+/* 追加判断：后端追加事件，不覆盖已有记录；本地先把记录卡收回成判断面板。 */
+function startAppendReview(runId) {
+  if (!runId) return;
+  const state = reviewStateFor(runId);
+  if (state.sending) return;
+  state.appending = true;
+  state.recorded = null;
+  state.decision = "";
+  state.reason = "";
+  state.error = "";
+  paintReviewPanel(runId);
+  const panel = reviewPanelElement(runId);
+  const first = panel && panel.querySelector("[data-review-decision]");
+  if (first) first.focus({ preventScroll: true });
+}
+
+/* 采用上次判断只做两件事：选中决定、填入上次理由；绝不自动提交。 */
+function applyReviewSuggestion(runId, decision, reason) {
+  if (!runId || !REVIEW_DECISION[decision]) return;
+  const state = reviewStateFor(runId);
+  if (state.sending) return;
+  const trace = currentTrace || (live && live.trace) || {};
+  if (!state.appending && recordedReview(trace, runId)) {
+    state.appending = true;
+    state.recorded = null;
+  }
+  state.decision = decision;
+  state.reason = String(reason || "");
+  state.error = "";
+  paintReviewPanel(runId);
+  const panel = reviewPanelElement(runId);
+  const textarea = panel && panel.querySelector("[data-review-reason]");
+  if (textarea) {
+    textarea.focus();
+    textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+  }
 }
 
 function syncReviewDraft(runId, panel, input) {
@@ -1445,11 +1622,41 @@ function reviewErrorText(data, status) {
   return `HTTP ${status}`;
 }
 
+/* 判断落链后后端会重建 trace；这里把新 trace 拉回来，报告才能带上刚追加的事件。 */
+const reviewTraceRefreshes = new Map();
+
+function refreshReviewedTrace(runId, tracePath) {
+  if (!runId) return Promise.resolve(null);
+  const run = currentRun();
+  const path = tracePath || (run && run.tracePath) || `runs/${runId}/trace.json`;
+  const promise = fetch(path, { cache: "no-store" })
+    .then(response => (response.ok ? response.json() : null))
+    .then(trace => {
+      if (!trace || !Array.isArray(trace.events)) return null;
+      cache.set("run:" + runId, trace);
+      if (currentKey !== "run:" + runId) return trace;
+      currentTrace = trace;
+      if (live && live.id === runId) live.trace = trace;
+      verifyChain(trace).then(check => {
+        if (currentKey !== "run:" + runId) return;
+        currentCheck = check;
+        setChainBadge(check);
+      }).catch(() => { /* 链验证失败不阻断判断记录 */ });
+      return trace;
+    })
+    .catch(() => null)
+    .finally(() => {
+      if (reviewTraceRefreshes.get(runId) === promise) reviewTraceRefreshes.delete(runId);
+    });
+  reviewTraceRefreshes.set(runId, promise);
+  return promise;
+}
+
 async function submitReview(runId) {
   if (!runId) return;
   const state = reviewStateFor(runId);
   const decision = REVIEW_DECISION[state.decision];
-  if (!decision || state.sending || state.recorded) return;
+  if (!decision || state.sending || (state.recorded && !state.appending)) return;
   const reason = String(state.reason || "").trim();
   if (decision.requiresReason && !reason) {
     state.error = "请填写判断理由：说明缺什么材料、保留什么，或为什么退回。";
@@ -1482,10 +1689,13 @@ async function submitReview(runId) {
       sequence,
     };
     state.sending = false;
+    state.appending = false;
     state.decision = "";
     state.reason = "";
     state.error = "";
     paintReviewPanel(runId);
+    loadReviewProfile(currentTrace || (live && live.trace) || {}, { force: true });
+    refreshReviewedTrace(runId, data.tracePath);
     const label = REVIEW_LABEL[state.recorded.decision] || state.recorded.decision;
     toast(`已记录 · ${label} · #${sequence === undefined || sequence === null ? "—" : sequence}`);
   } catch (error) {
@@ -1555,6 +1765,7 @@ function judgmentSurfaceHtml(trace, result) {
       <span class="jk">会影响结论</span>
       <span>分产品毛利缺失时，应保留意见</span>
     </div>
+    <div class="review-profile" data-review-profile hidden></div>
     ${reviewPanelHtml(trace)}
   </section>`;
 }
@@ -1574,6 +1785,7 @@ function failureJudgmentHtml(trace, terminal) {
       ${message ? `<span class="jv">${esc(message)}</span>` : ""}
     </div>
     <p class="judgment-empty">失败不补解释；只记录你对失败依据的判断。</p>
+    <div class="review-profile" data-review-profile hidden></div>
     ${reviewPanelHtml(trace)}
   </section>`;
 }
@@ -1758,6 +1970,7 @@ async function render(trace, title) {
     <div id="result-slot">${terminal && terminal.status ? renderResult(trace) : ""}</div>
   `;
 
+  if (terminal && terminal.status) loadReviewProfile(trace);
   setFoot(
     `${model.provider || "—"} · ${currentKey && currentKey.startsWith("run:") ? "运行记录" : "只读回放"}`,
     ""
@@ -1942,6 +2155,7 @@ function liveApply(s, data) {
     if (slot) slot.innerHTML = resultHtml;
     s.resultHtml = resultHtml;
   }
+  if (resultHtml) loadReviewProfile(trace);
 
   const thought = document.getElementById("thought");
   if (thought && !s.thoughtPinned) {
@@ -2419,6 +2633,7 @@ function finishSession(s, data) {
       const slot = document.getElementById("result-slot");
       if (slot) slot.innerHTML = html;
       s.resultHtml = html;
+      loadReviewProfile(trace);
     }
     cache.set("run:" + s.id, trace);
     verifyChain(trace).then(check => {
@@ -3249,8 +3464,11 @@ async function openReport() {
     toast("运行结束后才能签发报告");
     return;
   }
-  const check = await verifyChain(currentTrace);
   const run = currentRun();
+  const currentRunId = (currentKey || "").startsWith("run:") ? currentKey.slice(4) : (run && run.id);
+  const pendingReview = currentRunId ? reviewTraceRefreshes.get(currentRunId) : null;
+  if (pendingReview) await pendingReview;
+  const check = await verifyChain(currentTrace);
   const task = currentTrace.task || {};
   const title = run ? (run.name || shortObjective(run.objective)) : shortObjective(task.objective || "工作底稿");
   lastReportHtml = FCReport.build(currentTrace, {
@@ -4266,6 +4484,18 @@ function bind() {
     if (event.target.closest("[data-review-submit]")) {
       const panel = event.target.closest("[data-review-panel]");
       if (panel) submitReview(panel.dataset.reviewRun);
+      return;
+    }
+    const reviewAppend = event.target.closest("[data-review-append]");
+    if (reviewAppend) {
+      const panel = reviewAppend.closest("[data-review-panel]");
+      if (panel) startAppendReview(panel.dataset.reviewRun);
+      return;
+    }
+    const reviewApply = event.target.closest("[data-review-apply]");
+    if (reviewApply) {
+      const runId = reviewRunId();
+      if (runId) applyReviewSuggestion(runId, reviewApply.dataset.reviewApply, reviewApply.dataset.reviewApplyReason || "");
       return;
     }
     const ledDel = event.target.closest("[data-led-del]");

@@ -330,6 +330,54 @@ body { background: var(--paper); color: var(--ink); font-family: var(--font-body
 }
 .review-readonly p { margin: 0; font: 10.5px/1.7 var(--font-mono); color: var(--ink-3); }
 
+/* 历史判断：同类运行里她以前怎么判。只做参考，不替她拍板。 */
+.review-profile {
+  margin-top: 14px; padding-top: 12px;
+  border-top: 1px dashed var(--rule);
+}
+.review-profile[hidden] { display: none; }
+.rp-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.rp-kicker {
+  font: 600 9px/1.4 var(--font-mono); letter-spacing: .16em;
+  color: var(--ink-3); text-transform: uppercase;
+}
+.rp-title { font: 13px/1.5 var(--font-display); color: var(--ink); }
+.rp-total {
+  margin-left: auto; font: 9.5px/1.5 var(--font-mono);
+  color: var(--ink-3); font-variant-numeric: tabular-nums;
+}
+.rp-total b { font-weight: 600; color: var(--ink-2); }
+.rp-counts {
+  margin-top: 7px; font: 10.5px/1.7 var(--font-mono);
+  color: var(--ink-2); font-variant-numeric: tabular-nums;
+}
+.rp-counts b { font-weight: 600; color: var(--ink); }
+.rp-last {
+  margin-top: 3px; font-size: 11.5px; line-height: 1.65;
+  color: var(--ink-2); overflow-wrap: anywhere;
+}
+.rp-last-k {
+  margin-right: 4px; font: 9.5px/1.5 var(--font-mono);
+  color: var(--ink-3); letter-spacing: .04em;
+}
+.rp-reason { color: var(--ink-3); }
+.rp-actions { margin-top: 8px; }
+
+/* 追加判断 / 采用上次判断：纸面小按钮，不是主操作 */
+.review-apply, .review-append {
+  display: inline-flex; align-items: center; padding: 4px 9px;
+  border: 1px solid var(--rule-strong); border-radius: var(--radius-control);
+  background: var(--paper); color: var(--ink-2); cursor: pointer;
+  font: 10.5px/1.5 var(--font-mono);
+  transition: background-color var(--motion-fast) var(--ease-paper),
+    border-color var(--motion-fast) var(--ease-paper), color var(--motion-fast) var(--ease-paper);
+}
+.review-apply:hover, .review-append:hover {
+  background: var(--paper-wash); border-color: var(--ink); color: var(--ink);
+}
+.review-apply:active, .review-append:active { background: var(--paper-well); }
+.review-recorded .review-append { margin-left: auto; }
+
 @media (max-width: 900px) {
   .j-explanations { grid-template-columns: 1fr; }
 }
@@ -338,4 +386,6 @@ body { background: var(--paper); color: var(--ink); font-family: var(--font-body
   .judgment-rows { grid-template-columns: 1fr; gap: 0; }
   .judgment-meta, .judgment-source, .review-hint { margin-left: 0; }
   .review-choices { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .rp-total { margin-left: 0; }
+  .review-recorded .review-append { margin-left: 0; }
 }

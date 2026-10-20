@@ -40,6 +40,13 @@ window.FCReport = (function () {
     report_blocked: "受阻声明",
   };
 
+  const REVIEW_LABELS = {
+    accept: "接受判断",
+    needs_evidence: "需要补材料",
+    qualified: "保留意见",
+    redo: "退回重做",
+  };
+
   function flatRows(result) {
     const rows = [];
     for (const [k, v] of Object.entries(result || {})) {
@@ -203,11 +210,43 @@ window.FCReport = (function () {
     </table>`;
   }
 
-  function chainSection(trace, check, meta) {
+  function latestReview(trace) {
+    const events = trace.events || [];
+    for (let i = events.length - 1; i >= 0; i--) {
+      const event = events[i];
+      if (!event || event.type !== "review_decided") continue;
+      return {
+        event,
+        detail: (event.payload && event.payload.detail) || (event.payload || {}),
+      };
+    }
+    return null;
+  }
+
+  function reviewSection(trace) {
+    const review = latestReview(trace);
+    if (!review) return "";
+    const { event, detail } = review;
+    const label = REVIEW_LABELS[detail.decision] || detail.decision || "判断记录";
+    const sequence = event.sequence === undefined || event.sequence === null ? "—" : event.sequence;
+    const hash = event.hash || "—";
+    return `<h2>五、判断记录</h2>
+    <div class="review">
+      <div class="rhead">
+        <span class="rtag">${esc(label)}</span>
+        <span class="rmeta">${esc(detail.reviewer || "reviewer")} · 事件 #${esc(sequence)}</span>
+      </div>
+      ${detail.reason ? `<p class="rreason">${esc(detail.reason)}</p>` : `<p class="rreason empty">未填写理由</p>`}
+      <p class="rhash">hash ${esc(hash)}</p>
+    </div>
+    <p class="cite">判断以追加事件写入签名链，不改变运行终态；此处为最近一次判断。</p>`;
+  }
+
+  function chainSection(trace, check, meta, sectionNo) {
     const chain = trace.chain || {};
     const events = trace.events || [];
     const ok = !!(check && check.ok);
-    return `<h2>五、完整性声明</h2>
+    return `<h2>${esc(sectionNo || "五")}、完整性声明</h2>
     <table>
       <tr><td>哈希算法</td><td>${esc(chain.algorithm || "sha256 · canonical json")}</td></tr>
       <tr><td>事件总数</td><td>${esc(events.length)}</td></tr>
@@ -232,6 +271,7 @@ window.FCReport = (function () {
     const binding = task.binding || {};
     const meta_ = meta || {};
     const title = meta_.title || task.objective || "FCode 工作底稿";
+    const reviewHtml = reviewSection(trace);
     return `<!DOCTYPE html>
 <html lang="zh-CN"><head><meta charset="utf-8">
 <title>${esc(title)} · FCode 工作底稿</title>
@@ -266,6 +306,13 @@ window.FCReport = (function () {
   .receipt { font-size: 11.5px; color: #6b7280; margin: 6px 0 0; }
   .human { font-size: 12px; margin-top: 6px; color: #1e40af; }
   .htag { background: #dbeafe; color: #1e40af; border-radius: 4px; padding: 0 6px; font-size: 10.5px; font-weight: 600; }
+  .review { padding: 10px 14px; border: 1px dashed #d1d5db; border-radius: 8px; margin: 8px 0; page-break-inside: avoid; }
+  .review .rhead { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .review .rtag { border: 1px solid #1c1c1c; border-radius: 3px; padding: 0 7px; font-size: 10.5px; font-weight: 600; letter-spacing: .06em; }
+  .review .rmeta { font-family: ui-monospace, Menlo, monospace; font-size: 11px; color: #6b7280; }
+  .review .rreason { font-size: 13px; line-height: 1.65; margin: 7px 0 0; }
+  .review .rreason.empty { color: #6b7280; }
+  .review .rhash { font-family: ui-monospace, Menlo, monospace; font-size: 10.5px; color: #6b7280; margin: 6px 0 0; word-break: break-all; }
   .appendix td, .appendix th { padding: 3px 8px; font-size: 11px; }
   .footer { margin-top: 36px; padding-top: 12px; border-top: 1px solid #e5e7eb;
     font-size: 11px; color: #6b7280; line-height: 1.8; }
@@ -278,7 +325,8 @@ window.FCReport = (function () {
   ${budgetSection(trace)}
   ${processSection(trace)}
   ${humanSection(trace)}
-  ${chainSection(trace, meta_.check, meta_)}
+  ${reviewHtml}
+  ${chainSection(trace, meta_.check, meta_, reviewHtml ? "六" : "五")}
   <div class="footer">
     本文档由 FCode 运行时生成，是结构化决策辅助工作底稿，不构成法定审计意见、投资建议或信贷决策。
     证据明细与执行过程全部来自任务签名链；完整性声明中的链头哈希可用于独立验证本文档所引内容未被篡改——

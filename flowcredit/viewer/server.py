@@ -13,6 +13,8 @@ Endpoints
     GET  /api/health              what the server can and cannot do
     GET  /api/templates           scenario templates the composer may run
     GET  /api/runs                run history (survives restarts, runs/*/meta.json)
+    GET  /api/review-profile      past review decisions projected from exported traces
+                                  (?module=...&template=...&outcome=...; all optional)
     POST /api/runs                {"objective": "...", "template": "full", "approval": "consequential"}
                                   -> {"id": "run-..."}
     GET  /api/runs/{id}/stream    server-sent events: trace snapshots as they grow
@@ -150,6 +152,8 @@ class Runtime:
         self.REVIEW_DECISIONS = m.DECISIONS
         self.MAX_REASON = m.MAX_REASON
         self.MAX_REVIEWER = m.MAX_REVIEWER
+        m = imp("flowagent.review_profile")
+        self.build_profile = m.build_profile
 
     def tool_contracts(self) -> list[dict]:
         """The registered contracts (name, effect, version, schemas)."""
@@ -374,6 +378,34 @@ class RunManager:
                 "total": facts.count(include_archived=True) if facts else 0,
             },
         }
+
+    def review_profile(self, module: str = "", template: str = "", outcome: str = "") -> dict[str, Any]:
+        """Project past review decisions from exported traces, read-only.
+
+        The scan is on demand so a newly reviewed run is visible immediately and
+        there is no second index to keep in sync. Unreadable or half-written
+        traces are skipped: one damaged file must not hide the rest of the
+        history. The projection itself lives in ``flowagent.review_profile``.
+        """
+        builder = getattr(self.runtime, "build_profile", None)
+        if builder is None:
+            # Static mode: the viewer still sits beside its source checkout.
+            src = VIEWER_DIR.parent / "src"
+            if str(src) not in sys.path and (src / "flowagent" / "__init__.py").exists():
+                sys.path.insert(0, str(src))
+            from flowagent.review_profile import build_profile
+
+            builder = build_profile
+
+        traces: list[tuple[str, dict]] = []
+        for trace_path in sorted(RUNS_DIR.glob("run-*/trace.json")):
+            try:
+                trace = json.loads(trace_path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            if isinstance(trace, dict):
+                traces.append((trace_path.parent.name, trace))
+        return builder(traces, module=module, template=template, outcome=outcome)
 
     def create(self, objective: str, template: str, approval: str = "consequential", spec: dict | None = None) -> Run:
         with self._lock:
@@ -1314,6 +1346,20 @@ class Handler(SimpleHTTPRequestHandler):
             return self._json({"tools": mgr.runtime.tool_contracts()})
         if path == "/api/runs":
             return self._json(mgr.list_runs())
+        if path == "/api/review-profile":
+            query = parse_qs(urlparse(self.path).query)
+
+            def param(name: str) -> str:
+                values = query.get(name) or [""]
+                return str(values[0] or "").strip()
+
+            return self._json(
+                mgr.review_profile(
+                    module=param("module"),
+                    template=param("template"),
+                    outcome=param("outcome"),
+                )
+            )
         if path.startswith("/api/runs/"):
             rest = path[len("/api/runs/") :]
             run_id, _, action = rest.partition("/")

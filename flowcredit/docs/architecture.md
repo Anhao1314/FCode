@@ -155,6 +155,7 @@ hash_n = sha256(canonical_json({sequence, type, payload, prev_hash, at}))
 | `sft/evaluate.py` | packet 评测平面 | 结果、调用、修复、tokens、packet 体积 |
 | `sft/accept.py` | 本地模型验收 | Ollama → packet eval → PASS/FAIL |
 | `review.py` | 终态运行的人工判断 | `review_decided` 入链；不改终态 |
+| `review_profile.py` | 历史判断投影 | 只读 trace；建议只预填，不提交 |
 | `demo/packet.py` | Executive–Policy 实验运行器 | 对照 packet 与旧上下文体积 |
 | `memory/context.py` | 派生上下文 | 每轮重算，不累积 |
 | `memory/cases.py` | 长期案例簿 | 终态轨迹的纯函数投影；分数为整数基点；删除只墓碑 |
