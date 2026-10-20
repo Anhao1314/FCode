@@ -34,6 +34,8 @@ import argparse
 import importlib
 import json
 import os
+import secrets
+import shutil
 import sqlite3
 import subprocess
 import sys
@@ -48,12 +50,14 @@ from datetime import datetime, timezone
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
-from urllib.parse import unquote, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 __all__ = ["main"]
 
 VIEWER_DIR = Path(__file__).resolve().parent
-RUNS_DIR = VIEWER_DIR / "runs"
+#: The desktop shell points this at the user's Application Support directory:
+#: a packaged .app bundle is read-only, and run records belong to the user.
+RUNS_DIR = Path(os.environ.get("FCODE_RUNS_DIR") or (VIEWER_DIR / "runs"))
 
 TERMINAL_STATUS = ("succeeded", "failed", "denied", "recovery_required")
 
@@ -165,6 +169,7 @@ class Run:
     pinned: bool = False
     approval: str = "consequential"  # off | consequential | all
     pending: dict | None = None
+    cost: dict | None = None
     controller: Any = None
     lock: threading.RLock = field(default_factory=threading.RLock)
     cond: threading.Condition = field(init=False)
@@ -192,11 +197,29 @@ class Run:
             "pinned": self.pinned,
             "approval": self.approval,
             "taskId": self.task_id,
+            "cost": self.cost,
         }
         if detail:
             out["error"] = self.error
             out["pending"] = self.pending
         return out
+
+
+def _budget_summary(trace: dict) -> dict | None:
+    """Final budget snapshot for the ledger: what the run actually cost."""
+    for round_ in reversed(trace.get("rounds") or []):
+        b = round_.get("budget_after")
+        if b and b.get("calls_used") is not None:
+            lim = b.get("limits") or {}
+            return {
+                "calls": b.get("calls_used"),
+                "reads": b.get("reads_used"),
+                "costMicrousd": b.get("cost_used_microusd"),
+                "tokens": b.get("tokens_used"),
+                "maxCalls": lim.get("max_calls"),
+                "maxCostMicrousd": lim.get("max_cost_microusd"),
+            }
+    return None
 
 
 class RunManager:
@@ -235,6 +258,7 @@ class RunManager:
                 pinned=bool(meta.get("pinned", False)),
                 approval=meta.get("approval", "consequential"),
                 task_id=meta.get("taskId", ""),
+                cost=meta.get("cost"),
                 finished=True,
             )
             self.runs[run.id] = run
@@ -259,6 +283,20 @@ class RunManager:
 
     def get(self, run_id: str) -> Run | None:
         return self.runs.get(run_id)
+
+    def delete(self, run_id: str) -> tuple[bool, str]:
+        """Remove a finished run's record and directory. Running runs are refused."""
+        with self._lock:
+            run = self.runs.get(run_id)
+            if run is None:
+                return False, "no such run"
+            if run.status == "running" and not run.finished:
+                return False, "run is still running; stop it first"
+            self.runs.pop(run_id, None)
+            if run_id in self.order:
+                self.order.remove(run_id)
+        shutil.rmtree(RUNS_DIR / run_id, ignore_errors=True)
+        return True, ""
 
     def create(self, objective: str, template: str, approval: str = "consequential") -> Run:
         with self._lock:
@@ -478,6 +516,7 @@ class RunManager:
                 run.event_count = len(final["events"])
                 run.trace_path = f"runs/{run.id}/trace.json"
                 run.trace_verified = verified
+                run.cost = _budget_summary(final)
                 run.finished = True
                 run.bump()
         except Exception as exc:  # noqa: BLE001 — setup failure
@@ -956,9 +995,29 @@ def _run_crash(rt: Runtime, harness, store, world, scenario, task, observer, db:
 class Handler(SimpleHTTPRequestHandler):
     server_version = "FcodeConsole/1.1"
     manager: RunManager  # set by main()
+    token: str | None = None  # set by main() in desktop mode
 
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, directory=str(VIEWER_DIR), **kwargs)
+
+    def _authorized(self) -> bool:
+        """Desktop mode: cookie or bearer token. Browser dev mode: open."""
+        if not self.token:
+            return True
+        header = self.headers.get("Authorization", "")
+        if header.startswith("Bearer ") and secrets.compare_digest(header[7:], self.token):
+            return True
+        for part in (self.headers.get("Cookie") or "").split(";"):
+            name, _, value = part.strip().partition("=")
+            if name == "fcode_token" and secrets.compare_digest(value, self.token):
+                return True
+        return False
+
+    def _reject_unauthorized(self, path: str) -> None:
+        if path.startswith("/api/"):
+            self._json({"error": "unauthorized"}, 401)
+        else:
+            self.send_error(403)
 
     def log_message(self, fmt: str, *args) -> None:
         if "/api/" in (self.path or "") and self.command == "GET" and self.path.endswith("/stream"):
@@ -1003,7 +1062,20 @@ class Handler(SimpleHTTPRequestHandler):
     # -------------------------------------------------------------------- GET
 
     def do_GET(self) -> None:  # noqa: N802
-        path = unquote(urlparse(self.path).path)
+        parsed = urlparse(self.path)
+        path = unquote(parsed.path)
+        supplied = parse_qs(parsed.query).get("token", [None])[0]
+        if self.token and supplied is not None:
+            if not secrets.compare_digest(supplied, self.token):
+                return self.send_error(403)
+            # Bootstrap: set an HttpOnly cookie, then strip the token from the URL.
+            self.send_response(302)
+            self.send_header("Location", path or "/")
+            self.send_header("Set-Cookie", f"fcode_token={self.token}; Path=/; HttpOnly; SameSite=Strict")
+            self.end_headers()
+            return
+        if not self._authorized():
+            return self._reject_unauthorized(path)
         if path.startswith("/api/"):
             return self._api_get(path)
         if path.endswith((".sqlite", ".sqlite-wal", ".sqlite-shm")):
@@ -1054,6 +1126,15 @@ class Handler(SimpleHTTPRequestHandler):
         if not self._sse("hello", {"runId": run.id, "status": run.status}):
             return
         last = -1
+        # Incremental protocol: the first frame carries the whole trace, every
+        # later frame carries only what changed. The watcher rebuilds the full
+        # snapshot each tick, so the delta is computed here by slicing: events
+        # are append-only, and at most the last previously-sent round can still
+        # mutate (round_start -> proposal -> observation), so it is resent.
+        sent_events = 0
+        sent_rounds = 0
+        sent_round_tail = None
+        sent_full = False
         while True:
             with run.cond:
                 run.cond.wait_for(lambda: run.version > last or run.finished, timeout=10)
@@ -1067,19 +1148,53 @@ class Handler(SimpleHTTPRequestHandler):
                 approval = run.approval
             if version > last and snapshot is not None:
                 last = version
-                if not self._sse(
-                    "snapshot",
-                    {
+                if not sent_full:
+                    sent_full = True
+                    events = snapshot.get("events") or []
+                    rounds = snapshot.get("rounds") or []
+                    sent_events = len(events)
+                    sent_rounds = len(rounds)
+                    ok = self._sse(
+                        "snapshot",
+                        {
+                            "version": version,
+                            "status": status,
+                            "finished": finished,
+                            "tracePath": trace_path,
+                            "error": error,
+                            "snapshot": snapshot,
+                            "pending": pending,
+                            "approval": approval,
+                        },
+                    )
+                else:
+                    events = snapshot.get("events") or []
+                    rounds = snapshot.get("rounds") or []
+                    round_start = sent_rounds
+                    if sent_rounds and (len(rounds) < sent_rounds or rounds[sent_rounds - 1] != sent_round_tail):
+                        round_start = sent_rounds - 1
+                    round_start = max(0, round_start)
+                    delta = {
                         "version": version,
                         "status": status,
                         "finished": finished,
                         "tracePath": trace_path,
                         "error": error,
-                        "snapshot": snapshot,
                         "pending": pending,
                         "approval": approval,
-                    },
-                ):
+                        "roundStart": round_start,
+                        "rounds": rounds[round_start:],
+                        "events": events[sent_events:],
+                        "terminal": snapshot.get("terminal"),
+                        "chain": snapshot.get("chain"),
+                        "task": snapshot.get("task"),
+                        "model": snapshot.get("model"),
+                    }
+                    sent_events = len(events)
+                    sent_rounds = len(rounds)
+                    sent_round_tail = rounds[-1] if rounds else None
+                    ok = self._sse("append", delta)
+                if not ok:
                     return
             elif finished:
                 if snapshot is None:
@@ -1101,6 +1216,8 @@ class Handler(SimpleHTTPRequestHandler):
         path = unquote(urlparse(self.path).path)
         if not path.startswith("/api/"):
             return self.send_error(404)
+        if not self._authorized():
+            return self._json({"error": "unauthorized"}, 401)
         mgr = self.manager
         if path == "/api/runs":
             if mgr.runtime is None:
@@ -1257,6 +1374,21 @@ class Handler(SimpleHTTPRequestHandler):
             return self._json(run.to_json())
         return self._json({"error": "unknown endpoint"}, 404)
 
+    def do_DELETE(self) -> None:  # noqa: N802
+        path = unquote(urlparse(self.path).path)
+        if not path.startswith("/api/runs/") or path.count("/") != 3:
+            return self.send_error(404)
+        if not self._authorized():
+            return self._json({"error": "unauthorized"}, 401)
+        mgr = self.manager
+        if mgr.runtime is None:
+            return self._json({"error": "live mode unavailable"}, 503)
+        run_id = path[len("/api/runs/") :]
+        ok, reason = mgr.delete(run_id)
+        if not ok:
+            return self._json({"error": reason}, 404 if reason == "no such run" else 409)
+        return self._json({"deleted": True, "id": run_id})
+
 
 # ------------------------------------------------------------------------ main
 
@@ -1281,6 +1413,11 @@ def main(argv: list[str] | None = None) -> int:
         default=300.0,
         help="seconds a paused approval waits for a human before denying (default 300)",
     )
+    parser.add_argument(
+        "--token",
+        default="",
+        help="require this token (cookie bootstrap via /?token=…); desktop mode uses it",
+    )
     args = parser.parse_args(argv)
 
     runtime: Runtime | None = None
@@ -1295,6 +1432,7 @@ def main(argv: list[str] | None = None) -> int:
 
     manager = RunManager(runtime, runtime_error, args.pace, args.approval_timeout)
     Handler.manager = manager
+    Handler.token = args.token or None
     httpd = ThreadingHTTPServer((args.host, args.port), Handler)
     httpd.daemon_threads = True
     print(f"[console] serving {VIEWER_DIR} on http://{args.host}:{args.port}")

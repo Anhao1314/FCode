@@ -61,6 +61,52 @@ const FAILURE_REASONS = {
 };
 const dot = cls => `<span class="ev-dot ${cls || ""}"></span>`;
 
+/* 桌面壳桥：浏览器里返回 null，桌面端返回 pywebview 原生 API */
+function desktopBridge() {
+  return (window.pywebview && window.pywebview.api) ? window.pywebview.api : null;
+}
+window.addEventListener("pywebviewready", () => {
+  window.__fcodeDesktop = true;
+  document.body.classList.add("desktop");
+});
+
+/* ------------------------------------------------------------- 状态行 */
+/* Codex TUI 的底栏：当前模型、轮次、预算用量与快捷键，常驻不占正文。 */
+function setStatusline(leftHtml, rightText) {
+  const el = document.getElementById("statusline");
+  if (!el) return;
+  el.innerHTML = `<span class="sl-left">${leftHtml}</span><span class="sl-right">${esc(rightText || "")}</span>`;
+}
+
+function updateStatusline() {
+  if (ledgerOpen) {
+    const finished = runHistory.filter(r => r.status !== "running");
+    const succeeded = finished.filter(r => r.status === "succeeded").length;
+    const totalCost = finished.reduce((sum, r) => sum + ((r.cost && r.cost.costMicrousd) || 0), 0);
+    const rate = finished.length ? Math.round((succeeded / finished.length) * 100) : 0;
+    setStatusline(`<b>工作台</b><span class="sl-sep">·</span>委托 ${runHistory.length} 项`,
+      `成功率 ${rate}% · 总成本 ${num(totalCost)} µUSD · ⌘N 新建`);
+    return;
+  }
+  const trace = (live && live.trace) || currentTrace;
+  if (!trace) {
+    setStatusline("<b>FCode</b>", "⌘K 命令 · ⌘N 新建委托 · ⌘. 停止 · ↑↓ 历史");
+    return;
+  }
+  const budget = lastBudget(trace);
+  const lim = (budget && budget.limits) || {};
+  const model = trace.model || {};
+  const rounds = (trace.rounds || []).length;
+  const statusMap = { succeeded: "成功", failed: "失败", denied: "拒绝", stopped: "已停止" };
+  const state = live ? (live.finished ? "已结束" : `第 ${rounds} 轮`)
+    : (statusMap[(trace.terminal && trace.terminal.status) || ""] || (trace.terminal && trace.terminal.status) || "");
+  const left = `<b>${esc(model.provider || "offline-mock")}</b> <span class="sl-sep">·</span> ${state ? esc(state) : "—"}`;
+  const right = budget
+    ? `calls ${budget.calls_used}/${lim.max_calls ?? "?"} · reads ${budget.reads_used}/${lim.max_reads ?? "?"} · ${num(budget.cost_used_microusd)} µUSD · tokens ${num(budget.tokens_used)}`
+    : "⌘K 命令 · ⌘N 新建委托";
+  setStatusline(left, right);
+}
+
 const cache = new Map();
 let currentKey = null;
 let currentTrace = null;
@@ -193,9 +239,133 @@ const shortObjective = text => {
   return s.length > 22 ? s.slice(0, 22) + "…" : s;
 };
 
+let ledgerOpen = false;
+let ledgerConfirmId = null;
+
 function renderNav() {
+  const desk = document.getElementById("desk-btn");
+  if (desk) desk.classList.toggle("active", ledgerOpen);
   renderScenarios();
   renderRuns();
+}
+
+/* ------------------------------------------------------------- 工作台账本 */
+
+function openLedger() {
+  ledgerOpen = true;
+  if (live) detachLive();
+  currentKey = null;
+  currentTrace = null;
+  renderNav();
+  renderTabs();
+  document.getElementById("tb-title").textContent = "工作台";
+  document.getElementById("tb-chips").innerHTML = "";
+  const badge = document.getElementById("chain-badge");
+  if (badge) {
+    badge.className = "chain-pill";
+    badge.innerHTML = `<span class="dot"></span><span>未加载</span>`;
+  }
+  const main = document.getElementById("main");
+  main.scrollTop = 0;
+  renderLedger();
+}
+
+async function renderLedger() {
+  const main = document.getElementById("main");
+  if (!main || !ledgerOpen) return;
+  main.innerHTML = `<div class="empty">统计账本…</div>`;
+  // 旧运行 meta 里没有成本摘要：按需拉 trace 补齐（有缓存）
+  const missing = runHistory.filter(run => !run.cost && run.tracePath);
+  await Promise.all(missing.map(async run => {
+    try {
+      const response = await fetch(run.tracePath, { cache: "no-store" });
+      if (!response.ok) return;
+      const trace = await response.json();
+      cache.set("run:" + run.id, trace);
+      const rounds = trace.rounds || [];
+      for (let i = rounds.length - 1; i >= 0; i--) {
+        const b = rounds[i].budget_after;
+        if (b && b.calls_used !== undefined) {
+          const lim = b.limits || {};
+          run.cost = {
+            calls: b.calls_used, reads: b.reads_used,
+            costMicrousd: b.cost_used_microusd, tokens: b.tokens_used,
+            maxCalls: lim.max_calls, maxCostMicrousd: lim.max_cost_microusd,
+          };
+          break;
+        }
+      }
+    } catch { /* 单条失败不拖垮账本 */ }
+  }));
+
+  const finished = runHistory.filter(run => run.status !== "running");
+  const totalCost = finished.reduce((s, r) => s + ((r.cost && r.cost.costMicrousd) || 0), 0);
+  const totalCalls = finished.reduce((s, r) => s + ((r.cost && r.cost.calls) || 0), 0);
+  const succeeded = finished.filter(run => run.status === "succeeded").length;
+  const running = runHistory.filter(run => run.status === "running").length;
+  const rate = finished.length ? Math.round((succeeded / finished.length) * 100) : 0;
+  const rows = runHistory.slice(0, 30).map(run => {
+    const cost = run.cost ? `${num(run.cost.costMicrousd)} µUSD` : "—";
+    const created = String(run.created || "").replace("T", " ").slice(5, 16);
+    const confirmDelete = ledgerConfirmId === run.id;
+    return `<tr data-led-row="${esc(run.id)}" title="${esc(run.objective)}">
+      <td><span class="sdot ${run.status === "running" ? "live" : stateClass(run.status)}"></span> ${esc(stateText(run.status))}</td>
+      <td class="led-name">${esc(runLabel(run))}</td>
+      <td class="dim">${esc(tplTitle(run.template))}</td>
+      <td class="num">${run.rounds || "—"}</td>
+      <td class="num">${cost}</td>
+      <td class="dim">${esc(created)}</td>
+      <td><button class="a-btn${confirmDelete ? " danger" : ""}" data-led-del="${esc(run.id)}">${confirmDelete ? "确认删除？" : "删除"}</button></td>
+    </tr>`;
+  }).join("");
+
+  main.innerHTML = `
+    <section class="prompt">
+      <div class="prompt-kicker">工作台</div>
+      <p class="prompt-text">委托账本</p>
+      <p class="prompt-note">所有委托的状态、轮次与成本。点击行打开对应运行；删除会移除运行目录，运行中不可删。</p>
+    </section>
+    <div class="led-stats">
+      <div class="led-stat"><div class="k">委托总数</div><div class="v">${runHistory.length}</div></div>
+      <div class="led-stat"><div class="k">运行中</div><div class="v">${running}</div></div>
+      <div class="led-stat"><div class="k">成功率</div><div class="v">${rate}<i>%</i></div></div>
+      <div class="led-stat"><div class="k">总成本</div><div class="v">${num(totalCost)}<i> µUSD</i></div></div>
+      <div class="led-stat"><div class="k">总调用</div><div class="v">${num(totalCalls)}</div></div>
+    </div>
+    <div class="card led-card">
+      <table class="led-table">
+        <tr><th>状态</th><th>委托</th><th>类型</th><th>轮次</th><th>成本</th><th>创建</th><th></th></tr>
+        ${rows || `<tr><td colspan="7" class="dim" style="text-align:center;padding:22px">还没有委托 — 点上方「新建委托」开始</td></tr>`}
+      </table>
+    </div>`;
+  updateStatusline();
+}
+
+async function deleteRun(id) {
+  try {
+    const response = await fetch(`/api/runs/${encodeURIComponent(id)}`, { method: "DELETE" });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.error || `HTTP ${response.status}`);
+    }
+  } catch (error) {
+    toast("删除失败：" + error.message);
+    return;
+  }
+  const s = sessions.get(id);
+  if (s) { if (s.es) s.es.close(); sessions.delete(id); }
+  if (live === s) live = null;
+  cache.delete("run:" + id);
+  if (currentKey === "run:" + id) {
+    currentKey = null;
+    currentTrace = null;
+    openLedger();
+  } else if (ledgerOpen) {
+    renderLedger();
+  }
+  renderTabs();
+  refreshRuns();
+  toast("委托已删除");
 }
 
 function applyScenesOpen(open) {
@@ -725,6 +895,9 @@ function renderRound(round, index, ann = {}) {
       <span class="t-ic">${icon}</span>
       <span class="tool">${esc(tool)}</span>
       ${args ? `<span class="args">${esc(args)}</span>` : ""}
+      ${round.receipt && (round.receipt.latency_ms !== undefined || round.receipt.cost_microusd !== undefined)
+        ? `<span class="rstat">${round.receipt.latency_ms !== undefined ? round.receipt.latency_ms + " ms" : ""}${round.receipt.latency_ms !== undefined && round.receipt.cost_microusd !== undefined ? " · " : ""}${round.receipt.cost_microusd !== undefined ? num(round.receipt.cost_microusd) + " µ" : ""}</span>`
+        : ""}
       <span class="grow"></span>
       ${verdict}
       <span class="chev">▾</span>
@@ -853,6 +1026,8 @@ function renderHead(trace, title) {
   const task = trace.task || {};
   const binding = task.binding || {};
   document.getElementById("tb-title").textContent = title || task.id || "—";
+  const bridge = desktopBridge();
+  if (bridge && bridge.set_title) bridge.set_title(title || task.id || "FCode");
   document.getElementById("tb-chips").innerHTML = `
     <span class="chip">${ICON.folder}${esc(binding.corpus || "—")}</span>
     <span class="chip">${ICON.branch}${esc(task.id || "—")}</span>
@@ -919,6 +1094,7 @@ async function render(trace, title) {
     ""
   );
   renderRail(trace, check);
+  updateStatusline();
 }
 
 /* ------------------------------------------------------------------- live */
@@ -1138,6 +1314,7 @@ function liveApply(s, data) {
   }
 
   if (stick) scrollMainBottom();
+  updateStatusline();
 }
 
 /* 已入链的运行中消息，按其生效轮次分组（detail.round = 该轮开始前） */
@@ -1269,6 +1446,7 @@ function renderApproval(pending, deciding) {
         ${busy}
         <label class="apv-remember"><input type="checkbox" data-remember${deciding ? " disabled" : ""}> 本次运行内不再询问该工具</label>
         <span class="grow"></span>
+        <span class="apv-keys">1 允许 · 2 拒绝</span>
         <button class="a-btn" data-decision="deny"${deciding ? " disabled" : ""}>拒绝</button>
         <button class="a-btn strong" data-decision="allow"${deciding ? " disabled" : ""}>允许</button>
       </div>
@@ -1410,6 +1588,7 @@ function tabTitle(s) {
 }
 
 function openLive(id, objective, template) {
+  ledgerOpen = false;
   const fresh = !sessions.has(id);
   if (fresh) sessions.set(id, createSession(id, objective, template));
   const s = sessions.get(id);
@@ -1431,6 +1610,21 @@ function openLive(id, objective, template) {
   }
 }
 
+/* 增量帧：只合并变化部分，渲染复用现有 liveApply（字符串 diff 保持不变） */
+function applyDelta(trace, delta) {
+  if (Array.isArray(delta.events) && delta.events.length) {
+    trace.events = (trace.events || []).concat(delta.events);
+  }
+  if (Array.isArray(delta.rounds) && delta.rounds.length) {
+    const start = Math.max(0, delta.roundStart || 0);
+    trace.rounds = (trace.rounds || []).slice(0, start).concat(delta.rounds);
+  }
+  if (delta.terminal) trace.terminal = delta.terminal;
+  if (delta.chain) trace.chain = delta.chain;
+  if (delta.task) trace.task = delta.task;
+  if (delta.model) trace.model = delta.model;
+}
+
 function attachStream(s) {
   const es = new EventSource(`/api/runs/${encodeURIComponent(s.id)}/stream`);
   s.es = es;
@@ -1438,6 +1632,23 @@ function attachStream(s) {
     if (s.failed || s.finished) return;
     let data;
     try { data = JSON.parse(event.data); } catch { return; }
+    if (live !== s) { stashSessionUpdate(s, data); return; }
+    liveApply(s, data);
+    if (data.finished) finishSession(s, data);
+  });
+  es.addEventListener("append", event => {
+    if (s.failed || s.finished || !s.trace) return;
+    let delta;
+    try { delta = JSON.parse(event.data); } catch { return; }
+    applyDelta(s.trace, delta);
+    const data = {
+      snapshot: s.trace,
+      pending: delta.pending || null,
+      finished: !!delta.finished,
+      status: delta.status,
+      tracePath: delta.tracePath,
+      error: delta.error,
+    };
     if (live !== s) { stashSessionUpdate(s, data); return; }
     liveApply(s, data);
     if (data.finished) finishSession(s, data);
@@ -1556,6 +1767,7 @@ function finishSession(s, data) {
     );
   }
   renderTabs();
+  if (live === s) updateStatusline();
 }
 
 function detachLive() {
@@ -1709,13 +1921,24 @@ async function stopRun() {
   } catch { /* the stream will settle it */ }
 }
 
+let runSignature = "";
+
 async function refreshRuns() {
   if (!health || !health.live) return;
+  let next;
   try {
-    runHistory = await fetch("/api/runs", { cache: "no-store" }).then(r => r.json());
+    next = await fetch("/api/runs", { cache: "no-store" }).then(r => r.json());
   } catch {
     return;
   }
+  // 只在有变化时重绘：轮询 2.5s 一次，但不能打断重命名/悬停等本地状态
+  const signature = next.map(run => [
+    run.id, run.status, run.rounds, run.name, run.pinned ? 1 : 0,
+    (run.cost && run.cost.costMicrousd) || 0,
+  ].join(":")).join("|");
+  if (signature === runSignature) return;
+  runSignature = signature;
+  runHistory = next;
   renderNav();
 }
 
@@ -1801,14 +2024,14 @@ async function initLive() {
   }
   setTemplate(templates.some(t => t.key === "full") ? "full" : templates[0].key);
   setComposerRunning(false);
+  updateStatusline();
   autosize(document.getElementById("composer-ta"));
   refreshRuns();
-  setInterval(() => {
-    if (runHistory.some(run => run.status === "running")) refreshRuns();
-  }, 2500);
+  setInterval(refreshRuns, 2500);
 }
 
 async function selectRun(id) {
+  ledgerOpen = false;
   const existing = sessions.get(id);
   if (existing) return openLive(id, existing.objective, existing.template);
   const run = runHistory.find(item => item.id === id);
@@ -1863,6 +2086,7 @@ async function loadTrace(key) {
 
 async function select(key, label) {
   if (key.startsWith("run:")) return selectRun(key.slice(4));
+  ledgerOpen = false;
   if (live) detachLive();
   currentKey = key;
   renderNav();
@@ -2042,6 +2266,14 @@ function closeReport() {
 
 function downloadReport() {
   if (!lastReportHtml) return;
+  const bridge = desktopBridge();
+  if (bridge && bridge.save_report) {
+    bridge.save_report(lastReportName, lastReportHtml).then(result => {
+      if (result && result.saved) toast("报告已保存 · " + result.path);
+      else if (result) toast("已取消保存");
+    }).catch(() => toast("保存失败"));
+    return;
+  }
   const blob = new Blob([lastReportHtml], { type: "text/html" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -2384,6 +2616,11 @@ async function toggleNotify() {
 }
 
 function notify(title, body) {
+  const bridge = desktopBridge();
+  if (bridge && bridge.notify) {
+    bridge.notify(title, body);
+    return;
+  }
   if (!notifyReady() || !document.hidden) return;
   try {
     const note = new Notification(title, { body, silent: true });
@@ -2546,8 +2783,78 @@ function runPaletteItem(index) {
   }, 0);
 }
 
+/* ----------------------------------------------------------- slash 命令 */
+/* Codex 式入口：输入框以 / 开头弹出命令面板，↑↓ 选择，Tab 补全，Enter 执行。 */
+const SLASH_COMMANDS = [
+  { cmd: "/new", desc: "新建委托（打开建单向导）", run: () => openWizard() },
+  { cmd: "/ledger", desc: "打开工作台账本", run: () => openLedger() },
+  { cmd: "/report", desc: "签发当前运行的审计报告", run: () => openReport() },
+  { cmd: "/stop", desc: "在轮次边界停止当前运行", run: () => stopRun() },
+  { cmd: "/allow", desc: "批准挂起的审批请求", run: () => decideApproval(true) },
+  { cmd: "/deny", desc: "拒绝挂起的审批请求", run: () => decideApproval(false) },
+  { cmd: "/help", desc: "快捷键与命令说明", run: () => toast("⌘K 命令面板 · ⌘N 新建委托 · ⌘. 停止 · ⌘↵ 允许 · ⌘⌫ 拒绝 · ↑↓ 历史") },
+  { cmd: "/clear", desc: "清空输入框", run: () => { const ta = document.getElementById("composer-ta"); ta.value = ""; autosize(ta); } },
+];
+let slashIndex = 0;
+let slashItems = [];
+const promptHistory = (() => {
+  try { return JSON.parse(localStorage.getItem("fa.history") || "[]"); } catch { return []; }
+})();
+let historyIndex = -1;
+let draftBeforeHistory = "";
+
+function slashMenuEl() {
+  let el = document.getElementById("slash-menu");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "slash-menu";
+    el.className = "slash-menu";
+    el.hidden = true;
+    document.getElementById("composer-box").appendChild(el);
+    el.addEventListener("mousedown", event => {
+      const item = event.target.closest("[data-slash]");
+      if (item) { event.preventDefault(); runSlash(item.dataset.slash); }
+    });
+  }
+  return el;
+}
+
+function updateSlashMenu() {
+  const ta = document.getElementById("composer-ta");
+  const menu = slashMenuEl();
+  const value = ta.value;
+  if (!value.startsWith("/")) { menu.hidden = true; slashItems = []; return; }
+  const query = value.slice(1).trim().toLowerCase();
+  slashItems = SLASH_COMMANDS.filter(c =>
+    c.cmd.slice(1).startsWith(query) || c.desc.toLowerCase().includes(query));
+  if (!slashItems.length) { menu.hidden = true; return; }
+  slashIndex = Math.min(slashIndex, slashItems.length - 1);
+  menu.innerHTML = slashItems.map((c, i) => `<div class="slash-item${i === slashIndex ? " active" : ""}" data-slash="${esc(c.cmd.slice(1))}">
+    <span class="cmd">${esc(c.cmd)}</span><span class="desc">${esc(c.desc)}</span></div>`).join("");
+  menu.hidden = false;
+}
+
+function runSlash(name) {
+  const command = SLASH_COMMANDS.find(c => c.cmd === "/" + name);
+  const ta = document.getElementById("composer-ta");
+  ta.value = "";
+  autosize(ta);
+  slashMenuEl().hidden = true;
+  slashItems = [];
+  if (command) command.run();
+}
+
+function pushHistory(text) {
+  if (!text) return;
+  promptHistory.push(text);
+  while (promptHistory.length > 50) promptHistory.shift();
+  try { localStorage.setItem("fa.history", JSON.stringify(promptHistory)); } catch { /* quota */ }
+  historyIndex = -1;
+}
+
 function bind() {
   document.getElementById("new-run").addEventListener("click", openWizard);
+  document.getElementById("desk-btn").addEventListener("click", openLedger);
   document.getElementById("composer-open").addEventListener("click", openWizard);
   bindWizard();
   document.getElementById("pick").addEventListener("change", event => {
@@ -2556,14 +2863,58 @@ function bind() {
   const ta = document.getElementById("composer-ta");
   ta.addEventListener("input", () => {
     autosize(ta);
+    updateSlashMenu();
     if (!(live && live.running && !live.finished)) {
       document.getElementById("send").disabled = !(health && health.live);
     }
   });
   ta.addEventListener("keydown", event => {
+    const menu = document.getElementById("slash-menu");
+    if (menu && !menu.hidden) {
+      if (event.key === "ArrowDown") { event.preventDefault(); slashIndex = Math.min(slashItems.length - 1, slashIndex + 1); updateSlashMenu(); return; }
+      if (event.key === "ArrowUp") { event.preventDefault(); slashIndex = Math.max(0, slashIndex - 1); updateSlashMenu(); return; }
+      if (event.key === "Tab") {
+        event.preventDefault();
+        const command = slashItems[slashIndex];
+        if (command) { ta.value = command.cmd + " "; autosize(ta); updateSlashMenu(); }
+        return;
+      }
+      if (event.key === "Enter" && !event.shiftKey) {
+        event.preventDefault();
+        const command = slashItems[slashIndex];
+        if (command) runSlash(command.cmd.slice(1));
+        return;
+      }
+      if (event.key === "Escape") { event.preventDefault(); menu.hidden = true; return; }
+    }
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
+      pushHistory(ta.value.trim());
       composerSubmit();
+      return;
+    }
+    if (event.key === "ArrowUp" && ta.selectionStart === 0 && promptHistory.length) {
+      event.preventDefault();
+      if (historyIndex === -1) {
+        draftBeforeHistory = ta.value;
+        historyIndex = promptHistory.length - 1;
+      } else {
+        historyIndex = Math.max(0, historyIndex - 1);
+      }
+      ta.value = promptHistory[historyIndex];
+      autosize(ta);
+      return;
+    }
+    if (event.key === "ArrowDown" && historyIndex !== -1) {
+      event.preventDefault();
+      if (historyIndex < promptHistory.length - 1) {
+        historyIndex += 1;
+        ta.value = promptHistory[historyIndex];
+      } else {
+        historyIndex = -1;
+        ta.value = draftBeforeHistory;
+      }
+      autosize(ta);
     }
   });
   document.getElementById("send").addEventListener("click", composerSubmit);
@@ -2585,6 +2936,9 @@ function bind() {
   document.addEventListener("click", event => {
     if (!tplMenu.hidden && !tplBtn.contains(event.target) && !tplMenu.contains(event.target)) tplMenu.hidden = true;
     if (!apvMenu.hidden && !apvBtn.contains(event.target) && !apvMenu.contains(event.target)) apvMenu.hidden = true;
+    const slashMenu = document.getElementById("slash-menu");
+    const composerBox = document.getElementById("composer-box");
+    if (slashMenu && !slashMenu.hidden && composerBox && !composerBox.contains(event.target)) slashMenu.hidden = true;
   });
   document.getElementById("chain-badge").addEventListener("click", reverify);
   document.getElementById("report-close").addEventListener("click", closeReport);
@@ -2611,6 +2965,15 @@ function bind() {
   });
   document.getElementById("main").addEventListener("click", event => {
     if (event.target.closest("[data-wizard-open]")) { openWizard(); return; }
+    const ledDel = event.target.closest("[data-led-del]");
+    if (ledDel) {
+      const id = ledDel.dataset.ledDel;
+      if (ledgerConfirmId !== id) { ledgerConfirmId = id; renderLedger(); }
+      else { ledgerConfirmId = null; deleteRun(id); }
+      return;
+    }
+    const ledRow = event.target.closest("[data-led-row]");
+    if (ledRow && !event.target.closest("[data-led-del]")) { selectRun(ledRow.dataset.ledRow); return; }
     const toggleHead = event.target.closest("[data-toggle]");
     if (toggleHead) {
       const round = toggleHead.closest(".round");
@@ -2702,6 +3065,7 @@ function bind() {
   document.addEventListener("keydown", e => {
     const mod = e.metaKey || e.ctrlKey;
     if (mod && e.key.toLowerCase() === "k") { e.preventDefault(); togglePalette(); return; }
+    if (mod && e.key.toLowerCase() === "n") { e.preventDefault(); openWizard(); return; }
     if (mod && e.key === ".") { e.preventDefault(); if (live && live.running) stopRun(); return; }
     if (mod && live && live.pending && !live.deciding && (e.key === "Enter" || e.key === "Backspace" || e.key === "Delete")) {
       const palette = document.getElementById("palette");
@@ -2711,6 +3075,17 @@ function bind() {
       return;
     }
     const typing = e.target && /INPUT|TEXTAREA/.test(e.target.tagName);
+    if (!typing && live && live.pending && !live.deciding && (e.key === "1" || e.key === "2")) {
+      const overlay = ["palette", "wizard-layer", "report-layer"].some(id => {
+        const el = document.getElementById(id);
+        return el && !el.hidden;
+      });
+      if (!overlay) {
+        e.preventDefault();
+        decideApproval(e.key === "1");
+        return;
+      }
+    }
     if (e.key === "Escape") {
       const reportLayer = document.getElementById("report-layer");
       if (reportLayer && !reportLayer.hidden) { closeReport(); return; }
@@ -2750,6 +3125,7 @@ function replay() {
 
 async function fromFile(file) {
   try {
+    ledgerOpen = false;
     const trace = JSON.parse(await file.text());
     if (live) detachLive();
     currentKey = null;
