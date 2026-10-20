@@ -19,7 +19,7 @@ const EVENT_DOT = {
   task_succeeded: "ok", task_failed: "bad", task_stopped: "warn",
   approval_requested: "warn", approval_granted: "ok", approval_denied: "bad", approval_aborted: "warn",
   plan_steered: "info", budget_adjusted: "info", control_rejected: "bad", task_resumed: "info",
-  operator_message: "you",
+  operator_message: "you", memory_recalled: "info",
 };
 
 /* 人的决定：审批、计划修订、预算调整、续跑、运行中消息 */
@@ -874,6 +874,7 @@ function summariseEvent(e) {
   if (!d || Object.keys(d).length === 0) return "";
   if (e.type === "tool_started" || e.type === "tool_succeeded") return `${esc(d.tool || "")} ${d.arguments && Object.keys(d.arguments).length ? "(" + Object.entries(d.arguments).map(([k, v]) => `${esc(k)}=${esc(v)}`).join(", ") + ")" : "()"}`;
   if (e.type === "model_started") return `round ${esc(d.round)}`;
+  if (e.type === "memory_recalled") return `参考 ${esc(d.count || (d.hits || []).length)} 则旧案 · ${esc(((d.hits || [])[0] || {}).run_id || "")}`;
   if (e.type === "model_unknown") return esc(d.cause || "");
   if (e.type === "model_reconciled") return `receipt ${esc(shortHash(d.receipt_ref))}…`;
   if (e.type === "plan_updated") { const p = d.plan || {}; const done = (p.todos || []).filter(t => t.status === "done").length; return `revision ${esc(p.revision)} · ${done}/${(p.todos || []).length} settled`; }

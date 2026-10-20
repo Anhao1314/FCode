@@ -153,11 +153,16 @@ class Loop:
 
     def restore(self, task: Task) -> WorkingMemory:
         """Rebuild working memory from committed observations."""
+        prior_cases: list[dict[str, Any]] = []
         memory = WorkingMemory(
             objective=task.objective,
             tool_catalog=self.harness.registry.catalog(),
         )
         for event in self.harness.store.events(task.id):
+            if event["type"] == "memory_recalled":
+                detail = event["payload"].get("detail") or {}
+                prior_cases = list(detail.get("hits") or [])
+                continue
             if event["type"] != "tool_succeeded":
                 continue
             detail = event["payload"].get("detail", {})
@@ -170,6 +175,7 @@ class Loop:
                     result_hash=detail["result_hash"],
                 ),
             )
+        memory.prior_cases = prior_cases
         return memory
 
     def rebuild_plan(self, task: Task, memory: WorkingMemory) -> Plan:

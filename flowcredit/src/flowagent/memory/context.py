@@ -49,6 +49,10 @@ class WorkingMemory:
     objective: str
     tool_catalog: list[dict[str, Any]]
     records: list[ObservationRecord] = field(default_factory=list)
+    #: Frozen at delegation time and recorded in the chain. Re-ranking on every
+    #: round would make the prompt depend on wall-clock time and on cases
+    #: created by the run itself.
+    prior_cases: list[dict[str, Any]] = field(default_factory=list)
 
     def record(self, round_no: int, observation: Observation) -> ObservationRecord:
         record = ObservationRecord(
@@ -135,7 +139,7 @@ class WorkingMemory:
         ``plan`` is the open-todo view, not the whole plan: the model needs to
         know what is left, not the history of how it got there.
         """
-        return {
+        context = {
             "objective": self.objective,
             "round": round_no,
             "tools": self.tool_catalog,
@@ -157,6 +161,19 @@ class WorkingMemory:
                 "The runtime decides when the evidence is sufficient."
             ),
         }
+        if self.prior_cases:
+            context["prior_cases"] = [
+                {
+                    "run_id": hit.get("run_id"),
+                    "objective": hit.get("objective"),
+                    "outcome": hit.get("outcome"),
+                    "summary": hit.get("summary"),
+                    "chain_head": hit.get("chain_head"),
+                    "score_bp": hit.get("score_bp"),
+                }
+                for hit in self.prior_cases[:3]
+            ]
+        return context
 
     @staticmethod
     def _summarise(record: ObservationRecord) -> dict[str, Any]:

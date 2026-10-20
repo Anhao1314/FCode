@@ -86,6 +86,22 @@ class Harness:
         )
         return self.store.create(task)
 
+    def record_recall(self, task: Task, hits: list[dict[str, Any]]) -> Task:
+        """Freeze the old-case lookup into the chain before the first proposal.
+
+        Memory is a read, but an invisible one would break replay: a resumed
+        run would query a different index and see a different prompt. Writing
+        the hits as an event makes the recall itself auditable and replayable.
+        """
+        if not hits:
+            return task
+        return self.store.save(
+            task,
+            expected_sequence=task.sequence,
+            event_type="memory_recalled",
+            detail={"query": task.objective, "hits": list(hits), "count": len(hits)},
+        )
+
     def budget(self, task: Task) -> Budget:
         return Budget(self.store, f"task:{task.id}", self.limits)
 

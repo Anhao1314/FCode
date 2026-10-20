@@ -81,7 +81,12 @@ def reconstruct_trace(trace: dict[str, Any], *, source_id: str = "trace") -> lis
         return []
     catalog = _tool_catalog()
     asked = _model_asked_rounds(trace)
-    memory = WorkingMemory(objective=objective, tool_catalog=catalog)
+    prior_cases: list[dict[str, Any]] = []
+    for event in trace.get("events") or []:
+        if event.get("type") == "memory_recalled":
+            detail = event.get("payload", {}).get("detail") or {}
+            prior_cases = list(detail.get("hits") or [])
+    memory = WorkingMemory(objective=objective, tool_catalog=catalog, prior_cases=prior_cases)
     samples: list[dict[str, Any]] = []
     for record in trace.get("rounds") or []:
         index = int(record.get("index", 0))

@@ -469,6 +469,12 @@ class RunManager:
                     allowed_tools=list(scenario.allowed_tools),
                     grant=scenario.grant,
                 )
+                if self.case_index is not None:
+                    try:
+                        hits = self.case_index.search(run.objective, limit=3)
+                        task = harness.record_recall(task, hits)
+                    except Exception:  # noqa: BLE001 — memory must never kill a run
+                        traceback.print_exc()
                 max_rounds = scenario.max_rounds
             run.task_id = task.id
             observer = LiveObserver(run, recorder, store, task.id)

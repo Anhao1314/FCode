@@ -46,7 +46,11 @@ from flowagent.trajectory.recorder import TraceRecorder  # noqa: E402
 from flowagent.domains.finance import verify_observation as verify_finance
 
 
-def run_episode(scenario_key: str, tmp: Path) -> tuple[dict, list, list]:
+def run_episode(
+    scenario_key: str,
+    tmp: Path,
+    prior_cases: list[dict] | None = None,
+) -> tuple[dict, list, list]:
     """Run one real episode; return (trace dict, captured contexts, proposals)."""
     scenario = get_scenario(scenario_key)
     store = TaskStore(tmp / "task.sqlite")
@@ -72,6 +76,8 @@ def run_episode(scenario_key: str, tmp: Path) -> tuple[dict, list, list]:
         allowed_tools=list(scenario.allowed_tools),
         grant=dict(scenario.grant),
     )
+    if prior_cases:
+        task = harness.record_recall(task, prior_cases)
     Loop(harness, planner=FinancePlanner(), max_rounds=scenario.max_rounds, observer=recorder).run(task.id)
     trace = recorder.build(store.load(task.id))
     store.close()
@@ -97,6 +103,33 @@ class FidelityTests(unittest.TestCase):
                         build_target_json(sample["steps"], sample["todo_id"]),
                         build_target_json(proposal.plan["steps"], proposal.todo_id),
                     )
+
+    def test_export_replays_the_frozen_memory_recall(self) -> None:
+        hits = [
+            {
+                "run_id": "run-older",
+                "objective": "恒星智算两期毛利率可比性",
+                "outcome": "succeeded",
+                "summary": "FY2024 17.50%，FY2025 15.00%，下降 2.50 个百分点。",
+                "chain_head": "b" * 64,
+                "tags": ["finance-research", "FY2024"],
+                "created_at": "2026-09-01T00:00:00+00:00",
+                "archived": False,
+                "score_bp": 8123,
+                "breakdown": {"relevance_bp": 7000, "importance_bp": 9000, "recency_bp": 9000},
+            }
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            trace, captured, _ = run_episode("full", Path(tmp), prior_cases=hits)
+            samples = reconstruct_trace(trace, source_id="recall")
+            self.assertEqual(len(samples), len(captured))
+            for sample, context in zip(samples, captured):
+                self.assertIn("prior_cases", context)
+                self.assertEqual(context["prior_cases"][0]["run_id"], "run-older")
+                self.assertEqual(
+                    render_prompt(sample["context"]),
+                    render_prompt(context),
+                )
 
     def test_reconstruction_ignores_reconciled_and_escalation_rounds(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

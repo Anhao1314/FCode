@@ -212,5 +212,73 @@ class CaseToolTests(unittest.TestCase):
         self.assertEqual(ctx.exception.code, "CASE_NOT_FOUND")
 
 
+class MemoryRecallTests(unittest.TestCase):
+    """The recall is frozen into the chain, so replay sees the same prompt."""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        root = pathlib.Path(self._tmp.name)
+        scenario = get_scenario("full")
+        self.store = TaskStore(root / "task.sqlite")
+        world = FinanceWorld(partial=scenario.partial_corpus)
+        self.harness = Harness(
+            store=self.store,
+            registry=ToolRegistry(build_finance_tools(world)),
+            provider=MockProvider(policy=scenario.policy),
+            world=world,
+            limits=scenario.limits,
+            receipts=ReceiptStore(self.store),
+            verifier=lambda observation: verify_observation(world, observation),
+        )
+        self.task = self.harness.create(
+            task_id="task-recall",
+            objective=scenario.objective,
+            principal="test",
+            binding={"module": "finance-research", "scenario": "full"},
+            allowed_tools=list(scenario.allowed_tools),
+            grant=dict(scenario.grant),
+        )
+
+    def tearDown(self) -> None:
+        self.store.close()
+        self._tmp.cleanup()
+
+    @staticmethod
+    def _hit(index: int) -> dict:
+        return {
+            "run_id": f"run-{index}",
+            "objective": f"旧案 {index}",
+            "outcome": "succeeded",
+            "summary": "两期毛利率可比。",
+            "chain_head": str(index) * 64,
+            "tags": ["finance-research"],
+            "created_at": "2026-09-01T00:00:00+00:00",
+            "archived": False,
+            "score_bp": 9000 - index,
+            "breakdown": {"relevance_bp": 8000, "importance_bp": 9000, "recency_bp": 9000},
+        }
+
+    def test_recall_is_recorded_and_replayed_as_three_cases(self) -> None:
+        task = self.harness.record_recall(self.task, [self._hit(i) for i in range(4)])
+        events = self.store.events(task.id)
+        self.assertEqual(events[-1]["type"], "memory_recalled")
+        detail = events[-1]["payload"]["detail"]
+        self.assertEqual(detail["count"], 4)
+        self.assertEqual(detail["query"], task.objective)
+        self.store.verify_chain(task.id)
+
+        memory = Loop(self.harness, planner=FinancePlanner()).restore(self.store.load(task.id))
+        context = memory.build(1, {}, None)
+        self.assertEqual(len(context["prior_cases"]), 3)
+        self.assertEqual(context["prior_cases"][0]["run_id"], "run-0")
+        self.assertEqual(context["prior_cases"][0]["score_bp"], 9000)
+        self.assertNotIn("breakdown", context["prior_cases"][0])
+
+    def test_no_hits_means_no_event(self) -> None:
+        before = len(self.store.events(self.task.id))
+        self.harness.record_recall(self.task, [])
+        self.assertEqual(len(self.store.events(self.task.id)), before)
+
+
 if __name__ == "__main__":
     unittest.main()
