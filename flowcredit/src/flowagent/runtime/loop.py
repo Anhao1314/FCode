@@ -264,12 +264,18 @@ class Loop:
         """
         blocked = [todo.to_dict() for todo in plan.todos if todo.status == "blocked"]
         model_reason = str(observation.result.get("reason") or "insufficient_evidence")
-        message = "; ".join(item["reason"] for item in blocked if item.get("reason")) or model_reason
+        domain_reasons = "; ".join(item["reason"] for item in blocked if item.get("reason"))
+        if domain_reasons:
+            code, message = "INSUFFICIENT_EVIDENCE", domain_reasons
+        elif model_reason == "budget_insufficient":
+            code, message = "BUDGET_EXHAUSTED", "the remaining budget cannot cover the plan"
+        else:
+            code, message = "INSUFFICIENT_EVIDENCE", model_reason
         task = self.harness.finalize(
             task,
             "failed",
             failure={
-                "code": "INSUFFICIENT_EVIDENCE",
+                "code": code,
                 "message": message,
                 "retryable": False,
             },

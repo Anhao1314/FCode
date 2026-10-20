@@ -17,7 +17,7 @@ PYTHONPATH=src python3 -m flowagent.demo.oracle \
 
 ```
 /tmp/fcode-oracle-full/exchange/round-01.request.json
-  {"round": 1, "prompt_version": "fcode.prompt/v8",
+  {"round": 1, "prompt_version": "fcode.prompt/v9",
    "system": "...", "user": "<canonical context>", "context": {...}}
 ```
 
@@ -40,6 +40,8 @@ round-01.reply.json  {"version": "flowagent.plan/v1",
 | `full`（v7） | 9 | 49 | 9 | 4,500 | succeeded | FY2024 17.50%，FY2025 15.00%，-2.50pp |
 | `open-ended`（v7，修复前） | 9 | 48 | 9 | 4,500 | failed | INSUFFICIENT_EVIDENCE；模型看不到阻塞原因 |
 | `open-ended`（v8，修复后） | 7 | 38 | 7 | 3,500 | failed | 第 6 轮发现桥接缺失，第 7 轮诚实停止 |
+| `budget`（v8，修复前） | 1 | 8 | 1 | 500 | failed | 预算只剩 4 次，但只能误报 `insufficient_evidence` |
+| `budget`（v9，修复后） | 1 | 8 | 1 | 500 | failed | BUDGET_EXHAUSTED，模型主动停止 |
 
 `full` 的模型侧 prompt 从 7,220 B 增长到 7,751 B；工具目录 15 个，实际用到 9 个。
 所有提案都通过门控，没有越权或 schema 错误。
@@ -58,6 +60,9 @@ round-01.reply.json  {"version": "flowagent.plan/v1",
    blocked todo 的领域原因。
 4. **其余摘要补全。** `check_restatement` 现在带 `restated_gross_profit`；
    `calculate_margin` 现在带两期毛利率，模型不必从变化反推。
+5. **预算不足没有可用的阻塞原因。** `budget` 场景只剩 4 次调用、计划还有 9 步，
+   模型只能把预算问题误报成 `insufficient_evidence`。现在枚举增加
+   `budget_insufficient`，终止码映射为 `BUDGET_EXHAUSTED`。
 
 ## 仍然存在的边界
 

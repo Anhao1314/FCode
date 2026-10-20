@@ -35,6 +35,7 @@ BLOCK_REASONS: tuple[str, ...] = (
     "basis_unresolved",
     "restatement_conflict",
     "insufficient_evidence",
+    "budget_insufficient",
 )
 
 

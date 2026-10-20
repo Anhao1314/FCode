@@ -28,8 +28,9 @@ class BlockedProvider:
     name = "blocked-test"
     model = "blocked-test-v1"
 
-    def __init__(self) -> None:
+    def __init__(self, reason: str = "missing_document") -> None:
         self.calls = 0
+        self.reason = reason
 
     def propose(self, context):
         self.calls += 1
@@ -39,7 +40,7 @@ class BlockedProvider:
                 "steps": [{
                     "id": "stop",
                     "tool": "report_blocked",
-                    "arguments": {"reason": "missing_document"},
+                    "arguments": {"reason": self.reason},
                 }],
             },
             provider=self.name,
@@ -87,6 +88,35 @@ class ReportBlockedTests(unittest.TestCase):
                 [event["payload"]["detail"]["tool"] for event in events if event["type"] == "tool_succeeded"],
                 ["report_blocked"],
             )
+            store.close()
+
+    def test_budget_block_maps_to_budget_exhausted(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            scenario = get_scenario("budget")
+            store = TaskStore(pathlib.Path(tmp) / "task.sqlite")
+            world = FinanceWorld()
+            provider = BlockedProvider("budget_insufficient")
+            harness = Harness(
+                store=store,
+                registry=ToolRegistry(build_finance_tools(world)),
+                provider=provider,
+                world=world,
+                limits=scenario.limits,
+                receipts=ReceiptStore(store),
+                verifier=lambda observation: verify_observation(world, observation),
+            )
+            task = harness.create(
+                task_id="task-budget-blocked",
+                objective=scenario.objective,
+                principal="test",
+                binding={"module": "finance-research"},
+                allowed_tools=list(scenario.allowed_tools),
+                grant=dict(scenario.grant),
+            )
+            task = Loop(harness, planner=FinancePlanner(), max_rounds=9).run(task.id)
+            self.assertEqual(task.status, "failed")
+            self.assertEqual(task.failure["code"], "BUDGET_EXHAUSTED")
+            self.assertIn("budget", task.failure["message"])
             store.close()
 
 
