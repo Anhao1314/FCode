@@ -252,7 +252,18 @@ def export_main(argv: list[str] | None = None) -> int:
     parser.add_argument("--traces", nargs="*", default=[], help="trace JSON files or globs")
     parser.add_argument("--generate", type=int, default=0, help="episodes per scenario to generate in-process")
     parser.add_argument("--stats-out", default="", help="optional JSON stats path")
+    parser.add_argument(
+        "--module",
+        default="finance-research",
+        help="domain module this dataset trains (datasets are per-module)",
+    )
     args = parser.parse_args(argv)
+
+    from ..domains import get_domain
+
+    module = get_domain(args.module)
+    if module.key != "finance-research":
+        parser.error(f"module {module.key!r} has no exporter yet")
 
     import glob
 
@@ -274,6 +285,7 @@ def export_main(argv: list[str] | None = None) -> int:
     stats["from_traces"] = len(samples) - len(generated)
     stats["generated"] = len(generated)
     stats["prompt_version"] = PROMPT_VERSION
+    stats["module"] = module.key
 
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)

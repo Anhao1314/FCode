@@ -126,6 +126,7 @@ let runHistory = [];    // /api/runs
 let live = null;        // 当前激活的会话（指向 sessions 中的一项）
 let runFilter = "";     // 运行记录搜索词
 let toolContracts = null; // /api/tools，工具契约（含版本与 effect）
+let modules = [];         // /api/modules，域模块（金融研究 / 审计 / 量化…）
 let olderOpen = false;  // 「更早」分组是否展开
 let scenesOpen = localStorage.getItem("fa.scenesOpen"); // null | "1" | "0"
 
@@ -1091,7 +1092,12 @@ function renderHead(trace, title) {
   document.getElementById("tb-title").textContent = title || task.id || "—";
   const bridge = desktopBridge();
   if (bridge && bridge.set_title) bridge.set_title(title || task.id || "FCode");
+  const moduleKey = binding.module || "";
+  const moduleTitle = moduleKey
+    ? ((modules.find(item => item.key === moduleKey) || {}).title || moduleKey)
+    : "";
   document.getElementById("tb-chips").innerHTML = `
+    ${moduleTitle ? `<span class="chip">${ICON.thought}${esc(moduleTitle)}</span>` : ""}
     <span class="chip">${ICON.folder}${esc(binding.corpus || "—")}</span>
     <span class="chip">${ICON.branch}${esc(task.id || "—")}</span>
     <span class="chip chip-grant">${ICON.key}${esc((task.model_grant || {}).grant_id || "—")} · r${esc((task.model_grant || {}).revision || "")}</span>
@@ -2070,6 +2076,12 @@ async function initLive() {
   }
   if (health.live) {
     try {
+      const data = await fetch("/api/modules", { cache: "no-store" }).then(r => r.ok ? r.json() : null);
+      if (data && Array.isArray(data.modules)) modules = data.modules;
+    } catch {
+      modules = [];
+    }
+    try {
       templates = await fetch("/api/templates", { cache: "no-store" }).then(r => r.json());
     } catch {
       templates = [];
@@ -2395,7 +2407,8 @@ function renderWizard() {
   const limits = template.limits || {};
 
   if (wizard.step === 1) {
-    body.innerHTML = `<div class="wz-hint">第一步 · 选择委托类型。类型决定授权范围、预算与轮次；带演示标记的类型会注入特定故障，用于观察运行时的防护。</div>
+    const moduleTitle = (modules[0] || {}).title || "—";
+    body.innerHTML = `<div class="wz-hint">模块 · ${esc(moduleTitle)}<br>第一步 · 选择委托类型。类型决定授权范围、预算与轮次；带演示标记的类型会注入特定故障，用于观察运行时的防护。</div>
       <div class="wz-cards">${templates.map(t => `
         <button class="wz-card${t.key === wizard.tplKey ? " active" : ""}" data-wz-tpl="${esc(t.key)}">
           <div class="wz-t"><span>${esc(tplTitle(t.key))}</span>

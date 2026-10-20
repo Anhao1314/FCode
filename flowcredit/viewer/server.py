@@ -54,6 +54,10 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 __all__ = ["main"]
 
+#: The first domain module. Scenarios still come from demo fixtures; the
+#: vocabulary of the runtime already comes from the module registry.
+DOMAIN_KEY = "finance-research"
+
 VIEWER_DIR = Path(__file__).resolve().parent
 #: The desktop shell points this at the user's Application Support directory:
 #: a packaged .app bundle is read-only, and run records belong to the user.
@@ -96,8 +100,9 @@ class Runtime:
         self.TaskStore = m.TaskStore
         m = imp("flowagent.core.plan")
         self.Plan = m.Plan
-        m = imp("flowagent.domains.finance")
-        self.verify_observation = m.verify_observation
+        m = imp("flowagent.domains")
+        self.get_domain = m.get_domain
+        self.list_domains = m.list_domains
         m = imp("flowagent.demo.fixtures")
         self.SCENARIOS = m.SCENARIOS
         self.AVAILABLE = m.AVAILABLE
@@ -129,9 +134,22 @@ class Runtime:
 
     def tool_contracts(self) -> list[dict]:
         """The registered contracts (name, effect, version, schemas)."""
-        world = self.FinanceWorld()
-        registry = self.ToolRegistry(self.build_finance_tools(world))
+        module = self.get_domain(DOMAIN_KEY)
+        world = module.create_world()
+        registry = self.ToolRegistry(module.build_tools(world))
         return [registry.get(tool["name"]).contract() for tool in registry.catalog()]
+
+    def modules(self) -> list[dict]:
+        """The domain modules this runtime can host, for the console."""
+        return [
+            {
+                "key": module.key,
+                "title": module.title,
+                "reportTemplate": module.report_template,
+                "approvalTools": list(module.approval_tools),
+            }
+            for module in self.list_domains()
+        ]
 
     def templates(self) -> list[dict]:
         out = []
@@ -374,8 +392,9 @@ class RunManager:
             run_dir = RUNS_DIR / run.id
             db = run_dir / "task.sqlite"
             store = rt.TaskStore(db)
-            world = rt.FinanceWorld(partial=scenario.partial_corpus)
-            registry = rt.ToolRegistry(rt.build_finance_tools(world))
+            module = rt.get_domain(DOMAIN_KEY)
+            world = module.create_world(partial=scenario.partial_corpus)
+            registry = rt.ToolRegistry(module.build_tools(world))
             receipts = rt.ReceiptStore(store)
             issued: dict[str, str] = {}
 
@@ -405,7 +424,7 @@ class RunManager:
                 world=world,
                 limits=limits,
                 receipts=receipts,
-                verifier=lambda observation: rt.verify_observation(world, observation),
+                verifier=lambda observation: module.verify(world, observation),
             )
             recorder = rt.TraceRecorder(
                 store, provider_name=provider.name, model_name=provider.model
@@ -431,7 +450,12 @@ class RunManager:
                     task_id=f"task-{run.id}",
                     objective=run.objective,
                     principal="console-operator",
-                    binding={"scenario": scenario.key, "corpus": "synthetic-authored-v1", "source": "viewer-live"},
+                    binding={
+                    "scenario": scenario.key,
+                    "module": module.key,
+                    "corpus": "synthetic-authored-v1",
+                    "source": "viewer-live",
+                },
                     allowed_tools=list(scenario.allowed_tools),
                     grant=scenario.grant,
                 )
@@ -445,7 +469,7 @@ class RunManager:
 
             loop = rt.Loop(
                 harness,
-                planner=rt.FinancePlanner(),
+                planner=module.make_planner(),
                 max_rounds=max_rounds,
                 observer=observer,
                 control=control,
@@ -472,7 +496,7 @@ class RunManager:
                     task = harness.reconcile(task, issued.get("ref", ""))
                     task = rt.Loop(
                         harness,
-                        planner=rt.FinancePlanner(),
+                        planner=module.make_planner(),
                         max_rounds=max_rounds,
                         observer=observer,
                         control=control,
@@ -991,10 +1015,11 @@ def _run_crash(rt: Runtime, harness, store, world, scenario, task, observer, db:
         timeout=180,
     )
     resumed = store.load(task.id)
-    memory = rt.Loop(harness, planner=rt.FinancePlanner()).restore(resumed)
+    module = rt.get_domain(DOMAIN_KEY)
+    memory = rt.Loop(harness, planner=module.make_planner()).restore(resumed)
     world.apply_state(memory.state())
     return rt.Loop(
-        harness, planner=rt.FinancePlanner(), max_rounds=scenario.max_rounds, observer=observer
+        harness, planner=module.make_planner(), max_rounds=scenario.max_rounds, observer=observer
     ).run(resumed.id)
 
 
@@ -1104,12 +1129,20 @@ class Handler(SimpleHTTPRequestHandler):
                     "runtimeError": mgr.runtime_error,
                     "pace": mgr.pace,
                     "templates": len(mgr.runtime.templates()) if live else 0,
+                    "domain": (
+                        {"key": DOMAIN_KEY, "title": mgr.runtime.get_domain(DOMAIN_KEY).title}
+                        if live else None
+                    ),
                 }
             )
         if path == "/api/templates":
             if mgr.runtime is None:
                 return self._json({"error": mgr.runtime_error}, 503)
             return self._json(mgr.runtime.templates())
+        if path == "/api/modules":
+            if mgr.runtime is None:
+                return self._json({"error": mgr.runtime_error}, 503)
+            return self._json({"modules": mgr.runtime.modules()})
         if path == "/api/tools":
             if mgr.runtime is None:
                 return self._json({"error": mgr.runtime_error}, 503)
