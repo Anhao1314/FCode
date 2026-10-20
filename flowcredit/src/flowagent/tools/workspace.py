@@ -1,0 +1,177 @@
+"""Workspace tools: capabilities every digital-economy module needs.
+
+These are not finance tools and they are not audit tools. They are the shared
+surface of the workbench — read evidence, search it, produce cited artifacts,
+fetch a host-configured source — and every domain module composes them next to
+its own toolset.
+
+Keeping them here is what stops a second domain (audit, quant, …) from
+re-implementing ingestion, or worse, from growing its own half-compatible copy
+inside the kernel.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+from .artifacts import ArtifactStore
+from .base import EFFECT_NETWORK, EFFECT_READ, EFFECT_WRITE, Param, ToolSpec
+from .connectors import ConnectorRegistry
+from .evidence import EvidenceStore
+
+__all__ = ["build_workspace_tools"]
+
+
+def build_workspace_tools(
+    evidence: EvidenceStore,
+    artifacts: ArtifactStore,
+    connectors: ConnectorRegistry,
+) -> list[ToolSpec]:
+    """Compose the shared tools bound to their stores."""
+
+    def ingest_file(arguments: dict[str, Any]) -> dict[str, Any]:
+        return evidence.ingest(arguments["path"])
+
+    def search_corpus(arguments: dict[str, Any]) -> dict[str, Any]:
+        return evidence.search(arguments["query"], int(arguments.get("limit") or 10))
+
+    def read_slice(arguments: dict[str, Any]) -> dict[str, Any]:
+        return evidence.read_slice(
+            arguments["doc_id"],
+            int(arguments.get("start") or 1),
+            arguments.get("end"),
+        )
+
+    def working_paper_append(arguments: dict[str, Any]) -> dict[str, Any]:
+        return artifacts.append_section(
+            title=arguments["title"],
+            body=arguments["body"],
+            citations=list(arguments.get("citations") or []),
+        )
+
+    def fetch_source(arguments: dict[str, Any]) -> dict[str, Any]:
+        return connectors.fetch(arguments["source"], arguments.get("key"))
+
+    return [
+        ToolSpec(
+            name="ingest_file",
+            summary="Ingest a text/CSV/JSON file inside the evidence sandbox; returns a content hash and line anchors",
+            effect=EFFECT_READ,
+            params=(
+                Param(
+                    name="path",
+                    kind="string",
+                    required=True,
+                    description="path relative to the evidence root (absolute paths and .. are refused)",
+                ),
+            ),
+            handler=ingest_file,
+            outputs=(
+                Param.output("doc_id", "string"),
+                Param.output("kind", "string"),
+                Param.output("size", "integer"),
+                Param.output("sha256", "string"),
+                Param.output("lines", "integer"),
+                Param.output("rows", "integer", required=False, nullable=True),
+                Param.output("columns", "array", required=False, nullable=True),
+            ),
+            version="1.0",
+        ),
+        ToolSpec(
+            name="search_corpus",
+            summary="Search ingested evidence by substring; returns hits with doc_id and line anchors",
+            effect=EFFECT_READ,
+            params=(
+                Param(name="query", kind="string", required=True, description="case-insensitive substring"),
+                Param(name="limit", kind="integer", required=False, minimum=1, maximum=50, description="max hits (default 10)"),
+            ),
+            handler=search_corpus,
+            outputs=(
+                Param.output("query", "string"),
+                Param.output("hits", "array"),
+                Param.output("scanned", "integer"),
+                Param.output("truncated", "boolean"),
+            ),
+            version="1.0",
+        ),
+        ToolSpec(
+            name="read_slice",
+            summary="Read a bounded line range from ingested evidence; whole documents are never dumped",
+            effect=EFFECT_READ,
+            params=(
+                Param(name="doc_id", kind="string", required=True, description="doc_id returned by ingest_file"),
+                Param(name="start", kind="integer", required=False, minimum=1, description="first line (1-based, default 1)"),
+                Param(name="end", kind="integer", required=False, minimum=1, description="last line (inclusive; window capped at 80 lines)"),
+            ),
+            handler=read_slice,
+            outputs=(
+                Param.output("doc_id", "string"),
+                Param.output("start", "integer"),
+                Param.output("end", "integer"),
+                Param.output("lines", "array"),
+                Param.output("truncated", "boolean"),
+                Param.output("total_lines", "integer"),
+            ),
+            version="1.0",
+        ),
+        ToolSpec(
+            name="working_paper_append",
+            summary="Append one cited section to the working paper; content-addressed and approval-gated",
+            effect=EFFECT_WRITE,
+            params=(
+                Param(name="title", kind="string", required=True, description="section heading"),
+                Param(name="body", kind="string", required=True, description="section body, max 8000 characters"),
+                Param(
+                    name="citations",
+                    kind="array",
+                    required=False,
+                    maximum=20,
+                    description="doc anchors such as doc_fy2025#L12 or evidence:<hash>#L3",
+                ),
+            ),
+            handler=working_paper_append,
+            outputs=(
+                Param.output("artifact_id", "string"),
+                Param.output("path", "string"),
+                Param.output("sha256", "string"),
+                Param.output("bytes", "integer"),
+                Param.output("section", "string"),
+                Param.output("citations", "integer"),
+            ),
+            version="1.0",
+        ),
+        ToolSpec(
+            name="fetch_source",
+            summary="Fetch a host-configured external source by name; endpoint and credentials stay with the host",
+            effect=EFFECT_NETWORK,
+            params=(
+                Param(
+                    name="source",
+                    kind="string",
+                    required=True,
+                    enum=connectors.names(),
+                    description="configured source name",
+                ),
+                Param(
+                    name="key",
+                    kind="string",
+                    required=False,
+                    description="optional lookup key appended as a query parameter",
+                ),
+            ),
+            handler=fetch_source,
+            outputs=(
+                Param.output("source", "string"),
+                Param.output("url", "string"),
+                Param.output("status", "integer"),
+                Param.output("content_type", "string"),
+                Param.output("sha256", "string"),
+                Param.output("bytes", "integer"),
+                Param.output("retrieved_at", "string"),
+                Param.output("payload", "object"),
+                Param.output("request_id", "string"),
+                Param.output("latency_ms", "integer"),
+            ),
+            version="1.0",
+        ),
+    ]

@@ -14,6 +14,7 @@ from typing import Any
 
 from ..base import EFFECT_NETWORK, EFFECT_READ, EFFECT_WRITE, Param, ToolSpec
 from ..connectors import ConnectorRegistry, default_registry
+from ..workspace import build_workspace_tools
 from ..artifacts import ArtifactStore
 from ..evidence import EvidenceStore
 from .authority import evaluate_fact_authority
@@ -83,29 +84,6 @@ def build_finance_tools(
 
     def report_blocked(arguments: dict[str, Any]) -> dict[str, Any]:
         return world.report_blocked(arguments["reason"])
-
-    def ingest_file(arguments: dict[str, Any]) -> dict[str, Any]:
-        return evidence.ingest(arguments["path"])
-
-    def search_corpus(arguments: dict[str, Any]) -> dict[str, Any]:
-        return evidence.search(arguments["query"], int(arguments.get("limit") or 10))
-
-    def read_slice(arguments: dict[str, Any]) -> dict[str, Any]:
-        return evidence.read_slice(
-            arguments["doc_id"],
-            int(arguments.get("start") or 1),
-            arguments.get("end"),
-        )
-
-    def working_paper_append(arguments: dict[str, Any]) -> dict[str, Any]:
-        return artifacts.append_section(
-            title=arguments["title"],
-            body=arguments["body"],
-            citations=list(arguments.get("citations") or []),
-        )
-
-    def fetch_source(arguments: dict[str, Any]) -> dict[str, Any]:
-        return connectors.fetch(arguments["source"], arguments.get("key"))
 
     doc_param = Param(
         name="doc_id",
@@ -235,125 +213,4 @@ def build_finance_tools(
             ),
             version="1.0",
         ),
-        ToolSpec(
-            name="ingest_file",
-            summary="Ingest a text/CSV/JSON file inside the evidence sandbox; returns a content hash and line anchors",
-            effect=EFFECT_READ,
-            params=(
-                Param(
-                    name="path",
-                    kind="string",
-                    required=True,
-                    description="path relative to the evidence root (absolute paths and .. are refused)",
-                ),
-            ),
-            handler=ingest_file,
-            outputs=(
-                out("doc_id", "string"),
-                out("kind", "string"),
-                out("size", "integer"),
-                out("sha256", "string"),
-                out("lines", "integer"),
-                out("rows", "integer", required=False, nullable=True),
-                out("columns", "array", required=False, nullable=True),
-            ),
-            version="1.0",
-        ),
-        ToolSpec(
-            name="search_corpus",
-            summary="Search ingested evidence by substring; returns hits with doc_id and line anchors",
-            effect=EFFECT_READ,
-            params=(
-                Param(name="query", kind="string", required=True, description="case-insensitive substring"),
-                Param(name="limit", kind="integer", required=False, minimum=1, maximum=50, description="max hits (default 10)"),
-            ),
-            handler=search_corpus,
-            outputs=(
-                out("query", "string"),
-                out("hits", "array"),
-                out("scanned", "integer"),
-                out("truncated", "boolean"),
-            ),
-            version="1.0",
-        ),
-        ToolSpec(
-            name="read_slice",
-            summary="Read a bounded line range from ingested evidence; whole documents are never dumped",
-            effect=EFFECT_READ,
-            params=(
-                Param(name="doc_id", kind="string", required=True, description="doc_id returned by ingest_file"),
-                Param(name="start", kind="integer", required=False, minimum=1, description="first line (1-based, default 1)"),
-                Param(name="end", kind="integer", required=False, minimum=1, description="last line (inclusive; window capped at 80 lines)"),
-            ),
-            handler=read_slice,
-            outputs=(
-                out("doc_id", "string"),
-                out("start", "integer"),
-                out("end", "integer"),
-                out("lines", "array"),
-                out("truncated", "boolean"),
-                out("total_lines", "integer"),
-            ),
-            version="1.0",
-        ),
-        ToolSpec(
-            name="working_paper_append",
-            summary="Append one cited section to the working paper; content-addressed and approval-gated",
-            effect=EFFECT_WRITE,
-            params=(
-                Param(name="title", kind="string", required=True, description="section heading"),
-                Param(name="body", kind="string", required=True, description="section body, max 8000 characters"),
-                Param(
-                    name="citations",
-                    kind="array",
-                    required=False,
-                    maximum=20,
-                    description="doc anchors such as doc_fy2025#L12 or evidence:<hash>#L3",
-                ),
-            ),
-            handler=working_paper_append,
-            outputs=(
-                out("artifact_id", "string"),
-                out("path", "string"),
-                out("sha256", "string"),
-                out("bytes", "integer"),
-                out("section", "string"),
-                out("citations", "integer"),
-            ),
-            version="1.0",
-        ),
-        ToolSpec(
-            name="fetch_source",
-            summary="Fetch a host-configured external source by name; endpoint and credentials stay with the host",
-            effect=EFFECT_NETWORK,
-            params=(
-                Param(
-                    name="source",
-                    kind="string",
-                    required=True,
-                    enum=connectors.names(),
-                    description="configured source name",
-                ),
-                Param(
-                    name="key",
-                    kind="string",
-                    required=False,
-                    description="optional lookup key appended as a query parameter",
-                ),
-            ),
-            handler=fetch_source,
-            outputs=(
-                out("source", "string"),
-                out("url", "string"),
-                out("status", "integer"),
-                out("content_type", "string"),
-                out("sha256", "string"),
-                out("bytes", "integer"),
-                out("retrieved_at", "string"),
-                out("payload", "object"),
-                out("request_id", "string"),
-                out("latency_ms", "integer"),
-            ),
-            version="1.0",
-        ),
-    ]
+    ] + build_workspace_tools(evidence, artifacts, connectors)

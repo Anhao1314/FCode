@@ -51,6 +51,11 @@ class Param:
     #: Output contracts only: an explicitly nullable field may be None.
     nullable: bool = False
 
+    @classmethod
+    def output(cls, name: str, kind: str, required: bool = True, nullable: bool = False) -> "Param":
+        """Declare an output-contract field (shorthand for tool builders)."""
+        return cls(name=name, kind=kind, required=required, nullable=nullable)
+
     def to_schema(self) -> dict[str, Any]:
         schema: dict[str, Any] = {"type": self.kind, "required": self.required}
         if self.enum is not None:
