@@ -165,6 +165,7 @@ class Runtime:
                     "expected": scenario.expected_status,
                     "max_rounds": scenario.max_rounds,
                     "limits": limits.to_dict(),
+                    "module": DOMAIN_KEY,
                 }
             )
         return out

@@ -888,3 +888,10 @@ body { font-size: 13px; line-height: 1.55; }
 .tr-scope { font: 10px var(--mono); color: var(--text-3); }
 .tr-summary { font-size: 11.5px; color: var(--text-2); margin-top: 3px; line-height: 1.5; }
 .tr-usage { font: 10px var(--mono); color: var(--text-3); margin-top: 4px; }
+
+/* ========================================================== 模块分组 */
+.tpl-group, .wz-group {
+  font: 600 10px var(--mono); letter-spacing: .09em; text-transform: uppercase;
+  color: var(--text-3); padding: 8px 11px 4px;
+}
+.wz-group { padding: 4px 2px 6px; }

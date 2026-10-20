@@ -236,6 +236,20 @@ const tplTitle = key => {
   const template = templates.find(t => t.key === key);
   return template ? template.title.split("：")[0] : (TPL_FALLBACK[key] || key || "—");
 };
+function templateGroups() {
+  const groups = new Map();
+  for (const template of templates) {
+    const key = template.module || "";
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(template);
+  }
+  return [...groups.entries()].map(([key, items]) => ({
+    key,
+    title: (modules.find(module => module.key === key) || {}).title || key || "模块",
+    items,
+  }));
+}
+
 const shortObjective = text => {
   const s = String(text || "").replace(/\s+/g, " ").trim();
   return s.length > 22 ? s.slice(0, 22) + "…" : s;
@@ -2055,10 +2069,13 @@ function renderApprovalMenu() {
 function renderTemplateMenu() {
   const menu = document.getElementById("tpl-menu");
   if (!menu) return;
-  menu.innerHTML = templates.map(t => `<button class="tpl-item${t.key === tplKey ? " active" : ""}" data-tpl="${esc(t.key)}">
-    <span class="t"><span>${esc(t.title)}</span><span class="m">${t.limits ? t.limits.max_calls : "?"} calls · ${t.max_rounds} rounds</span></span>
-    <span class="d">${esc(t.story)}</span>
-  </button>`).join("") + `<div class="tpl-note">离线 mock：任意目标都会执行同一套研究蓝图（作用于合成语料）；模板决定授权、预算与故障注入。</div>`;
+  menu.innerHTML = templateGroups().map(group =>
+    `<div class="tpl-group">${esc(group.title)}</div>` +
+    group.items.map(t => `<button class="tpl-item${t.key === tplKey ? " active" : ""}" data-tpl="${esc(t.key)}">
+      <span class="t"><span>${esc(t.title)}</span><span class="m">${t.limits ? t.limits.max_calls : "?"} calls · ${t.max_rounds} rounds</span></span>
+      <span class="d">${esc(t.story)}</span>
+    </button>`).join("")
+  ).join("") + `<div class="tpl-note">离线 mock：任意目标都会执行同一套研究蓝图（作用于合成语料）；模块决定工具与验证，模板决定授权、预算与故障注入。</div>`;
   for (const button of menu.querySelectorAll("[data-tpl]")) {
     button.addEventListener("click", () => {
       setTemplate(button.dataset.tpl);
@@ -2407,15 +2424,15 @@ function renderWizard() {
   const limits = template.limits || {};
 
   if (wizard.step === 1) {
-    const moduleTitle = (modules[0] || {}).title || "—";
-    body.innerHTML = `<div class="wz-hint">模块 · ${esc(moduleTitle)}<br>第一步 · 选择委托类型。类型决定授权范围、预算与轮次；带演示标记的类型会注入特定故障，用于观察运行时的防护。</div>
-      <div class="wz-cards">${templates.map(t => `
+    body.innerHTML = `<div class="wz-hint">第一步 · 选择委托类型。类型决定授权范围、预算与轮次；带演示标记的类型会注入特定故障，用于观察运行时的防护。</div>
+      ${templateGroups().map(group => `<div class="wz-group">${esc(group.title)}</div>
+      <div class="wz-cards">${group.items.map(t => `
         <button class="wz-card${t.key === wizard.tplKey ? " active" : ""}" data-wz-tpl="${esc(t.key)}">
           <div class="wz-t"><span>${esc(tplTitle(t.key))}</span>
             <span class="wz-badge${t.key === "full" ? "" : " demo"}">${t.key === "full" ? "标准委托" : "演示"}</span></div>
           <div class="wz-d">${esc(t.story || "")}</div>
           <div class="wz-m">${t.limits ? num(t.limits.max_calls) + " calls · " + num(t.limits.max_cost_microusd) + " µUSD · " : ""}${t.max_rounds || "?"} 轮</div>
-        </button>`).join("")}</div>`;
+        </button>`).join("")}</div>`).join("")}`;
     foot.innerHTML = `<button class="a-btn" data-wz-close2>取消</button><span class="grow"></span><button class="a-btn strong" data-wz-next>下一步</button>`;
     return;
   }
