@@ -1,5 +1,9 @@
 "use strict";
 
+import {
+  canonical, sha256Hex, verifyChain, esc, pct, pp, num, shortHash, stripTags,
+} from "./core/format.js";
+
 /* ------------------------------------------------------------------- data */
 
 const SCENARIOS = [
@@ -109,7 +113,7 @@ function updateStatusline() {
       `成功率 ${rate}% · 总成本 ${num(totalCost)} µUSD · ⌘N 新建`);
     return;
   }
-  const trace = (live && live.trace) || currentTrace;
+  const trace = shownTrace();
   if (!trace) {
     setStatusline("<b>FCode</b>", "⌘K 命令 · ⌘N 新建委托 · ⌘. 停止 · ↑↓ 历史");
     return;
@@ -119,7 +123,8 @@ function updateStatusline() {
   const model = trace.model || {};
   const rounds = (trace.rounds || []).length;
   const statusMap = { succeeded: "成功", failed: "失败", denied: "拒绝", stopped: "已停止" };
-  const state = live ? (live.finished ? "已结束" : `第 ${rounds} 轮`)
+  const s = activeSession();
+  const state = s ? (s.finished ? "已结束" : `第 ${rounds} 轮`)
     : (statusMap[(trace.terminal && trace.terminal.status) || ""] || (trace.terminal && trace.terminal.status) || "");
   const left = `<b>${esc(model.provider || "offline-mock")}</b> <span class="sl-sep">·</span> ${state ? esc(state) : "—"}`;
   const right = budget
@@ -129,9 +134,23 @@ function updateStatusline() {
 }
 
 const cache = new Map();
-let currentKey = null;
-let currentTrace = null;
-let currentCheck = null;
+/* 单一 UI 状态源：视图键、激活会话、静态 trace、链校验与主区模式；sessions 仍只是会话注册表。 */
+const store = {
+  key: null,        // 当前视图键
+  sessionId: null,  // 当前激活会话 id
+  trace: null,      // 非会话视图的 trace
+  check: null,      // 当前链校验结果
+  mode: "run",      // 最近一次主区模式
+};
+
+function activeSession() {
+  return store.sessionId ? sessions.get(store.sessionId) || null : null;
+}
+
+function shownTrace() {
+  const s = activeSession();
+  return (s && s.trace) || store.trace;
+}
 let railTab = "events";
 let railOpen = window.innerWidth > 1100;
 let railFilter = localStorage.getItem("fa.railFilter") || "key";
@@ -148,7 +167,6 @@ let health = null;      // /api/health payload
 let templates = [];     // /api/templates
 let tplKey = "full";    // selected template
 let runHistory = [];    // /api/runs
-let live = null;        // 当前激活的会话（指向 sessions 中的一项）
 let runFilter = "";     // 运行记录搜索词
 let toolContracts = null; // /api/tools，工具契约（含版本与 effect）
 let modules = [];         // /api/modules，域模块（金融研究 / 审计 / 量化…）
@@ -158,39 +176,6 @@ let scenesOpen = localStorage.getItem("fa.scenesOpen"); // null | "1" | "0"
 /* 多会话：每个 run 一个会话对象；后台会话保持 SSE 流，只是不渲染 */
 const sessions = new Map();
 
-/* --------------------------------------------------------- canonical json */
-
-function canonical(value) {
-  if (value === null || typeof value !== "object") return JSON.stringify(value);
-  if (Array.isArray(value)) return "[" + value.map(canonical).join(",") + "]";
-  return "{" + Object.keys(value).sort().map(k => JSON.stringify(k) + ":" + canonical(value[k])).join(",") + "}";
-}
-
-async function sha256Hex(text) {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
-  return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, "0")).join("");
-}
-
-async function verifyChain(trace) {
-  const events = trace.events || [];
-  if (!events.length) return { ok: false, reason: "trace 里没有事件" };
-  let previous = null;
-  for (let i = 0; i < events.length; i++) {
-    const e = events[i];
-    if (e.sequence !== i + 1) return { ok: false, reason: `第 ${i + 1} 个事件序号不连续` };
-    if (e.prev_hash !== previous) return { ok: false, reason: `第 ${i + 1} 个事件没有链接到前一个` };
-    const expected = await sha256Hex(canonical({
-      sequence: e.sequence, type: e.type, payload: e.payload, prev_hash: e.prev_hash, at: e.at
-    }));
-    if (expected !== e.hash) return { ok: false, reason: `第 ${i + 1} 个事件（${e.type}）哈希不匹配` };
-    previous = e.hash;
-  }
-  const chain = trace.chain || {};
-  if (chain.head_hash !== previous) return { ok: false, reason: "链头与最后一个事件不一致" };
-  if (chain.event_count !== events.length) return { ok: false, reason: "事件计数与实际不符" };
-  return { ok: true, events: events.length, head: previous };
-}
-
 /* ---------------------------------------------------------------- helpers */
 
 function renderMain(html, { mode = "run", scroll = null } = {}) {
@@ -198,16 +183,26 @@ function renderMain(html, { mode = "run", scroll = null } = {}) {
   if (!main) return;
   main.innerHTML = html;
   main.dataset.view = mode;
+  store.mode = mode;
   if (scroll === "top") main.scrollTop = 0;
   else if (scroll === "bottom") main.scrollTop = main.scrollHeight;
 }
 
-const esc = value => String(value).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-const pct = bp => (bp / 100).toFixed(2) + "%";
-const pp = bp => (bp >= 0 ? "+" : "") + (bp / 100).toFixed(2) + " pp";
-const num = n => Number(n).toLocaleString("en-US");
-const shortHash = h => String(h || "").slice(0, 12);
-const stripTags = html => String(html).replace(/<[^>]*>/g, "").replace(/\s+/g, " ").trim();
+/* 主区视图入口：只有导航动作走这里；各渲染函数是具体实现。 */
+const MODE_ENTRY = {
+  run: payload => render(payload.trace, payload.title),
+  intake: () => renderIntake(),
+  ledger: () => openLedger(),
+  settings: () => openSettingsPage(),
+};
+
+function renderMode(mode, payload = {}) {
+  const entry = MODE_ENTRY[mode];
+  if (!entry) throw new Error(`unknown view mode: ${mode}`);
+  store.mode = mode;
+  return entry(payload);
+}
+
 const runLabel = run => run.name || shortObjective(run.objective);
 
 const stateClass = status =>
@@ -305,9 +300,9 @@ function openLedger() {
   if (intake.active) closeIntake(false);
   if (settingsOpen) closeSettingsPage(false);
   ledgerOpen = true;
-  if (live) detachLive();
-  currentKey = null;
-  currentTrace = null;
+  if (activeSession()) detachLive();
+  store.key = null;
+  store.trace = null;
   renderNav();
   renderTabs();
   document.getElementById("tb-title").textContent = "工作台";
@@ -406,12 +401,12 @@ async function deleteRun(id) {
   }
   const s = sessions.get(id);
   if (s) { if (s.es) s.es.close(); sessions.delete(id); }
-  if (live === s) live = null;
+  if (store.sessionId === id) store.sessionId = null;
   cache.delete("run:" + id);
-  if (currentKey === "run:" + id) {
-    currentKey = null;
-    currentTrace = null;
-    openLedger();
+  if (store.key === "run:" + id) {
+    store.key = null;
+    store.trace = null;
+    renderMode("ledger");
   } else if (ledgerOpen) {
     renderLedger();
   }
@@ -473,17 +468,11 @@ function renderScenarios() {
   nav.innerHTML = SCENARIOS.map(([key, label]) => {
     const trace = cache.get(key);
     const meta = trace ? `${(trace.rounds || []).length} 轮` : "";
-    return `<button class="session scene-row${key === currentKey ? " active" : ""}" data-key="${key}">
+    return `<button class="session scene-row${key === store.key ? " active" : ""}" data-key="${key}">
       <span class="slabel">${esc(label)}</span>
       <span class="smeta">${meta}</span>
     </button>`;
   }).join("");
-  for (const button of nav.querySelectorAll("button")) {
-    button.addEventListener("click", () => {
-      setScenesOpen(true);
-      select(button.dataset.key, labelOf(button.dataset.key));
-    });
-  }
   const count = document.getElementById("scene-count");
   if (count) count.textContent = String(SCENARIOS.length);
   applyScenesOpen(scenesDefaultOpen());
@@ -497,7 +486,7 @@ const STATUS_MARK = {
 };
 
 function runRowHtml(run) {
-  const active = currentKey === "run:" + run.id;
+  const active = store.key === "run:" + run.id;
   const running = run.status === "running";
   const cls = running ? "live" : stateClass(run.status);
   const meta = running ? "运行中" : runTimeText(run.created);
@@ -588,50 +577,6 @@ function renderRuns() {
     }
   }
   runNav.innerHTML = html;
-
-  for (const row of runNav.querySelectorAll(".run-row")) {
-    row.addEventListener("click", event => {
-      if (event.target.closest("[data-more]") || event.target.closest(".row-menu") || event.target.closest(".rename-input")) return;
-      selectRun(row.dataset.run);
-    });
-    row.addEventListener("keydown", event => {
-      if (event.target !== row) return;
-      if (event.key === "Enter" || event.key === " ") {
-        event.preventDefault();
-        selectRun(row.dataset.run);
-      }
-    });
-    const label = row.querySelector("[data-name]");
-    label.addEventListener("dblclick", event => { event.stopPropagation(); startRename(row.dataset.run, label); });
-    const more = row.querySelector("[data-more]");
-    more.addEventListener("click", event => {
-      event.stopPropagation();
-      const menu = row.querySelector(".row-menu");
-      const wasHidden = menu.hidden;
-      closeRowMenus();
-      menu.hidden = !wasHidden;
-      if (!menu.hidden) {
-        const del = menu.querySelector('[data-row-act="delete"]');
-        if (del) { del.textContent = "删除"; delete del.dataset.confirm; }
-      }
-    });
-    for (const item of row.querySelectorAll("[data-row-act]")) {
-      item.addEventListener("click", event => {
-        event.stopPropagation();
-        const act = item.dataset.rowAct;
-        if (act === "pin") { closeRowMenus(); togglePin(row.dataset.run); }
-        else if (act === "rename") { closeRowMenus(); startRename(row.dataset.run, label); }
-        else if (act === "delete") {
-          if (item.dataset.confirm === "1") { closeRowMenus(); deleteRun(row.dataset.run); }
-          else { item.dataset.confirm = "1"; item.textContent = "确认删除？"; }
-        }
-      });
-    }
-  }
-  const more = runNav.querySelector("[data-more-older]");
-  if (more) more.addEventListener("click", () => { olderOpen = true; renderRuns(); });
-  const collapse = runNav.querySelector("[data-collapse-older]");
-  if (collapse) collapse.addEventListener("click", () => { olderOpen = false; renderRuns(); });
 }
 
 /* ------------------------------------------------------------------ rail */
@@ -745,35 +690,6 @@ function renderRaw(trace) {
     <pre class="raw-pre">${lines}</pre>`;
 }
 
-function bindRailCopy() {
-  const body = document.getElementById("rail-body");
-  for (const el of body.querySelectorAll("[data-copy]")) {
-    el.addEventListener("click", async () => {
-      const ok = await copyText(el.dataset.copy);
-      toast(ok ? "哈希已复制" : "复制失败");
-    });
-  }
-  const copyRaw = body.querySelector("[data-copy-raw]");
-  if (copyRaw) {
-    copyRaw.addEventListener("click", async () => {
-      if (!currentTrace) return;
-      const ok = await copyText(JSON.stringify(currentTrace, null, 2));
-      toast(ok ? "原文已复制" : "复制失败");
-    });
-  }
-  const download = body.querySelector("[data-download-raw]");
-  if (download) {
-    download.addEventListener("click", () => {
-      if (!currentTrace) return;
-      const blob = new Blob([JSON.stringify(currentTrace, null, 2)], { type: "application/json" });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url; link.download = "trace.json"; link.click();
-      URL.revokeObjectURL(url);
-    });
-  }
-}
-
 function renderRail(trace, check) {
   const body = document.getElementById("rail-body");
   if (!trace) { body.innerHTML = railEmptyHtml(); return; }
@@ -789,21 +705,6 @@ function renderRail(trace, check) {
 
   if (railTab === "events") {
     body.innerHTML = renderEvents(trace, check);
-    for (const chip of body.querySelectorAll("[data-rail-filter]")) {
-      chip.addEventListener("click", () => {
-        railFilter = chip.dataset.railFilter;
-        localStorage.setItem("fa.railFilter", railFilter);
-        renderRail(trace, check || { ok: false, reason: "" });
-      });
-    }
-    for (const toggle of body.querySelectorAll("[data-ev-group]")) {
-      toggle.addEventListener("click", () => {
-        const round = Number(toggle.dataset.evGroup);
-        if (evExpanded.has(round)) evExpanded.delete(round); else evExpanded.add(round);
-        renderRail(trace, check || { ok: false, reason: "" });
-      });
-    }
-    bindRailCopy();
     return;
   }
   if (railTab === "tools") {
@@ -812,11 +713,9 @@ function renderRail(trace, check) {
   }
   if (railTab === "chain") {
     body.innerHTML = renderChain(trace, check);
-    bindRailCopy();
     return;
   }
   body.innerHTML = renderRaw(trace);
-  bindRailCopy();
 }
 
 const TOOL_DOODLE_ICON = {
@@ -1308,11 +1207,12 @@ function resultUnit(result) {
 
 /* 判断只属于当前打开的运行；静态 trace 没有可写入的 run id。 */
 function reviewRunId() {
-  const key = currentKey || "";
+  const key = store.key || "";
   if (!key.startsWith("run:")) return null;
   const run = currentRun();
   if (run && run.id) return run.id;
-  if (live && live.id && key === "run:" + live.id) return live.id;
+  const s = activeSession();
+  if (s && s.id && key === "run:" + s.id) return s.id;
   return null;
 }
 
@@ -1552,7 +1452,7 @@ function reviewPanelHtml(trace) {
 function paintReviewPanel(runId) {
   const panel = reviewPanelElement(runId);
   if (!panel) return;
-  const trace = currentTrace || (live && live.trace) || {};
+  const trace = shownTrace() || {};
   panel.innerHTML = reviewPanelInnerHtml(trace, runId);
 }
 
@@ -1589,7 +1489,7 @@ function applyReviewSuggestion(runId, decision, reason) {
   if (!runId || !REVIEW_DECISION[decision]) return;
   const state = reviewStateFor(runId);
   if (state.sending) return;
-  const trace = currentTrace || (live && live.trace) || {};
+  const trace = shownTrace() || {};
   if (!state.appending && recordedReview(trace, runId)) {
     state.appending = true;
     state.recorded = null;
@@ -1643,12 +1543,13 @@ function refreshReviewedTrace(runId, tracePath) {
     .then(trace => {
       if (!trace || !Array.isArray(trace.events)) return null;
       cache.set("run:" + runId, trace);
-      if (currentKey !== "run:" + runId) return trace;
-      currentTrace = trace;
-      if (live && live.id === runId) live.trace = trace;
+      if (store.key !== "run:" + runId) return trace;
+      store.trace = trace;
+      const s = activeSession();
+      if (s && s.id === runId) s.trace = trace;
       verifyChain(trace).then(check => {
-        if (currentKey !== "run:" + runId) return;
-        currentCheck = check;
+        if (store.key !== "run:" + runId) return;
+        store.check = check;
         setChainBadge(check);
       }).catch(() => { /* 链验证失败不阻断判断记录 */ });
       return trace;
@@ -1703,7 +1604,7 @@ async function submitReview(runId) {
     state.reason = "";
     state.error = "";
     paintReviewPanel(runId);
-    loadReviewProfile(currentTrace || (live && live.trace) || {}, { force: true });
+    loadReviewProfile(shownTrace() || {}, { force: true });
     refreshReviewedTrace(runId, data.tracePath);
     const label = REVIEW_LABEL[state.recorded.decision] || state.recorded.decision;
     toast(`已记录 · ${label} · #${sequence === undefined || sequence === null ? "—" : sequence}`);
@@ -1938,9 +1839,9 @@ function bindToggles(root) {
 }
 
 async function render(trace, title) {
-  currentTrace = trace;
+  store.trace = trace;
   const check = await verifyChain(trace);
-  currentCheck = check;
+  store.check = check;
   const task = trace.task || {};
   const terminal = trace.terminal || {};
   const rounds = trace.rounds || [];
@@ -1981,7 +1882,7 @@ async function render(trace, title) {
 
   if (terminal && terminal.status) loadReviewProfile(trace);
   setFoot(
-    `${model.provider || "—"} · ${currentKey && currentKey.startsWith("run:") ? "运行记录" : "只读回放"}`,
+    `${model.provider || "—"} · ${store.key && store.key.startsWith("run:") ? "运行记录" : "只读回放"}`,
     ""
   );
   renderRail(trace, check);
@@ -2030,14 +1931,15 @@ function liveShell(trace) {
     </details>
     <div id="result-slot"></div>`, { mode: "run" });
   const summary = document.querySelector("#thought > summary");
-  if (summary) summary.addEventListener("click", () => { if (live) live.thoughtPinned = true; });
+  if (summary) summary.addEventListener("click", () => { const s = activeSession(); if (s) s.thoughtPinned = true; });
 }
 
 function liveNote(trace) {
   const events = trace.events || [];
   const rounds = trace.rounds || [];
   const terminal = trace.terminal || {};
-  if (live && live.pending) return `<span class="yel">等待你的决定 · ${esc(live.pending.tool)}</span>`;
+  const s = activeSession();
+  if (s && s.pending) return `<span class="yel">等待你的决定 · ${esc(s.pending.tool)}</span>`;
   if (terminal.status) {
     const code = (terminal.failure || {}).code;
     const label = terminal.status === "succeeded" ? "已完成" : "已结束";
@@ -2063,9 +1965,9 @@ function liveApply(s, data) {
   const running = !data.finished && !s.finished;
   s.trace = trace;
   s.lastData = data;
-  currentTrace = trace;
-  currentKey = "run:" + s.id;
-  currentCheck = { ok: true, live: true, events: (trace.events || []).length };
+  store.trace = trace;
+  store.key = "run:" + s.id;
+  store.check = { ok: true, live: true, events: (trace.events || []).length };
 
   const scenario = trace.task && trace.task.binding ? trace.task.binding.scenario : s.template;
   renderHead(trace, "运行 · " + tplTitle(scenario));
@@ -2179,15 +2081,15 @@ function liveApply(s, data) {
     s.eventCount = events;
     const railBody = document.getElementById("rail-body");
     const railStick = railBody.scrollHeight - railBody.scrollTop - railBody.clientHeight < 60;
-    renderRail(trace, currentCheck);
+    renderRail(trace, store.check);
     if (railStick) railBody.scrollTop = railBody.scrollHeight;
   }
 
   if (trace.terminal && trace.terminal.status) {
     const runId = s.id;
     verifyChain(trace).then(check => {
-      if (!sessions.has(runId) || currentKey !== "run:" + runId) return;
-      currentCheck = check;
+      if (!sessions.has(runId) || store.key !== "run:" + runId) return;
+      store.check = check;
       setChainBadge(check);
       renderRail(trace, check);
     });
@@ -2351,18 +2253,20 @@ function renderApproval(pending, deciding) {
 function paintApproval() {
   const slot = document.getElementById("approval-slot");
   if (!slot) return;
-  slot.innerHTML = live && live.pending ? renderApproval(live.pending, live.deciding) : "";
+  const s = activeSession();
+  slot.innerHTML = s && s.pending ? renderApproval(s.pending, s.deciding) : "";
 }
 
 async function decideApproval(allow) {
-  if (!live || !live.pending || live.deciding) return;
-  const pending = live.pending;
+  const s = activeSession();
+  if (!s || !s.pending || s.deciding) return;
+  const pending = s.pending;
   const rememberEl = document.querySelector("[data-remember]");
   const remember = !!(rememberEl && rememberEl.checked && allow);
-  live.deciding = { allow };
+  s.deciding = { allow };
   paintApproval();
   try {
-    const response = await fetch(`/api/runs/${encodeURIComponent(live.id)}/decision`, {
+    const response = await fetch(`/api/runs/${encodeURIComponent(s.id)}/decision`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ approvalId: pending.id, allow, remember }),
@@ -2373,7 +2277,7 @@ async function decideApproval(allow) {
     }
     toast(allow ? "已允许 · 运行继续" : "已拒绝 · 运行将终止");
   } catch (error) {
-    live.deciding = null;
+    s.deciding = null;
     paintApproval();
     toast("决定未送达：" + error.message);
   }
@@ -2383,34 +2287,37 @@ async function decideApproval(allow) {
 
 function paintPlan() {
   const slot = document.getElementById("plan-slot");
-  if (!slot || !live || !live.trace) return;
-  const html = renderPlan(lastPlan(live.trace), {
-    editable: live.running && !live.finished,
-    editing: live.planEditing,
-    confirmId: live.planConfirm,
-    queued: live.planQueued ? live.planQueued.label : "",
+  const s = activeSession();
+  if (!slot || !s || !s.trace) return;
+  const html = renderPlan(lastPlan(s.trace), {
+    editable: s.running && !s.finished,
+    editing: s.planEditing,
+    confirmId: s.planConfirm,
+    queued: s.planQueued ? s.planQueued.label : "",
   });
   slot.innerHTML = html;
-  live.planHtml = html;
+  s.planHtml = html;
 }
 
 function paintBudget() {
   const slot = document.getElementById("budget-slot");
-  if (!slot || !live || !live.trace) return;
-  const html = renderMeters(live.trace, {
-    editable: live.running && !live.finished,
-    editing: live.budgetEditing,
-    queued: !!live.budgetQueued,
+  const s = activeSession();
+  if (!slot || !s || !s.trace) return;
+  const html = renderMeters(s.trace, {
+    editable: s.running && !s.finished,
+    editing: s.budgetEditing,
+    queued: !!s.budgetQueued,
   });
   slot.innerHTML = html;
-  live.budgetHtml = html;
+  s.budgetHtml = html;
 }
 
 async function queuePlan(action, todoId) {
-  if (!live || !live.running) return;
+  const s = activeSession();
+  if (!s || !s.running) return;
   const note = action === "skip" ? "操作员跳过" : "操作员提前";
   try {
-    const response = await fetch(`/api/runs/${encodeURIComponent(live.id)}/plan`, {
+    const response = await fetch(`/api/runs/${encodeURIComponent(s.id)}/plan`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action, todoId, note }),
@@ -2420,8 +2327,8 @@ async function queuePlan(action, todoId) {
       throw new Error(error.error || `HTTP ${response.status}`);
     }
     const label = action === "skip" ? `已排队：跳过 ${todoId}` : `已排队：提前 ${todoId}`;
-    live.planQueued = { label, events: (live.trace.events || []).length };
-    live.planConfirm = null;
+    s.planQueued = { label, events: (s.trace.events || []).length };
+    s.planConfirm = null;
     paintPlan();
     toast(label + " · 下一轮生效");
   } catch (error) {
@@ -2430,9 +2337,10 @@ async function queuePlan(action, todoId) {
 }
 
 async function queueBudget() {
-  if (!live || !live.running) return;
+  const s = activeSession();
+  if (!s || !s.running) return;
   const read = key => Number((document.querySelector(`[data-budget="${key}"]`) || {}).value || 0);
-  const limits = lastBudget(live.trace) ? lastBudget(live.trace).limits : {};
+  const limits = lastBudget(s.trace) ? lastBudget(s.trace).limits : {};
   const payload = {
     maxCalls: read("maxCalls"),
     maxReads: read("maxReads"),
@@ -2447,7 +2355,7 @@ async function queueBudget() {
     return;
   }
   try {
-    const response = await fetch(`/api/runs/${encodeURIComponent(live.id)}/budget`, {
+    const response = await fetch(`/api/runs/${encodeURIComponent(s.id)}/budget`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
@@ -2456,8 +2364,8 @@ async function queueBudget() {
       const error = await response.json().catch(() => ({}));
       throw new Error(error.error || `HTTP ${response.status}`);
     }
-    live.budgetEditing = false;
-    live.budgetQueued = { events: (live.trace.events || []).length };
+    s.budgetEditing = false;
+    s.budgetQueued = { events: (s.trace.events || []).length };
     paintBudget();
     toast("预算调整已排队 · 下一轮生效");
   } catch (error) {
@@ -2486,8 +2394,8 @@ function openLive(id, objective, template) {
   const fresh = !sessions.has(id);
   if (fresh) sessions.set(id, createSession(id, objective, template));
   const s = sessions.get(id);
-  live = s;
-  currentKey = "run:" + id;
+  store.sessionId = s.id;
+  store.key = "run:" + id;
   renderNav();
   renderTabs();
   if (fresh) {
@@ -2524,7 +2432,7 @@ function attachStream(s) {
     if (s.failed || s.finished) return;
     let data;
     try { data = JSON.parse(event.data); } catch { return; }
-    if (live !== s) { stashSessionUpdate(s, data); return; }
+    if (activeSession() !== s) { stashSessionUpdate(s, data); return; }
     liveApply(s, data);
     if (data.finished) finishSession(s, data);
   });
@@ -2541,14 +2449,14 @@ function attachStream(s) {
       tracePath: delta.tracePath,
       error: delta.error,
     };
-    if (live !== s) { stashSessionUpdate(s, data); return; }
+    if (activeSession() !== s) { stashSessionUpdate(s, data); return; }
     liveApply(s, data);
     if (data.finished) finishSession(s, data);
   });
   es.addEventListener("done", event => {
     let data = {};
     try { data = JSON.parse(event.data); } catch { /* empty */ }
-    if (live !== s) {
+    if (activeSession() !== s) {
       stashSessionUpdate(s, Object.assign({}, s.lastData || {}, { finished: true, status: data.status, error: data.error }));
       return;
     }
@@ -2561,7 +2469,7 @@ function attachStream(s) {
     s.failed = true;
     s.running = false;
     refreshRuns();
-    if (live !== s) {
+    if (activeSession() !== s) {
       renderTabs();
       notify("Fcode · 运行失败", String(data.error || "Runtime 未返回任何快照").slice(0, 120));
       return;
@@ -2593,7 +2501,7 @@ function repaintSession(s) {
   }
   if (s.finished || (s.trace.terminal && s.trace.terminal.status)) {
     setComposerRunning(false);
-    currentTrace = s.trace;
+    store.trace = s.trace;
     render(s.trace, "运行 · " + tabTitle(s));
     return;
   }
@@ -2608,7 +2516,7 @@ function repaintSession(s) {
 }
 
 function finishSession(s, data) {
-  if (s.finished) { if (live !== s) renderTabs(); return; }
+  if (s.finished) { if (activeSession() !== s) renderTabs(); return; }
   s.finished = true;
   s.running = false;
   s.pending = null;
@@ -2622,7 +2530,7 @@ function finishSession(s, data) {
   s.trace = trace;
   refreshRuns();
   const status = (trace && trace.terminal && trace.terminal.status) || (data && data.status) || "?";
-  if (live !== s) {
+  if (activeSession() !== s) {
     renderTabs();
     notify(
       status === "succeeded" ? "Fcode · 运行完成" : `Fcode · 运行结束（${status}）`,
@@ -2645,8 +2553,8 @@ function finishSession(s, data) {
     }
     cache.set("run:" + s.id, trace);
     verifyChain(trace).then(check => {
-      if (live !== s) return;
-      currentCheck = check;
+      if (activeSession() !== s) return;
+      store.check = check;
       setChainBadge(check);
       renderRail(trace, check);
     });
@@ -2661,16 +2569,16 @@ function finishSession(s, data) {
     );
   }
   renderTabs();
-  if (live === s) updateStatusline();
-  if (s.autoReport && status === "succeeded" && live === s) {
+  if (activeSession() === s) updateStatusline();
+  if (s.autoReport && status === "succeeded" && activeSession() === s) {
     s.autoReport = false;
-    setTimeout(() => { if (live === s && currentTrace) openReport(); }, 300);
+    setTimeout(() => { if (activeSession() === s && shownTrace()) openReport(); }, 300);
   }
 }
 
 function detachLive() {
   /* 切走：会话保留在后台继续流式，不再渲染 */
-  live = null;
+  store.sessionId = null;
   setComposerRunning(false);
   renderTabs();
 }
@@ -2680,8 +2588,8 @@ function closeSessionTab(id) {
   if (!s) return;
   if (s.es) { s.es.close(); s.es = null; }
   sessions.delete(id);
-  if (live === s) {
-    live = null;
+  if (store.sessionId === id) {
+    store.sessionId = null;
     setComposerRunning(false);
     renderMain(`<div class="empty">标签已关闭。运行仍在服务器上继续，可从左侧运行记录重新打开。</div>`, { mode: "run" });
     document.getElementById("chain-badge").className = "chain-pill";
@@ -2699,7 +2607,7 @@ function renderTabs() {
   const items = [...sessions.values()];
   bar.hidden = items.length === 0;
   bar.innerHTML = items.map(s => {
-    const active = live === s && currentKey === "run:" + s.id;
+    const active = activeSession() === s && store.key === "run:" + s.id;
     const status = s.failed ? "bad"
       : s.finished ? (((s.trace || {}).terminal || {}).status === "succeeded" ? "ok" : "bad")
       : "live";
@@ -2709,21 +2617,6 @@ function renderTabs() {
       <button class="tx" data-tabclose="${esc(s.id)}" title="关闭标签">×</button>
     </div>`;
   }).join("");
-  for (const el of bar.querySelectorAll("[data-tab]")) {
-    el.addEventListener("click", event => {
-      if (event.target.closest("[data-tabclose]")) return;
-      const id = el.dataset.tab;
-      if (currentKey === "run:" + id && live === sessions.get(id)) return;
-      const s = sessions.get(id);
-      if (s) openLive(id, s.objective, s.template);
-    });
-  }
-  for (const btn of bar.querySelectorAll("[data-tabclose]")) {
-    btn.addEventListener("click", event => {
-      event.stopPropagation();
-      closeSessionTab(btn.dataset.tabclose);
-    });
-  }
 }
 
 /* --------------------------------------------------------------- 委托入口
@@ -2881,7 +2774,8 @@ function startIntake(text = "") {
     toast("回放模式：用 python3 viewer/server.py 启动后才能创建委托");
     return;
   }
-  if (live && live.running && !live.finished) {
+  const s = activeSession();
+  if (s && s.running && !s.finished) {
     toast("当前任务还在运行：先停止，或等它结束后再开新委托");
     return;
   }
@@ -2893,7 +2787,7 @@ function startIntake(text = "") {
   intake.readyTask = null;
   intake.thinking = false;
   intake.snapshots = [];
-  intake.returnKey = currentKey;
+  intake.returnKey = store.key;
   intake.returnLabel = document.getElementById("tb-title").textContent || "当前视图";
   document.getElementById("app").classList.add("intake-mode");
   document.getElementById("tb-title").textContent = "新委托 · 需求确认";
@@ -2910,13 +2804,13 @@ function startIntake(text = "") {
       thought: "还没有收到任务描述。",
       choices: [],
     });
-    renderIntake();
+    renderMode("intake");
     ta.focus();
     return;
   }
   intakeSnapshot();
   intake.messages.push({ role: "user", text: value });
-  renderIntake();
+  renderMode("intake");
   intakeRequest(value, null);
 }
 
@@ -3045,7 +2939,8 @@ async function startIntakeRun() {
     setComposerRunning(false);
     toast("委托已受理 · 开始执行");
     openLive(run.id, task.objective, run.template);
-    if (live) live.autoReport = task.spec.output === "memo";
+    const s = activeSession();
+    if (s) s.autoReport = task.spec.output === "memo";
     refreshRuns();
   } catch (error) {
     toast("委托提交失败：" + error.message);
@@ -3063,23 +2958,25 @@ function composerSubmit() {
     autosize(ta);
     return intakeFreeText(text);
   }
-  if (live && live.running && !live.finished) return sendOperatorMessage();
+  const s = activeSession();
+  if (s && s.running && !s.finished) return sendOperatorMessage();
   return sendTask();
 }
 
 /* 运行中插话：乐观渲染排队气泡，入链后由 snapshot 事件确认 */
 async function sendOperatorMessage() {
-  if (!live || !live.running || live.finished) return;
+  const s = activeSession();
+  if (!s || !s.running || s.finished) return;
   const ta = document.getElementById("composer-ta");
   const text = (ta.value || "").trim();
   if (!text) return;
   ta.value = "";
   autosize(ta);
   const msg = { text, state: "queued" };
-  live.queuedMsgs.push(msg);
+  s.queuedMsgs.push(msg);
   paintQueuedMsgs();
   try {
-    const response = await fetch(`/api/runs/${encodeURIComponent(live.id)}/messages`, {
+    const response = await fetch(`/api/runs/${encodeURIComponent(s.id)}/messages`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text }),
@@ -3099,7 +2996,8 @@ async function sendOperatorMessage() {
 function paintQueuedMsgs() {
   const slot = document.getElementById("queued-slot");
   if (!slot) return;
-  const msgs = live && live.queuedMsgs ? live.queuedMsgs : [];
+  const s = activeSession();
+  const msgs = s && s.queuedMsgs ? s.queuedMsgs : [];
   slot.innerHTML = msgs.length ? `<div class="queued-msgs">${msgs.map(m => `
     <div class="msg op ${esc(m.state)}">
       <div class="msg-head">
@@ -3123,10 +3021,11 @@ async function sendTask() {
 }
 
 async function stopRun() {
-  if (!live || !live.running) return;
+  const s = activeSession();
+  if (!s || !s.running) return;
   document.getElementById("run-chip-text").textContent = "正在停止…";
   try {
-    await fetch(`/api/runs/${encodeURIComponent(live.id)}/stop`, { method: "POST" });
+    await fetch(`/api/runs/${encodeURIComponent(s.id)}/stop`, { method: "POST" });
   } catch { /* the stream will settle it */ }
 }
 
@@ -3183,14 +3082,6 @@ function renderApprovalMenu() {
     <span class="t"><span>${esc(title)}</span><span class="m">${esc(key)}</span></span>
     <span class="d">${esc(desc)}</span>
   </button>`).join("") + `<div class="tpl-note">审批只发生在轮次边界，不打断工具执行；拒绝会终止运行并写入签名链。档位对新任务生效。</div>`;
-  for (const button of menu.querySelectorAll("[data-approval-mode]")) {
-    button.addEventListener("click", () => {
-      const changed = button.dataset.approvalMode !== approvalMode;
-      setApprovalMode(button.dataset.approvalMode);
-      menu.hidden = true;
-      if (changed && live && live.running) toast("已切换 · 下一个任务生效");
-    });
-  }
 }
 
 function renderTemplateMenu() {
@@ -3203,12 +3094,6 @@ function renderTemplateMenu() {
       <span class="d">${esc(t.story)}</span>
     </button>`).join("")
   ).join("") + `<div class="tpl-note">离线 mock：任意目标都会执行同一套研究蓝图（作用于合成语料）；模块决定工具与验证，模板决定授权、预算与故障注入。</div>`;
-  for (const button of menu.querySelectorAll("[data-tpl]")) {
-    button.addEventListener("click", () => {
-      setTemplate(button.dataset.tpl);
-      menu.hidden = true;
-    });
-  }
 }
 
 async function initLive() {
@@ -3247,7 +3132,8 @@ async function initLive() {
   fetch("/api/tools", { cache: "no-store" }).then(r => r.ok ? r.json() : null).then(data => {
     if (!data || !Array.isArray(data.tools)) return;
     toolContracts = data.tools;
-    if (currentTrace) renderRail(currentTrace, currentCheck || { ok: false, reason: "" });
+    const trace = shownTrace();
+    if (trace) renderRail(trace, store.check || { ok: false, reason: "" });
   }).catch(() => { /* the tools tab will show 加载中 */ });
   autosize(document.getElementById("composer-ta"));
   refreshRuns();
@@ -3265,12 +3151,12 @@ async function selectRun(id) {
   if (run && (run.status === "running" || !run.tracePath)) {
     return openLive(id, run.objective, run.template);
   }
-  if (live) detachLive();
-  currentKey = "run:" + id;
+  if (activeSession()) detachLive();
+  store.key = "run:" + id;
   renderNav();
   const cached = cache.get("run:" + id);
   if (cached) {
-    await render(cached, "运行 · " + tplTitle(run ? run.template : ""));
+    await renderMode("run", { trace: cached, title: "运行 · " + tplTitle(run ? run.template : "") });
     return;
   }
   renderMain(`<div class="empty">加载运行记录…</div>`, { mode: "loading" });
@@ -3281,7 +3167,7 @@ async function selectRun(id) {
       return response.json();
     });
     cache.set("run:" + id, trace);
-    await render(trace, "运行 · " + tplTitle(run ? run.template : ""));
+    await renderMode("run", { trace, title: "运行 · " + tplTitle(run ? run.template : "") });
     renderNav();
   } catch (error) {
     renderMain(`<div class="empty">无法加载运行记录：${esc(error.message)}</div>`, { mode: "error" });
@@ -3316,8 +3202,8 @@ async function select(key, label) {
   if (key.startsWith("run:")) return selectRun(key.slice(4));
   ledgerOpen = false;
   evExpanded.clear();
-  if (live) detachLive();
-  currentKey = key;
+  if (activeSession()) detachLive();
+  store.key = key;
   renderNav();
   renderMain(`<div class="empty">加载 ${esc(label)}…</div>`, { mode: "loading" });
   const trace = await loadTrace(key);
@@ -3329,15 +3215,16 @@ async function select(key, label) {
     </div>`, { mode: "error" });
     return;
   }
-  await render(trace, label);
+  await renderMode("run", { trace, title: label });
   renderNav();
 }
 
 /* --------------------------------------------------------------- handlers */
 
 async function reverify() {
-  if (!currentTrace) return;
-  const check = await verifyChain(currentTrace);
+  const trace = shownTrace();
+  if (!trace) return;
+  const check = await verifyChain(trace);
   const badge = document.getElementById("chain-badge");
   badge.className = "chain-pill " + (check.ok ? "ok" : "bad") + " pulse";
   badge.innerHTML = check.ok
@@ -3347,9 +3234,10 @@ async function reverify() {
 }
 
 function exportTrace() {
-  if (!currentTrace) return;
-  const name = (currentKey ? currentKey.replace(/:/g, "-") : "trace") + ".trace.json";
-  const blob = new Blob([JSON.stringify(currentTrace, null, 2)], { type: "application/json" });
+  const trace = shownTrace();
+  if (!trace) return;
+  const name = (store.key ? store.key.replace(/:/g, "-") : "trace") + ".trace.json";
+  const blob = new Blob([JSON.stringify(trace, null, 2)], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url; a.download = name; a.click();
@@ -3360,8 +3248,8 @@ function exportTrace() {
 /* ------------------------------------------------------------ 运行操作 */
 
 function currentRun() {
-  if (currentKey && currentKey.startsWith("run:")) {
-    return runHistory.find(item => item.id === currentKey.slice(4)) || null;
+  if (store.key && store.key.startsWith("run:")) {
+    return runHistory.find(item => item.id === store.key.slice(4)) || null;
   }
   return null;
 }
@@ -3442,15 +3330,16 @@ function runActionsHtml(trace) {
   const status = terminal.status || "";
   if (!status) return "";
   const report = `<button class="a-btn strong" data-act="report">签发报告</button>`;
-  if (!(currentKey && currentKey.startsWith("run:"))) {
+  if (!(store.key && store.key.startsWith("run:"))) {
     return `<div class="chips">${costChipsHtml(trace)}</div><div class="actions">${report}</div>`;
   }
   const failure = terminal.failure || {};
   const run = currentRun();
-  const liveId = live && live.id;
+  const session = activeSession();
+  const liveId = session && session.id;
   const canResume = !run || !!run.taskId || (liveId && liveId === run.id);
   const resumable = (failure.code === "BUDGET_EXCEEDED" || failure.code === "ROUND_LIMIT")
-    && !(live && live.running)
+    && !(session && session.running)
     && canResume;
   const resume = resumable ? `<button class="a-btn strong" data-act="resume">追加预算并继续</button>` : "";
   const retry = status && status !== "succeeded"
@@ -3464,24 +3353,27 @@ let lastReportHtml = null;
 let lastReportName = "fcode-report.html";
 
 async function openReport() {
-  if (!currentTrace || !(currentTrace.terminal && currentTrace.terminal.status)) {
+  const initial = shownTrace();
+  if (!initial || !(initial.terminal && initial.terminal.status)) {
     toast("运行结束后才能签发报告");
     return;
   }
   const run = currentRun();
-  const currentRunId = (currentKey || "").startsWith("run:") ? currentKey.slice(4) : (run && run.id);
+  const currentRunId = (store.key || "").startsWith("run:") ? store.key.slice(4) : (run && run.id);
   const pendingReview = currentRunId ? reviewTraceRefreshes.get(currentRunId) : null;
   if (pendingReview) await pendingReview;
-  const check = await verifyChain(currentTrace);
-  const task = currentTrace.task || {};
+  const trace = shownTrace();
+  const check = await verifyChain(trace);
+  const latest = shownTrace();
+  const task = latest.task || {};
   const title = run ? (run.name || shortObjective(run.objective)) : shortObjective(task.objective || "工作底稿");
-  lastReportHtml = FCReport.build(currentTrace, {
+  lastReportHtml = FCReport.build(latest, {
     title,
-    runId: run ? run.id : (currentKey || "trace"),
+    runId: run ? run.id : (store.key || "trace"),
     check,
     generatedAt: new Date().toISOString().replace("T", " ").slice(0, 19) + "Z",
   });
-  lastReportName = "fcode-report-" + String(run ? run.id : (currentKey || "trace")).replace(/[^a-zA-Z0-9-]+/g, "-") + ".html";
+  lastReportName = "fcode-report-" + String(run ? run.id : (store.key || "trace")).replace(/[^a-zA-Z0-9-]+/g, "-") + ".html";
   document.getElementById("report-title").textContent = title;
   document.getElementById("report-frame").srcdoc = lastReportHtml;
   document.getElementById("report-layer").hidden = false;
@@ -3524,7 +3416,7 @@ function printReport() {
 }
 
 function openResumeForm() {
-  const trace = currentTrace || {};
+  const trace = shownTrace() || {};
   const budget = lastBudget(trace);
   const lim = (budget && budget.limits) || {};
   const card = document.querySelector("#result-slot .result") || document.querySelector(".main .result");
@@ -3558,10 +3450,11 @@ function openResumeForm() {
 async function resumeRun() {
   const form = document.querySelector(".resume-form");
   if (!form) return;
-  const id = currentKey && currentKey.startsWith("run:") ? currentKey.slice(4) : null;
+  const s = activeSession();
+  const id = store.key && store.key.startsWith("run:") ? store.key.slice(4) : null;
   if (!id) { toast("没有可续跑的运行"); return; }
   const saved = runHistory.find(item => item.id === id);
-  if (saved && !saved.taskId && !(live && live.id === id)) { toast("这条运行没有可续跑的持久任务"); return; }
+  if (saved && !saved.taskId && !(s && s.id === id)) { toast("这条运行没有可续跑的持久任务"); return; }
   const read = key => Number((form.querySelector(`[data-resume="${key}"]`) || {}).value || 0);
   const payload = {
     maxCalls: read("maxCalls"),
@@ -3585,13 +3478,16 @@ async function resumeRun() {
       const error = await response.json().catch(() => ({}));
       throw new Error(error.error || `HTTP ${response.status}`);
     }
-    const run = runHistory.find(item => item.id === id) || (live && live.id === id ? live : null);
-    const objective = (run && run.objective) || (currentTrace && currentTrace.task && currentTrace.task.objective) || "";
-    const template = (run && run.template) || ((currentTrace && currentTrace.task && currentTrace.task.binding || {}).scenario) || "full";
+    const current = activeSession();
+    const run = runHistory.find(item => item.id === id) || (current && current.id === id ? current : null);
+    const trace = shownTrace();
+    const objective = (run && run.objective) || (trace && trace.task && trace.task.objective) || "";
+    const template = (run && run.template) || ((trace && trace.task && trace.task.binding || {}).scenario) || "full";
     toast("预算已追加 · 从事件日志续跑");
     // 续跑让同一个 run 恢复运行：丢弃旧会话缓存，重新以运行态打开
     const stale = sessions.get(id);
     if (stale) { if (stale.es) stale.es.close(); sessions.delete(id); }
+    if (store.sessionId === id) store.sessionId = null;
     cache.delete("run:" + id);
     openLive(id, objective, template);
     refreshRuns();
@@ -3624,10 +3520,11 @@ async function retryRun(objective, template) {
 
 function retryCurrent() {
   const run = currentRun();
-  const trace = currentTrace || {};
+  const trace = shownTrace() || {};
   const task = trace.task || {};
-  const objective = (run && run.objective) || task.objective || (live && live.objective);
-  const template = (run && run.template) || (task.binding || {}).scenario || (live && live.template);
+  const s = activeSession();
+  const objective = (run && run.objective) || task.objective || (s && s.objective);
+  const template = (run && run.template) || (task.binding || {}).scenario || (s && s.template);
   if (objective && template) retryRun(objective, template);
   else toast("没有可重试的运行");
 }
@@ -3654,20 +3551,22 @@ async function copyText(text) {
 
 async function copyDiagnostics() {
   const run = currentRun();
-  const trace = currentTrace || {};
+  const trace = shownTrace() || {};
   const terminal = trace.terminal || {};
   const failure = terminal.failure || {};
   const task = trace.task || {};
-  const active = live && live.running ? live : null;
+  const s = activeSession();
+  const active = s && s.running ? s : null;
+  const check = store.check;
   const lines = [
     "Fcode · 运行诊断",
-    `run: ${(run && run.id) || (active && active.id) || currentKey || "（未选择运行）"}`,
+    `run: ${(run && run.id) || (active && active.id) || store.key || "（未选择运行）"}`,
     `template: ${(run && run.template) || (task.binding || {}).scenario || (active && active.template) || "—"}`,
     `objective: ${task.objective || (run && run.objective) || (active && active.objective) || "—"}`,
     `status: ${terminal.status || (run && run.status) || (active ? "running" : "—")}` +
       (failure.code ? ` · ${failure.code}` : "") + (failure.message ? ` · ${failure.message}` : ""),
     `rounds/events: ${(trace.rounds || []).length}/${(trace.events || []).length}` +
-      (currentCheck ? ` · chain: ${currentCheck.ok ? "ok" : "broken(" + currentCheck.reason + ")"}` : ""),
+      (check ? ` · chain: ${check.ok ? "ok" : "broken(" + check.reason + ")"}` : ""),
     run && run.error ? `error: ${run.error}` : "",
     `at: ${new Date().toISOString()}`,
   ].filter(Boolean);
@@ -3778,8 +3677,8 @@ function syncSettings() {
   setText("settings-facts", facts ? `${facts.active} / ${facts.total}` : "—");
   setText("settings-runs", String(runHistory.length));
   setText("settings-tools", toolContracts ? `${toolContracts.length} 个工具 · 契约已加载` : "—");
-  setText("settings-chain", currentCheck
-    ? (currentCheck.ok ? `链验证通过 · ${currentCheck.events} events` : `链断裂 · ${currentCheck.reason}`)
+  setText("settings-chain", store.check
+    ? (store.check.ok ? `链验证通过 · ${store.check.events} events` : `链断裂 · ${store.check.reason}`)
     : "当前没有加载运行");
   setText("settings-repo", health && health.repo ? `${health.repo}/flowcredit/viewer/runs` : "—");
 }
@@ -3793,12 +3692,6 @@ function renderSettings() {
         <b>${esc(title)}</b>
         <small>${esc(desc)}</small>
       </button>`).join("");
-    modes.addEventListener("click", event => {
-      const button = event.target.closest("[data-set-approval]");
-      if (!button) return;
-      setApprovalMode(button.dataset.setApproval);
-      syncSettings();
-    });
     modes.dataset.ready = "1";
   }
   syncSettings();
@@ -3852,6 +3745,7 @@ function openSettingsPage() {
 function closeSettingsPage(returnFocus = true) {
   if (!settingsOpen) return;
   settingsOpen = false;
+  store.mode = document.getElementById("main")?.dataset.view || "run";
   document.getElementById("workspace").classList.remove("settings-open");
   document.getElementById("settings-page").hidden = true;
   document.getElementById("settings-btn").removeAttribute("aria-current");
@@ -3864,7 +3758,7 @@ function closeSettingsPage(returnFocus = true) {
 
 function toggleSettingsPage() {
   if (settingsOpen) closeSettingsPage(true);
-  else openSettingsPage();
+  else renderMode("settings");
 }
 
 function disarmSettingsReset() {
@@ -3887,63 +3781,70 @@ function resetSettingsPreferences() {
   localStorage.setItem(NOTIFY_KEY, "0");
   railFilter = "key";
   localStorage.setItem("fa.railFilter", railFilter);
-  if (currentTrace) renderRail(currentTrace, currentCheck);
+  const trace = shownTrace();
+  if (trace) renderRail(trace, store.check);
   syncSettings();
   toast("本机偏好已恢复默认");
 }
 
 function bindSettings() {
-  document.getElementById("settings-btn").addEventListener("click", toggleSettingsPage);
-  document.getElementById("settings-mobile").addEventListener("click", openSettingsPage);
-  document.getElementById("settings-back").addEventListener("click", () => closeSettingsPage(true));
-  document.getElementById("settings-done").addEventListener("click", () => closeSettingsPage(true));
-  document.getElementById("settings-motion").addEventListener("click", () => setMotion(!motionOn));
-  document.getElementById("settings-notify").addEventListener("click", async () => {
-    await toggleNotify();
-    syncSettings();
-  });
-  document.getElementById("settings-nav").addEventListener("click", event => {
-    const button = event.target.closest("[data-set-section]");
-    if (button) activateSettingsSection(button.dataset.setSection);
-  });
-  document.getElementById("settings-rail-filter").addEventListener("click", event => {
-    const button = event.target.closest("[data-set-filter]");
-    if (!button) return;
-    railFilter = button.dataset.setFilter;
-    localStorage.setItem("fa.railFilter", railFilter);
-    if (currentTrace) renderRail(currentTrace, currentCheck);
-    syncSettings();
-  });
-  document.getElementById("settings-clear").addEventListener("click", () => {
-    promptHistory.length = 0;
-    historyIndex = -1;
-    try { localStorage.removeItem("fa.history"); } catch { /* quota */ }
-    syncSettings();
-    toast("输入历史已清空");
-  });
-  document.getElementById("settings-refresh-memory").addEventListener("click", () => {
-    refreshSettingsStats().then(() => toast("记忆统计已刷新"));
-  });
-  document.getElementById("settings-reset").addEventListener("click", () => {
-    if (!settingsResetArmed) {
-      settingsResetArmed = true;
-      const button = document.getElementById("settings-reset");
-      button.textContent = "再次点击确认";
-      button.classList.add("confirm");
-      clearTimeout(settingsResetTimer);
-      settingsResetTimer = setTimeout(disarmSettingsReset, 3000);
+  document.getElementById("settings-page").addEventListener("click", async event => {
+    const target = event.target;
+    if (target.closest("#settings-back") || target.closest("#settings-done")) { closeSettingsPage(true); return; }
+    if (target.closest("#settings-motion")) { setMotion(!motionOn); return; }
+    if (target.closest("#settings-notify")) { await toggleNotify(); syncSettings(); return; }
+    const section = target.closest("[data-set-section]");
+    if (section) { activateSettingsSection(section.dataset.setSection); return; }
+    const filter = target.closest("[data-set-filter]");
+    if (filter) {
+      railFilter = filter.dataset.setFilter;
+      localStorage.setItem("fa.railFilter", railFilter);
+      const trace = shownTrace();
+      if (trace) renderRail(trace, store.check);
+      syncSettings();
       return;
     }
-    resetSettingsPreferences();
-  });
-  document.getElementById("settings-diag").addEventListener("click", () => {
-    if (!currentTrace) { toast("先打开一条运行再复制诊断"); return; }
-    copyDiagnostics();
-  });
-  document.getElementById("settings-reverify").addEventListener("click", () => {
-    if (!currentTrace) { toast("当前没有加载运行"); return; }
-    reverify();
-    setTimeout(refreshSettingsStats, 600);
+    if (target.closest("#settings-clear")) {
+      promptHistory.length = 0;
+      historyIndex = -1;
+      try { localStorage.removeItem("fa.history"); } catch { /* quota */ }
+      syncSettings();
+      toast("输入历史已清空");
+      return;
+    }
+    if (target.closest("#settings-refresh-memory")) {
+      refreshSettingsStats().then(() => toast("记忆统计已刷新"));
+      return;
+    }
+    if (target.closest("#settings-reset")) {
+      if (!settingsResetArmed) {
+        settingsResetArmed = true;
+        const button = document.getElementById("settings-reset");
+        button.textContent = "再次点击确认";
+        button.classList.add("confirm");
+        clearTimeout(settingsResetTimer);
+        settingsResetTimer = setTimeout(disarmSettingsReset, 3000);
+        return;
+      }
+      resetSettingsPreferences();
+      return;
+    }
+    if (target.closest("#settings-diag")) {
+      if (!shownTrace()) { toast("先打开一条运行再复制诊断"); return; }
+      copyDiagnostics();
+      return;
+    }
+    if (target.closest("#settings-reverify")) {
+      if (!shownTrace()) { toast("当前没有加载运行"); return; }
+      reverify();
+      setTimeout(refreshSettingsStats, 600);
+      return;
+    }
+    const approval = target.closest("[data-set-approval]");
+    if (approval) {
+      setApprovalMode(approval.dataset.setApproval);
+      syncSettings();
+    }
   });
 }
 
@@ -3997,19 +3898,21 @@ function focusComposer() {
 }
 
 function paletteActions() {
+  const s = activeSession();
   const actions = [
     { ic: "＋", label: "新委托 · 需求选择", run: () => startIntake("") },
     { ic: "✎", label: "新任务 · 聚焦输入框", run: focusComposer },
   ];
-  if (live && live.running) actions.push({ ic: "■", label: "停止当前运行", run: stopRun });
-  if (currentRun() && !(live && live.running)) actions.push({ ic: "↻", label: "重试当前运行", run: retryCurrent });
-  if (currentTrace) {
+  if (s && s.running) actions.push({ ic: "■", label: "停止当前运行", run: stopRun });
+  if (currentRun() && !(s && s.running)) actions.push({ ic: "↻", label: "重试当前运行", run: retryCurrent });
+  const trace = shownTrace();
+  if (trace) {
     actions.push({ ic: "⧉", label: "复制运行诊断", run: copyDiagnostics });
     actions.push({ ic: "↓", label: "导出 trace JSON", run: exportTrace });
-    if (!(currentKey || "").startsWith("run:")) {
+    if (!(store.key || "").startsWith("run:")) {
       actions.push({ ic: "⟲", label: "重放当前场景", run: replay });
     }
-    if (currentTrace.terminal && currentTrace.terminal.status) {
+    if (trace.terminal && trace.terminal.status) {
       actions.push({ ic: "⎘", label: "签发审计报告", run: openReport });
     }
     actions.push({ ic: "✓", label: "重新验证签名链", run: reverify });
@@ -4065,13 +3968,6 @@ function renderPalette() {
   });
   list.innerHTML = html || `<div class="pal-empty">没有匹配项</div>`;
   highlightPalette();
-  for (const button of list.querySelectorAll("[data-idx]")) {
-    const index = Number(button.dataset.idx);
-    button.addEventListener("mousemove", () => {
-      if (palActive !== index) { palActive = index; highlightPalette(); }
-    });
-    button.addEventListener("click", () => runPaletteItem(index));
-  }
 }
 
 function highlightPalette() {
@@ -4119,7 +4015,7 @@ function runPaletteItem(index) {
 /* Codex 式入口：输入框以 / 开头弹出命令面板，↑↓ 选择，Tab 补全，Enter 执行。 */
 const SLASH_COMMANDS = [
   { cmd: "/new", desc: "新建委托 · 需求确认", run: () => startIntake("") },
-  { cmd: "/ledger", desc: "打开工作台账本", run: () => openLedger() },
+  { cmd: "/ledger", desc: "打开工作台账本", run: () => renderMode("ledger") },
   { cmd: "/report", desc: "签发当前运行的审计报告", run: () => openReport() },
   { cmd: "/stop", desc: "在轮次边界停止当前运行", run: () => stopRun() },
   { cmd: "/allow", desc: "批准挂起的审批请求", run: () => decideApproval(true) },
@@ -4215,9 +4111,6 @@ function bind() {
   hydrateDoodles();
   applyMotion();
   bindSettings();
-  document.getElementById("new-run").addEventListener("click", () => startIntake(""));
-  document.getElementById("desk-btn").addEventListener("click", openLedger);
-  document.getElementById("composer-open").addEventListener("click", () => startIntake(""));
   document.getElementById("pick").addEventListener("change", event => {
     if (event.target.files[0]) fromFile(event.target.files[0]);
   });
@@ -4225,7 +4118,8 @@ function bind() {
   ta.addEventListener("input", () => {
     autosize(ta);
     updateSlashMenu();
-    if (!(live && live.running && !live.finished)) {
+    const s = activeSession();
+    if (!(s && s.running && !s.finished)) {
       document.getElementById("send").disabled = !(health && health.live);
     }
   });
@@ -4278,8 +4172,6 @@ function bind() {
       autosize(ta);
     }
   });
-  document.getElementById("send").addEventListener("click", composerSubmit);
-  document.getElementById("run-chip").addEventListener("click", stopRun);
   const tplBtn = document.getElementById("template-btn");
   const tplMenu = document.getElementById("tpl-menu");
   const apvBtn = document.getElementById("approval-btn");
@@ -4301,22 +4193,28 @@ function bind() {
     const composerBox = document.getElementById("composer-box");
     if (slashMenu && !slashMenu.hidden && composerBox && !composerBox.contains(event.target)) slashMenu.hidden = true;
     if (!event.target.closest(".run-row")) closeRowMenus();
+
+    if (event.target.closest("#new-run") || event.target.closest("#composer-open")) { startIntake(""); return; }
+    if (event.target.closest("#send")) { composerSubmit(); return; }
+    if (event.target.closest("#run-chip")) { stopRun(); return; }
+    if (event.target.closest("#desk-btn")) { renderMode("ledger"); return; }
+    if (event.target.closest("#chain-badge")) { reverify(); return; }
+    if (event.target.closest("#report-close") || event.target.closest("[data-report-close]")) { closeReport(); return; }
+    if (event.target.closest("#report-print")) { printReport(); return; }
+    if (event.target.closest("#report-download")) { downloadReport(); return; }
+    if (event.target.closest("#scene-toggle")) {
+      const section = document.getElementById("scene-section");
+      setScenesOpen(!(section && section.classList.contains("open")));
+      return;
+    }
+    if (event.target.closest("#palette-btn")) { openPalette(); return; }
+    if (event.target.closest("#settings-btn")) { toggleSettingsPage(); return; }
+    if (event.target.closest("#settings-mobile")) { renderMode("settings"); return; }
   });
-  document.getElementById("chain-badge").addEventListener("click", reverify);
-  document.getElementById("report-close").addEventListener("click", closeReport);
-  document.querySelector(".report-scrim").addEventListener("click", closeReport);
-  document.getElementById("report-print").addEventListener("click", printReport);
-  document.getElementById("report-download").addEventListener("click", downloadReport);
   document.getElementById("run-search").addEventListener("input", event => {
     runFilter = event.target.value;
     renderRuns();
   });
-  document.getElementById("scene-toggle").addEventListener("click", () => {
-    const section = document.getElementById("scene-section");
-    setScenesOpen(!(section && section.classList.contains("open")));
-  });
-  document.getElementById("palette-btn").addEventListener("click", openPalette);
-  document.querySelector(".palette-scrim").addEventListener("click", closePalette);
   const palInput = document.getElementById("palette-input");
   palInput.addEventListener("input", () => { palActive = 0; renderPalette(); });
   palInput.addEventListener("keydown", event => {
@@ -4324,6 +4222,149 @@ function bind() {
     else if (event.key === "ArrowUp") { event.preventDefault(); palActive = Math.max(0, palActive - 1); highlightPalette(); }
     else if (event.key === "Enter") { event.preventDefault(); runPaletteItem(palActive); }
     else if (event.key === "Escape") { event.preventDefault(); closePalette(); }
+  });
+  document.getElementById("palette").addEventListener("click", event => {
+    if (event.target.closest("[data-palette-close]")) { closePalette(); return; }
+    const item = event.target.closest("[data-idx]");
+    if (item) runPaletteItem(Number(item.dataset.idx));
+  });
+  document.getElementById("palette").addEventListener("mousemove", event => {
+    const item = event.target.closest("[data-idx]");
+    if (!item) return;
+    const index = Number(item.dataset.idx);
+    if (palActive !== index) { palActive = index; highlightPalette(); }
+  });
+  document.getElementById("tpl-menu").addEventListener("click", event => {
+    const button = event.target.closest("[data-tpl]");
+    if (!button) return;
+    setTemplate(button.dataset.tpl);
+    document.getElementById("tpl-menu").hidden = true;
+  });
+  document.getElementById("approval-menu").addEventListener("click", event => {
+    const button = event.target.closest("[data-approval-mode]");
+    if (!button) return;
+    const changed = button.dataset.approvalMode !== approvalMode;
+    setApprovalMode(button.dataset.approvalMode);
+    document.getElementById("approval-menu").hidden = true;
+    const s = activeSession();
+    if (changed && s && s.running) toast("已切换 · 下一个任务生效");
+  });
+  document.getElementById("nav").addEventListener("click", event => {
+    const button = event.target.closest("[data-key]");
+    if (!button) return;
+    setScenesOpen(true);
+    select(button.dataset.key, labelOf(button.dataset.key));
+  });
+  document.getElementById("run-nav").addEventListener("click", event => {
+    const moreBtn = event.target.closest("[data-more]");
+    if (moreBtn) {
+      event.stopPropagation();
+      const row = moreBtn.closest("[data-run]");
+      const menu = row && row.querySelector(".row-menu");
+      if (!menu) return;
+      const wasHidden = menu.hidden;
+      closeRowMenus();
+      menu.hidden = !wasHidden;
+      if (!menu.hidden) {
+        const del = menu.querySelector('[data-row-act="delete"]');
+        if (del) { del.textContent = "删除"; delete del.dataset.confirm; }
+      }
+      return;
+    }
+    const rowAct = event.target.closest("[data-row-act]");
+    if (rowAct) {
+      event.stopPropagation();
+      const row = rowAct.closest("[data-run]");
+      if (!row) return;
+      const label = row.querySelector("[data-name]");
+      const act = rowAct.dataset.rowAct;
+      if (act === "pin") { closeRowMenus(); togglePin(row.dataset.run); }
+      else if (act === "rename") { closeRowMenus(); startRename(row.dataset.run, label); }
+      else if (act === "delete") {
+        if (rowAct.dataset.confirm === "1") { closeRowMenus(); deleteRun(row.dataset.run); }
+        else { rowAct.dataset.confirm = "1"; rowAct.textContent = "确认删除？"; }
+      }
+      return;
+    }
+    if (event.target.closest("[data-more-older]")) { olderOpen = true; renderRuns(); return; }
+    if (event.target.closest("[data-collapse-older]")) { olderOpen = false; renderRuns(); return; }
+    const row = event.target.closest("[data-run]");
+    if (!row) return;
+    if (event.target.closest(".row-menu") || event.target.closest(".rename-input")) return;
+    selectRun(row.dataset.run);
+  });
+  document.getElementById("run-nav").addEventListener("keydown", event => {
+    const row = event.target.closest("[data-run]");
+    if (!row || event.target !== row) return;
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      selectRun(row.dataset.run);
+    }
+  });
+  document.getElementById("run-nav").addEventListener("dblclick", event => {
+    const label = event.target.closest("[data-name]");
+    if (!label) return;
+    const row = label.closest("[data-run]");
+    if (!row) return;
+    event.stopPropagation();
+    startRename(row.dataset.run, label);
+  });
+  document.getElementById("tabs").addEventListener("click", event => {
+    const close = event.target.closest("[data-tabclose]");
+    if (close) { event.stopPropagation(); closeSessionTab(close.dataset.tabclose); return; }
+    const tab = event.target.closest("[data-tab]");
+    if (!tab) return;
+    const id = tab.dataset.tab;
+    if (store.key === "run:" + id && activeSession() === sessions.get(id)) return;
+    const s = sessions.get(id);
+    if (s) openLive(id, s.objective, s.template);
+  });
+  document.getElementById("rail-tabs").addEventListener("click", event => {
+    const button = event.target.closest("[data-tab]");
+    if (!button) return;
+    railTab = button.dataset.tab;
+    const trace = shownTrace();
+    if (trace) renderRail(trace, store.check || { ok: false, reason: "" });
+  });
+  document.getElementById("rail-body").addEventListener("click", async event => {
+    const copy = event.target.closest("[data-copy]");
+    if (copy) {
+      const ok = await copyText(copy.dataset.copy);
+      toast(ok ? "哈希已复制" : "复制失败");
+      return;
+    }
+    if (event.target.closest("[data-copy-raw]")) {
+      const trace = shownTrace();
+      if (!trace) return;
+      const ok = await copyText(JSON.stringify(trace, null, 2));
+      toast(ok ? "原文已复制" : "复制失败");
+      return;
+    }
+    if (event.target.closest("[data-download-raw]")) {
+      const trace = shownTrace();
+      if (!trace) return;
+      const blob = new Blob([JSON.stringify(trace, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url; link.download = "trace.json"; link.click();
+      URL.revokeObjectURL(url);
+      return;
+    }
+    const chip = event.target.closest("[data-rail-filter]");
+    if (chip) {
+      railFilter = chip.dataset.railFilter;
+      localStorage.setItem("fa.railFilter", railFilter);
+      const trace = shownTrace();
+      if (trace) renderRail(trace, store.check || { ok: false, reason: "" });
+      return;
+    }
+    const toggle = event.target.closest("[data-ev-group]");
+    if (toggle) {
+      const round = Number(toggle.dataset.evGroup);
+      if (evExpanded.has(round)) evExpanded.delete(round); else evExpanded.add(round);
+      const trace = shownTrace();
+      if (trace) renderRail(trace, store.check || { ok: false, reason: "" });
+    }
   });
   document.getElementById("main").addEventListener("click", event => {
     const intakeChoice = event.target.closest("[data-intake-choice]");
@@ -4380,21 +4421,23 @@ function bind() {
     if (decision) { decideApproval(decision.dataset.decision === "allow"); return; }
     const planEdit = event.target.closest("[data-plan-edit]");
     if (planEdit) {
-      if (!live) return;
-      live.planEditing = !live.planEditing;
-      live.planConfirm = null;
+      const s = activeSession();
+      if (!s) return;
+      s.planEditing = !s.planEditing;
+      s.planConfirm = null;
       paintPlan();
       return;
     }
     const planAction = event.target.closest("[data-plan-action]");
-    if (planAction && live) {
+    const planSession = activeSession();
+    if (planAction && planSession) {
       const action = planAction.dataset.planAction;
       if (action === "cancel") {
-        live.planConfirm = null;
+        planSession.planConfirm = null;
         paintPlan();
       } else if (action === "skip") {
-        live.planConfirm = planAction.dataset.todo;
-        live.planEditing = true;
+        planSession.planConfirm = planAction.dataset.todo;
+        planSession.planEditing = true;
         paintPlan();
       } else if (action === "skip-confirm") {
         queuePlan("skip", planAction.dataset.todo);
@@ -4405,15 +4448,17 @@ function bind() {
     }
     const budgetEdit = event.target.closest("[data-budget-edit]");
     if (budgetEdit) {
-      if (!live) return;
-      live.budgetEditing = !live.budgetEditing;
+      const s = activeSession();
+      if (!s) return;
+      s.budgetEditing = !s.budgetEditing;
       paintBudget();
       return;
     }
     const budgetCancel = event.target.closest("[data-budget-cancel]");
     if (budgetCancel) {
-      if (!live) return;
-      live.budgetEditing = false;
+      const s = activeSession();
+      if (!s) return;
+      s.budgetEditing = false;
       paintBudget();
       return;
     }
@@ -4446,12 +4491,6 @@ function bind() {
     app.classList.toggle("rail-hidden", !railOpen);
     app.classList.toggle("rail-open", railOpen);
   });
-  for (const button of document.querySelectorAll("#rail-tabs button")) {
-    button.addEventListener("click", () => {
-      railTab = button.dataset.tab;
-      if (currentTrace) renderRail(currentTrace, currentCheck || { ok: false, reason: "" });
-    });
-  }
 
   document.addEventListener("dragenter", e => e.preventDefault());
   document.addEventListener("dragover", e => e.preventDefault());
@@ -4463,11 +4502,12 @@ function bind() {
 
   document.addEventListener("keydown", e => {
     const mod = e.metaKey || e.ctrlKey;
+    const s = activeSession();
     if (mod && e.key.toLowerCase() === "k") { e.preventDefault(); togglePalette(); return; }
     if (mod && e.key.toLowerCase() === "n") { e.preventDefault(); startIntake(""); return; }
     if (mod && e.key === ",") { e.preventDefault(); toggleSettingsPage(); return; }
-    if (mod && e.key === ".") { e.preventDefault(); if (live && live.running) stopRun(); return; }
-    if (mod && live && live.pending && !live.deciding && (e.key === "Enter" || e.key === "Backspace" || e.key === "Delete")) {
+    if (mod && e.key === ".") { e.preventDefault(); if (s && s.running) stopRun(); return; }
+    if (mod && s && s.pending && !s.deciding && (e.key === "Enter" || e.key === "Backspace" || e.key === "Delete")) {
       const palette = document.getElementById("palette");
       if (palette && !palette.hidden) return;
       e.preventDefault();
@@ -4491,7 +4531,7 @@ function bind() {
       document.getElementById("run-search").focus();
       return;
     }
-    if (!typing && live && live.pending && !live.deciding && (e.key === "1" || e.key === "2")) {
+    if (!typing && s && s.pending && !s.deciding && (e.key === "1" || e.key === "2")) {
       const overlay = ["palette", "report-layer"].some(id => {
         const el = document.getElementById(id);
         return el && !el.hidden;
@@ -4526,8 +4566,9 @@ function bind() {
 
   setInterval(() => {
     const el = document.querySelector("[data-countdown]");
-    if (!el || !live || !live.pendingDeadline) return;
-    const left = (live.pendingDeadline - Date.now()) / 1000;
+    const s = activeSession();
+    if (!el || !s || !s.pendingDeadline) return;
+    const left = (s.pendingDeadline - Date.now()) / 1000;
     el.textContent = left > 0 ? fmtCountdown(left) : "已到时限 · 等待 Runtime 拒绝";
   }, 500);
 }
@@ -4535,9 +4576,13 @@ function bind() {
 function replay() {
   if (intake.active) closeIntake(false);
   if (settingsOpen) closeSettingsPage(false);
-  if (currentKey && currentKey.startsWith("run:")) return; // run records are immutable
-  if (currentKey) { cache.delete(currentKey); select(currentKey, labelOf(currentKey)); }
-  else if (currentTrace) render(currentTrace, "trace");
+  const key = store.key;
+  if (key && key.startsWith("run:")) return; // run records are immutable
+  if (key) { cache.delete(key); select(key, labelOf(key)); }
+  else {
+    const trace = shownTrace();
+    if (trace) render(trace, "trace");
+  }
 }
 
 async function fromFile(file) {
@@ -4546,8 +4591,8 @@ async function fromFile(file) {
     if (settingsOpen) closeSettingsPage(false);
     ledgerOpen = false;
     const trace = JSON.parse(await file.text());
-    if (live) detachLive();
-    currentKey = null;
+    if (activeSession()) detachLive();
+    store.key = null;
     renderNav();
     await render(trace, file.name);
   } catch (error) {

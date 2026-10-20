@@ -23,8 +23,14 @@ shutil.copytree(ROOT / "flowcredit" / "src", repo_dir / "src")
 
 viewer_dir = repo_dir / "viewer"
 viewer_dir.mkdir()
-for name in ("index.html", "app.css", "app.js", "report.js", "server.py"):
+for name in (
+    "index.html", "app.css", "design.css", "app.js", "report.js",
+    "icons-doodle.js", "server.py",
+):
     shutil.copy2(viewer_src / name, viewer_dir / name)
+core = viewer_src / "core"
+if core.exists():
+    shutil.copytree(core, viewer_dir / "core")
 traces = viewer_src / "traces"
 if traces.exists():
     shutil.copytree(traces, viewer_dir / "traces")
