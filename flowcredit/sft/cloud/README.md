@@ -70,17 +70,31 @@ bash /root/fcode-sft/cloud/merge-and-export.sh
 scp root@<ip>:/root/fcode-sft/out/fcode-qwen3-4b-Q4_K_M.gguf .
 scp root@<ip>:/root/fcode-sft/out/Modelfile .
 ollama create fcode-qwen3-4b -f Modelfile
-ollama run fcode-qwen3-4b '{"context": ...}'   # 接 providers/local.py 后由运行时调用
 ```
 
 然后释放实例（不是停止）。
 
 ## 7. 验收 = 运行时本身
 
-训练指标不是验收标准。把适配器接进 `providers/local.py`（骨架已就绪）后：
+训练指标不是验收标准。packet 模式的验收命令：
 
-- 跑 7 个场景，任务到 `succeeded` 且 `trace` 链验证通过才算数；
-- 提案 JSON 合法率（`parse_proposal_text` 失败即 `MODEL_OUTCOME_UNKNOWN`，会被如实记账）。
+```bash
+cd flowcredit
+PYTHONPATH=src python3 -m flowagent.sft.accept \
+  --workdir /tmp/fcode-accept \
+  --endpoint http://127.0.0.1:11434/v1 \
+  --model fcode-qwen3-4b
+```
+
+通过条件：
+
+- `full` 到 `succeeded` 且 `change_bp = -250`；
+- `open-ended` 到 `failed / INSUFFICIENT_EVIDENCE`，不编数字；
+- 所有 choice 合法、链验证通过、没有 error；
+- `repaired` 会作为警告显示，不静默忽略；
+- 报告同时记录 model calls、tokens、延迟、packet 体积。
+
+通过后再把控制台默认从旧 Provider 切到 packet 模式；现在控制台仍是旧路径。
 
 ## 常见问题
 

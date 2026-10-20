@@ -144,6 +144,21 @@ MockPolicy 基线：
 - 旧 SFT（v10 全上下文）仍在；新 choice 数据集是独立格式，需要重新训练/评测。
 - 还没有完成动作正确率、blocked 精确率、引用覆盖率的冻结评测集。
 
+## 模型到达后的验收
+
+```bash
+ollama create fcode-qwen3-4b -f Modelfile
+cd flowcredit
+PYTHONPATH=src python3 -m flowagent.sft.accept \
+  --workdir /tmp/fcode-accept \
+  --endpoint http://127.0.0.1:11434/v1 \
+  --model fcode-qwen3-4b
+```
+
+验收看运行时，不看 loss：`full` 必须 `succeeded/-250bp`，`open-ended` 必须
+`failed/INSUFFICIENT_EVIDENCE`，没有 error、链验证通过；修复次数会作为 warning
+列出，不静默忽略。
+
 ## 下一步
 
 1. 用真实 Qwen3-4B 端点跑 packet lab，记录合法率、动作正确率、延迟；
