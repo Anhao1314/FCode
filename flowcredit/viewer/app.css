@@ -1112,3 +1112,19 @@ body { background: #ffffff; }
 @keyframes dmScan  { 0%, 100% { transform: translateY(-2px); } 50% { transform: translateY(2.5px); } }
 @keyframes dmCrank { 0%, 100% { transform: rotate(-18deg); } 50% { transform: rotate(34deg); } }
 @keyframes dmWave  { 0%, 100% { transform: rotate(-7deg); } 50% { transform: rotate(7deg); } }
+
+/* ========================================================= 内联手绘图标 */
+.d-icon {
+  width: 15px; height: 15px; flex: none;
+  display: inline-block; vertical-align: -2px;
+}
+.d-icon-anim { overflow: visible; }
+.side-new .d-icon, .side-desk .d-icon { width: 15px; height: 15px; }
+.side-search .d-icon { width: 13px; height: 13px; }
+.c-btn .d-icon, .c-icon .d-icon { width: 14px; height: 14px; }
+.send .d-icon { width: 16px; height: 16px; }
+.chain-pill .d-icon { width: 13px; height: 13px; }
+.tr-ic { display: inline-flex; align-items: center; flex: none; }
+.tr-ic .d-icon { width: 14px; height: 14px; }
+.empty-doodle-icon { display: block; text-align: center; margin-bottom: 10px; }
+.empty-doodle-icon .d-icon { width: 46px; height: 46px; display: block; margin: 0 auto; }

@@ -599,6 +599,21 @@ function renderRail(trace, check) {
   body.innerHTML = `<pre>${esc(JSON.stringify(trace, null, 2))}</pre>`;
 }
 
+const TOOL_DOODLE_ICON = {
+  list_documents: "list",
+  read_document: "doc",
+  normalize_units: "table",
+  reconcile_basis: "link",
+  check_restatement: "refresh-cw",
+  calculate_margin: "gauge",
+  report_blocked: "flag",
+  ingest_file: "upload",
+  search_corpus: "search",
+  read_slice: "file-text",
+  working_paper_append: "pen",
+  fetch_source: "globe",
+};
+
 function renderTools(trace, check) {
   const task = trace.task || {};
   const allowed = new Set(task.allowed_tools || []);
@@ -639,8 +654,12 @@ function renderTools(trace, check) {
       const usageText = stat
         ? `${stat.calls} 次${stat.denied ? " · 拒绝 " + stat.denied : ""}${stat.tokens ? " · " + num(stat.tokens) + " tokens" : ""}${stat.cost ? " · " + num(stat.cost) + " µUSD" : ""}${stat.latency ? " · " + num(stat.latency) + " ms" : ""}`
         : "未使用";
+      const still = (window.DOODLE_ICONS && window.DOODLE_ICONS.still) || {};
+      const iconName = TOOL_DOODLE_ICON[contract.name];
+      const icon = iconName && still[iconName] ? `<span class="tr-ic">${still[iconName]}</span>` : "";
       return `<div class="tool-row${inScope ? "" : " out-of-scope"}">
         <div class="tr-head">
+          ${icon}
           <span class="tr-name">${esc(contract.name)}</span>
           <span class="eff eff-${esc(effect)}">${esc(effect)}</span>
           <span class="tr-ver">v${esc(contract.version || "?")}</span>
@@ -1155,8 +1174,10 @@ function renderHead(trace, title) {
 function setChainBadge(check) {
   const badge = document.getElementById("chain-badge");
   badge.className = "chain-pill " + (check.ok ? "ok" : "bad");
+  const shield = (check.ok && window.DOODLE_ICONS && window.DOODLE_ICONS.animated
+    && window.DOODLE_ICONS.animated["shield-check"]) || "";
   badge.innerHTML = check.ok
-    ? `<span class="dot"></span><span>链验证通过 · ${check.events} events</span>`
+    ? `${shield}<span>链验证通过 · ${check.events} events</span>`
     : `<span class="dot"></span><span>链断裂 · ${esc(check.reason)}</span>`;
 }
 
@@ -1506,13 +1527,15 @@ function setComposerRunning(running) {
     document.getElementById("run-chip-text").textContent = "运行中";
     btn.disabled = false;
     btn.title = "发送消息 · 下一轮交给 agent";
-    btn.innerHTML = `<svg class="i" viewBox="0 0 24 24"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg>`;
+    btn.innerHTML = `<span data-doodle="arrow-up"></span>`;
+    hydrateDoodles(btn);
     ta.disabled = false;
     ta.placeholder = "运行中 — 直接输入，消息将排队并在下一轮交给 agent（⌘. 停止）";
   } else {
     chip.hidden = true;
     btn.title = "发送任务";
-    btn.innerHTML = `<svg class="i" viewBox="0 0 24 24"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg>`;
+    btn.innerHTML = `<span data-doodle="arrow-up"></span>`;
+    hydrateDoodles(btn);
     const enabled = !!(health && health.live);
     btn.disabled = !enabled;
     ta.disabled = !enabled;
@@ -2984,7 +3007,23 @@ function pushHistory(text) {
   historyIndex = -1;
 }
 
+/* 内联手绘图标：data-doodle 槽位在启动/重绘后填充 */
+function hydrateDoodles(root = document) {
+  const set = window.DOODLE_ICONS || {};
+  for (const slot of root.querySelectorAll("[data-doodle]")) {
+    if (slot.dataset.hydrated === "1") continue;
+    const name = slot.dataset.doodle;
+    const useAnimated = slot.dataset.doodleAnim === "1";
+    const svg = (useAnimated && set.animated && set.animated[name])
+      || (set.still && set.still[name]) || "";
+    if (!svg) continue;
+    slot.innerHTML = svg;
+    slot.dataset.hydrated = "1";
+  }
+}
+
 function bind() {
+  hydrateDoodles();
   document.getElementById("new-run").addEventListener("click", openWizard);
   document.getElementById("desk-btn").addEventListener("click", openLedger);
   document.getElementById("composer-open").addEventListener("click", openWizard);

@@ -212,3 +212,5 @@ v2 不再问那个问题。它把 v1 里真正有价值的部分——可恢复�
 Apache License 2.0（见 [LICENSE](LICENSE)）。`archive/node-prototype/vendor/` 保留其原始 MIT 许可证。
 
 内核保持零第三方运行时依赖；桌面端的打包依赖（pywebview、PyInstaller）属于分发层，不进运行时。
+
+控制台的手绘图标来自 [oreo-design/doodle-icons](https://github.com/oreo-design/doodle-icons)（MIT），许可证随图标存放于 `flowcredit/viewer/icons/doodle/LICENSE`。
