@@ -895,3 +895,76 @@ body { font-size: 13px; line-height: 1.55; }
   color: var(--text-3); padding: 8px 11px 4px;
 }
 .wz-group { padding: 4px 2px 6px; }
+
+/* ============================================================== Manus 审美层
+   暖纸色画布、白卡片浮起、衬线大标题、炭黑主按钮、陶土色强调、大圆角与
+   极轻的暖阴影。结构不变，只换表层语言。 */
+:root {
+  --bg: #f7f4ee;
+  --well: #efeae1;
+  --card: #ffffff;
+  --card-2: #faf8f4;
+  --active: #ece7dd;
+  --border: rgba(28, 22, 14, .12);
+  --border-soft: rgba(28, 22, 14, .07);
+  --text: #1c1a17;
+  --text-2: #6b645a;
+  --text-3: #9a9286;
+  --accent: #a8552f;
+  --accent-soft: rgba(168, 85, 47, .10);
+  --accent-fill: #f3e2d6;
+  --green: #3f7d4e;
+  --green-soft: rgba(63, 125, 78, .10);
+  --red: #b04432;
+  --red-soft: rgba(176, 68, 50, .10);
+  --yellow: #8a6a1f;
+  --yellow-soft: rgba(138, 106, 31, .10);
+  --serif: "Iowan Old Style", "Palatino", "Songti SC", "STSong", Georgia, "Times New Roman", serif;
+  --r-card: 14px;
+  --r-btn: 10px;
+}
+
+/* 衬线只用于展示级文字，界面正文保持无衬线 */
+.side-brand, .prompt-text, .result-answer, .empty {
+  font-family: var(--serif);
+}
+.side-brand { font-size: 17px; font-weight: 600; letter-spacing: -.01em; }
+.prompt-text { font-size: 20px; line-height: 1.55; font-weight: 600; letter-spacing: -.01em; }
+.result-answer { font-size: 17px; line-height: 1.65; font-weight: 500; }
+.empty { font-size: 14.5px; line-height: 1.8; }
+
+/* 表面：白卡片 + 暖阴影，大圆角 */
+.card, .round, .led-card {
+  background: var(--card);
+  border-color: var(--border-soft);
+  border-radius: var(--r-card);
+  box-shadow: 0 1px 2px rgba(60, 50, 35, .05), 0 10px 30px rgba(60, 50, 35, .04);
+}
+.composer-box {
+  border-radius: 16px;
+  box-shadow: 0 2px 4px rgba(60, 50, 35, .05), 0 12px 32px rgba(60, 50, 35, .06);
+}
+.side-new, .side-search, .side-desk { border-radius: 12px; background: var(--card); }
+.session { border-radius: 10px; }
+.session.active { background: var(--card); box-shadow: 0 1px 2px rgba(60, 50, 35, .06); }
+.tab { border-radius: 10px 10px 0 0; }
+.chip, .mini { border-radius: 999px; background: var(--card-2); }
+.tpl-menu, .slash-menu, .palette-box, .wizard-panel, .report-panel {
+  border-radius: 16px;
+  box-shadow: 0 18px 50px rgba(60, 50, 35, .12);
+}
+.wz-card { border-radius: 12px; }
+.wz-card.active { border-color: var(--accent); background: var(--accent-fill); }
+.slash-item.active { background: var(--accent-fill); }
+.slash-item.active .cmd, .slash-item.active .desc { color: #5a2c17; }
+
+/* 主按钮：炭黑（Manus 的交互主色），强调色只用于文字与选中 */
+.send { background: #1f1c18; color: #ffffff; }
+.send:hover { background: #33302a; }
+.a-btn.strong { background: #1f1c18; color: #ffffff; border-color: transparent; }
+.a-btn.strong:hover { background: #33302a; color: #ffffff; }
+.a-btn { border-radius: var(--r-btn); }
+.c-btn, .kbtn { border-radius: 999px; }
+.statusline { background: var(--bg); border-top-color: var(--border-soft); }
+::-webkit-scrollbar-thumb { background: rgba(60, 50, 35, .18); border-color: var(--bg); }
+::selection { background: rgba(168, 85, 47, .22); }
