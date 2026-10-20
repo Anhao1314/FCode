@@ -17,3 +17,15 @@ flowcredit/viewer/runs/
 **/witness/
 **/history-identity.json
 .DS_Store
+
+# desktop build artifacts
+desktop/.venv/
+desktop/build/
+desktop/dist/
+desktop/_stage/
+# generated SFT datasets (regenerate with: python -m flowagent.sft.export)
+flowcredit/sft/data/
+# python
+__pycache__/
+*.pyc
+.pytest_cache/
