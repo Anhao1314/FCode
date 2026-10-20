@@ -109,6 +109,32 @@ PYTHONPATH=src python3 -m flowagent.sft.choices   --traces /tmp/fcode-packet-ful
 `policy_requested` 提供 packet，`policy_decided` 提供标签；`auto_action` 轮次没有
 模型标签，不进入训练集。
 
+### 评测平面
+
+`sft/evaluate.py` 把 packet lab 变成可重复报告：
+
+```sh
+PYTHONPATH=src python3 -m flowagent.sft.evaluate \
+  --workdir /tmp/fcode-eval-mock --scenarios full,open-ended --policy mock
+```
+
+MockPolicy 基线：
+
+| 指标 | 值 |
+| --- | --- |
+| 场景 / 结果正确 | 2 / 2 |
+| 模型调用 | 17 |
+| policy 决策 | 17 |
+| fast path | 1 |
+| 修复次数 | 0 |
+| 平均 packet | 1,590 B |
+| 旧上下文 | 7,624 B |
+| 平均缩减 | **79.1%** |
+| 链验证 | 全部通过 |
+
+接本地模型时把 `--policy mock` 换成 `--policy local --endpoint ... --model ...`，
+报告会多出 `policy_tokens`、`policy_latency_ms`、`repaired`，并记录失败原因。
+
 ### 当前边界
 
 - 还没有在真实 Qwen3-4B 端点上跑过；测试使用 loopback OpenAI mock。

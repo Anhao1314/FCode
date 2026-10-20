@@ -152,6 +152,7 @@ hash_n = sha256(canonical_json({sequence, type, payload, prev_hash, at}))
 | `providers/local_policy.py` | LocalPolicy | choice-only；一次修复；失败不编造 |
 | `providers/packet_prompt.py` | packet prompt 渲染器 | 训练/推理共用；不含工具目录 |
 | `sft/choices.py` | choice SFT 导出 | packet + policy_decided → 样本 |
+| `sft/evaluate.py` | packet 评测平面 | 结果、调用、修复、tokens、packet 体积 |
 | `demo/packet.py` | Executive–Policy 实验运行器 | 对照 packet 与旧上下文体积 |
 | `memory/context.py` | 派生上下文 | 每轮重算，不累积 |
 | `memory/cases.py` | 长期案例簿 | 终态轨迹的纯函数投影；分数为整数基点；删除只墓碑 |

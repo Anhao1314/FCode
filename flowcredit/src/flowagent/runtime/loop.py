@@ -114,6 +114,7 @@ class Loop:
                         "round": round_no,
                         "packet": packet.to_dict(),
                         "packet_hash": packet.packet_hash,
+                        "packet_bytes": packet.size_bytes,
                     })
                     if not packet.candidates:
                         return self._abort(task_id, AgentError(
@@ -154,6 +155,9 @@ class Loop:
                             "round": round_no,
                             "candidate_id": proposal.metadata.get("candidate_id", ""),
                             "packet_hash": packet.packet_hash,
+                            "repaired": bool(proposal.metadata.get("repaired")),
+                            "tokens": proposal.tokens,
+                            "latency_ms": proposal.latency_ms,
                         })
                     self.observer.proposal(round_no, proposal)
                     step = proposal.plan["steps"][0]

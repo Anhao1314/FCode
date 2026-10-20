@@ -136,24 +136,42 @@ def run(
             verified = True
         except Exception:  # noqa: BLE001 — surfaced in the summary
             verified = False
-        types = [event["type"] for event in final["events"]]
+        events = final["events"]
+        types = [event["type"] for event in events]
+        requested = [
+            event["payload"].get("detail") or {}
+            for event in events if event["type"] == "policy_requested"
+        ]
+        decided = [
+            event["payload"].get("detail") or {}
+            for event in events if event["type"] == "policy_decided"
+        ]
     finally:
         store.close()
 
+    packet_sizes = [int(item.get("packet_bytes") or 0) for item in requested]
+    packet_avg = round(sum(packet_sizes) / len(packet_sizes)) if packet_sizes else packet_bytes
+    latencies = [int(item.get("latency_ms") or 0) for item in decided]
     return {
         "scenario": scenario.key,
         "policy": policy.name,
         "model": policy.model,
         "status": task.status,
+        "failure_code": (task.failure or {}).get("code", ""),
         "change_bp": (task.result or {}).get("change_bp"),
         "rounds": len(final.get("rounds") or []),
-        "events": len(final.get("events") or []),
+        "events": len(events),
         "model_calls": types.count("model_started"),
         "policy_decisions": types.count("policy_decided"),
         "auto_actions": types.count("auto_action"),
+        "repaired": sum(1 for item in decided if item.get("repaired")),
+        "policy_tokens": sum(int(item.get("tokens") or 0) for item in decided),
+        "policy_latency_ms": round(sum(latencies) / len(latencies)) if latencies else 0,
         "packet_bytes": packet_bytes,
+        "packet_avg_bytes": packet_avg,
         "legacy_context_bytes": legacy_bytes,
         "reduction_pct": round((1 - packet_bytes / legacy_bytes) * 100, 1) if legacy_bytes else 0.0,
+        "avg_reduction_pct": round((1 - packet_avg / legacy_bytes) * 100, 1) if legacy_bytes else 0.0,
         "trace": str(trace_path),
         "verified": verified,
     }
