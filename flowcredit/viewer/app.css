@@ -1258,3 +1258,25 @@ body { background: #ffffff; }
   margin-left: auto; font: 10px var(--mono); color: var(--text-3);
   letter-spacing: 0;
 }
+
+/* 记录文字加深 + 手绘状态笔画（替代圆点） */
+.session.run-row { color: #171717; }
+.session.run-row .slabel { font-weight: 500; }
+.session.run-row .smeta { color: var(--text-2); }
+.scene-row { color: var(--text-2); }
+.scene-row:hover { color: var(--text); }
+.r-sub { margin-left: 19px; color: #5c5c5c; }
+.smark {
+  width: 12px; height: 12px; flex: none;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.smark svg {
+  width: 11px; height: 11px; overflow: visible;
+  fill: none; stroke: currentColor; stroke-width: 1.6;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+.smark.ok { color: #171717; }
+.smark.bad { color: var(--red); }
+.smark.warn { color: var(--yellow); }
+.smark.live { color: #171717; animation: smarkPulse 1.4s ease-in-out infinite; }
+@keyframes smarkPulse { 50% { opacity: .3; } }

@@ -454,6 +454,13 @@ function renderScenarios() {
   applyScenesOpen(scenesDefaultOpen());
 }
 
+const STATUS_MARK = {
+  ok: '<svg viewBox="0 0 12 12"><path d="M2.3 6.5c1.2.9 2.1 1.9 2.8 2.9 1.1-2.3 2.4-4 4.1-5.4"/></svg>',
+  bad: '<svg viewBox="0 0 12 12"><path d="M3 3.1c2 1.9 4 3.9 5.9 5.9"/><path d="M9 3c-2 2-3.9 4-5.8 6"/></svg>',
+  warn: '<svg viewBox="0 0 12 12"><path d="M2.4 8.2c1.3-1.5 2.5-2.2 3.3-1.8 1 .5.2 1.9 1.2 2.1.8.1 1.6-.6 2.5-1.7"/></svg>',
+  live: '<svg viewBox="0 0 12 12"><circle cx="6" cy="6" r="2.4" fill="currentColor" stroke="none"/></svg>',
+};
+
 function runRowHtml(run) {
   const active = currentKey === "run:" + run.id;
   const running = run.status === "running";
@@ -467,9 +474,10 @@ function runRowHtml(run) {
     bits.push(`${num(run.cost.costMicrousd)} µ`);
   }
   const sub = bits.filter(Boolean).join(" · ");
+  const mark = `<span class="smark ${cls}">${STATUS_MARK[cls] || STATUS_MARK.warn}</span>`;
   return `<div class="session run-row${active ? " active" : ""}${run.pinned ? " pinned" : ""}" data-run="${esc(run.id)}" tabindex="0" title="${esc(run.objective)}${run.rounds ? " · " + run.rounds + " 轮" : ""}">
     <div class="r-top">
-      <span class="sdot ${cls}"></span>
+      ${mark}
       <span class="slabel" data-name>${esc(runLabel(run))}</span>
       ${pinMark}
       <span class="smeta">${meta}</span>
