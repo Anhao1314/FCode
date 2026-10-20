@@ -20,6 +20,7 @@ from .connectors import ConnectorRegistry
 from .evidence import EvidenceStore
 from ..core.contracts import AgentError
 from ..memory.cases import CaseIndex
+from ..memory.facts import FactStore
 
 __all__ = ["build_workspace_tools"]
 
@@ -29,6 +30,7 @@ def build_workspace_tools(
     artifacts: ArtifactStore,
     connectors: ConnectorRegistry,
     cases: CaseIndex | None = None,
+    facts: FactStore | None = None,
 ) -> list[ToolSpec]:
     """Compose the shared tools bound to their stores."""
 
@@ -56,6 +58,7 @@ def build_workspace_tools(
         return connectors.fetch(arguments["source"], arguments.get("key"))
 
     index = cases or CaseIndex()
+    fact_index = facts or FactStore()
 
     def search_cases(arguments: dict[str, Any]) -> dict[str, Any]:
         hits = index.search(
@@ -68,7 +71,20 @@ def build_workspace_tools(
         case = index.get(arguments["run_id"], include_archived=True)
         if case is None:
             raise AgentError("CASE_NOT_FOUND", f"no case indexed for {arguments['run_id']!r}")
+        case["related_cases"] = index.related(arguments["run_id"], limit=3)
         return case
+
+    def query_facts(arguments: dict[str, Any]) -> dict[str, Any]:
+        rows = fact_index.query(
+            subject=str(arguments.get("subject") or ""),
+            predicate=str(arguments.get("predicate") or ""),
+            period=str(arguments.get("period") or ""),
+            as_of=str(arguments.get("as_of") or ""),
+            known_at=str(arguments.get("known_at") or ""),
+            include_superseded=bool(arguments.get("include_superseded")),
+            limit=int(arguments.get("limit") or 20),
+        )
+        return {"facts": rows, "count": len(rows)}
 
     return [
         ToolSpec(
@@ -199,6 +215,27 @@ def build_workspace_tools(
                 Param.output("summary", "string"),
                 Param.output("created_at", "string"),
                 Param.output("archived", "boolean"),
+                Param.output("related_cases", "array"),
+            ),
+            version="1.0",
+        ),
+        ToolSpec(
+            name="query_facts",
+            summary="Query bi-temporal facts (as-of and known-at) with provenance",
+            effect=EFFECT_READ,
+            params=(
+                Param(name="subject", kind="string", required=False, description="entity, e.g. 恒星智算"),
+                Param(name="predicate", kind="string", required=False, description="e.g. gross_margin_bp"),
+                Param(name="period", kind="string", required=False, description="fiscal period, e.g. FY2024"),
+                Param(name="as_of", kind="string", required=False, description="valid-time date, YYYY-MM-DD"),
+                Param(name="known_at", kind="string", required=False, description="transaction-time cutoff, ISO-8601"),
+                Param(name="include_superseded", kind="boolean", required=False, description="return correction history"),
+                Param(name="limit", kind="integer", required=False, minimum=1, maximum=50, description="max facts (default 20)"),
+            ),
+            handler=query_facts,
+            outputs=(
+                Param.output("facts", "array"),
+                Param.output("count", "integer"),
             ),
             version="1.0",
         ),

@@ -44,6 +44,7 @@ def build_finance_tools(
     artifacts: ArtifactStore | None = None,
     connectors: ConnectorRegistry | None = None,
     cases: Any = None,
+    facts: Any = None,
 ) -> list[ToolSpec]:
     """Bind the finance world to a list of :class:`ToolSpec`.
 
@@ -214,4 +215,4 @@ def build_finance_tools(
             ),
             version="1.0",
         ),
-    ] + build_workspace_tools(evidence, artifacts, connectors, cases)
+    ] + build_workspace_tools(evidence, artifacts, connectors, cases, facts)

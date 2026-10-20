@@ -39,6 +39,7 @@ WORKSPACE_TOOLS = [
     "working_paper_append",
     "search_cases",
     "read_case",
+    "query_facts",
     "fetch_source",
 ]
 

@@ -800,6 +800,7 @@ const TOOL_DOODLE_ICON = {
   fetch_source: "globe",
   search_cases: "search",
   read_case: "file-text",
+  query_facts: "database",
 };
 
 function renderTools(trace, check) {

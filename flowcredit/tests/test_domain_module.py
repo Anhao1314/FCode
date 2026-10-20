@@ -40,7 +40,7 @@ class DomainModuleTests(unittest.TestCase):
         world = FINANCE_DOMAIN.create_world()
         tools = FINANCE_DOMAIN.build_tools(world)
         names = [tool.name for tool in tools]
-        self.assertEqual(len(names), 14)
+        self.assertEqual(len(names), 15)
         self.assertEqual(names[:7], [
             "list_documents", "read_document", "normalize_units",
             "reconcile_basis", "check_restatement", "calculate_margin", "report_blocked",
@@ -100,7 +100,7 @@ class DomainModuleTests(unittest.TestCase):
         self.assertEqual(len(names), len(set(names)), "a tool must not appear twice")
         for workspace_name in (
             "ingest_file", "search_corpus", "read_slice",
-            "working_paper_append", "search_cases", "read_case", "fetch_source",
+            "working_paper_append", "search_cases", "read_case", "query_facts", "fetch_source",
         ):
             self.assertIn(workspace_name, names)
 

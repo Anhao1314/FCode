@@ -160,6 +160,21 @@ class CaseIndexTests(unittest.TestCase):
         )
         self.assertIn("chain_head", hits[0])
 
+    def test_related_cases_share_documents(self) -> None:
+        self.index.upsert(synthetic_trace(
+            "恒星智算 2024 毛利率", result={"citations": [{"doc_id": "doc_x"}]},
+        ), run_id="run-a")
+        self.index.upsert(synthetic_trace(
+            "恒星智算 2025 毛利率", result={"citations": [{"doc_id": "doc_x"}, {"doc_id": "doc_y"}]},
+        ), run_id="run-b")
+        self.index.upsert(synthetic_trace(
+            "另一家公司", result={"citations": [{"doc_id": "doc_z"}]},
+        ), run_id="run-c")
+        related = self.index.related("run-a")
+        self.assertEqual(related[0]["run_id"], "run-b")
+        self.assertIn("doc_x", related[0]["shared"])
+        self.assertEqual([item["run_id"] for item in related], ["run-b"])
+
     def test_tombstone_hides_from_default_search_only(self) -> None:
         self.index.upsert(synthetic_trace("判断恒星智算两期毛利率"), run_id="run-a")
         self.assertTrue(self.index.tombstone("run-a"))
@@ -205,6 +220,7 @@ class CaseToolTests(unittest.TestCase):
         self.assertEqual(observation.result["run_id"], "run-a")
         self.assertEqual(len(observation.result["chain_head"]), 64)
         self.assertIn("key_citations", observation.result)
+        self.assertEqual(observation.result["related_cases"], [])
 
     def test_unknown_case_is_a_clean_tool_error(self) -> None:
         with self.assertRaises(AgentError) as ctx:

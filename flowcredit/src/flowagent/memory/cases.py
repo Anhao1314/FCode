@@ -185,6 +185,20 @@ def project_case(trace: dict[str, Any], *, run_id: str) -> dict[str, Any]:
     }
 
 
+def _entity_tokens(tags: Iterable[str], citations: Iterable[str], artifacts: Iterable[str]) -> set[str]:
+    """Entities, not labels: documents, artifacts and periods.
+
+    Module, template, outcome and tool tags describe the kind of work, not the
+    thing the work is about. Including them would make every case adjacent to
+    every other case and turn the score into noise.
+    """
+    tokens = {str(item) for item in (*citations, *artifacts) if item}
+    for tag in tags:
+        if re.fullmatch(r"(?i)(?:FY)?20\d{2}", str(tag)):
+            tokens.add(str(tag))
+    return tokens
+
+
 # ---------------------------------------------------------------------- index
 
 @dataclass(frozen=True)
@@ -214,6 +228,7 @@ class CaseIndex:
         if not self._ready:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             with sqlite3.connect(self.path) as conn:
+                conn.execute("PRAGMA journal_mode=WAL")
                 conn.executescript(SCHEMA)
             self._ready = True
         conn = sqlite3.connect(self.path)
@@ -342,6 +357,46 @@ class CaseIndex:
             "created_at": row["created_at"],
             "archived": bool(row["archived"]),
         }
+
+    def related(self, run_id: str, *, limit: int = 3) -> list[dict[str, Any]]:
+        """Cases that share entities (documents, periods, artifacts) with this one.
+
+        This is adjacency, not a graph database: the edges are the tags already
+        recorded in the case, and the score is the Jaccard overlap in basis
+        points. It gives a reviewer "what else touched these documents?" without
+        introducing an embedding or a probabilistic link.
+        """
+        base = self.get(run_id, include_archived=True)
+        if base is None:
+            return []
+        base_tokens = _entity_tokens(
+            base["tags"], base["key_citations"], base["artifacts"],
+        )
+        if not base_tokens:
+            return []
+        results: list[tuple[int, dict[str, Any]]] = []
+        for row in self._rows(include_archived=False):
+            if row["run_id"] == run_id:
+                continue
+            tokens = _entity_tokens(
+                json.loads(row["tags"]),
+                json.loads(row["key_citations"]),
+                json.loads(row["artifacts"]),
+            )
+            shared = base_tokens & tokens
+            if not shared:
+                continue
+            score_bp = round(10000 * len(shared) / len(base_tokens | tokens))
+            results.append((score_bp, {
+                "run_id": row["run_id"],
+                "objective": row["objective"],
+                "outcome": row["outcome"],
+                "summary": row["summary"],
+                "score_bp": score_bp,
+                "shared": sorted(shared),
+            }))
+        results.sort(key=lambda item: (-item[0], item[1]["run_id"]))
+        return [item[1] for item in results[: max(0, int(limit))]]
 
     def count(self, *, include_archived: bool = False) -> int:
         query = "SELECT COUNT(*) AS n FROM cases" + ("" if include_archived else " WHERE archived=0")

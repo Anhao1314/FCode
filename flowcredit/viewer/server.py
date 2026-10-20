@@ -103,6 +103,10 @@ class Runtime:
         self.Plan = m.Plan
         m = imp("flowagent.memory.cases")
         self.CaseIndex = m.CaseIndex
+        m = imp("flowagent.memory.facts")
+        self.FactStore = m.FactStore
+        m = imp("flowagent.tools.finance.facts")
+        self.project_facts = m.project_facts
         m = imp("flowagent.domains")
         self.get_domain = m.get_domain
         self.list_domains = m.list_domains
@@ -261,6 +265,7 @@ class RunManager:
         self.runs: dict[str, Run] = {}
         self.order: list[str] = []
         self.case_index = runtime.CaseIndex() if runtime is not None else None
+        self.fact_store = runtime.FactStore() if runtime is not None else None
         self._lock = threading.Lock()
         self._seq = 0
         RUNS_DIR.mkdir(exist_ok=True)
@@ -330,6 +335,11 @@ class RunManager:
         if self.case_index is not None:
             try:
                 self.case_index.tombstone(run_id)
+            except Exception:  # noqa: BLE001
+                traceback.print_exc()
+        if self.fact_store is not None:
+            try:
+                self.fact_store.tombstone_run(run_id)
             except Exception:  # noqa: BLE001
                 traceback.print_exc()
         return True, ""
@@ -404,7 +414,9 @@ class RunManager:
             store = rt.TaskStore(db)
             module = rt.get_domain(DOMAIN_KEY)
             world = module.create_world(partial=scenario.partial_corpus)
-            registry = rt.ToolRegistry(module.build_tools(world, cases=self.case_index))
+            registry = rt.ToolRegistry(module.build_tools(
+                world, cases=self.case_index, facts=self.fact_store,
+            ))
             receipts = rt.ReceiptStore(store)
             issued: dict[str, str] = {}
 
@@ -553,6 +565,14 @@ class RunManager:
             if self.case_index is not None:
                 try:
                     self.case_index.upsert(final, run_id=run.id)
+                except Exception:  # noqa: BLE001 — memory must never kill a run
+                    traceback.print_exc()
+            if self.fact_store is not None:
+                try:
+                    self.fact_store.upsert_run(
+                        run_id=run.id,
+                        facts=rt.project_facts(final, run_id=run.id),
+                    )
                 except Exception:  # noqa: BLE001 — memory must never kill a run
                     traceback.print_exc()
             trace_path = run_dir / "trace.json"

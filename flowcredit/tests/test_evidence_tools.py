@@ -99,7 +99,7 @@ class EvidenceToolTests(unittest.TestCase):
         self.registry.execute("ingest_file", {"path": "ledger.csv"})
         after = [schema["name"] for schema in self.registry.catalog()]
         self.assertEqual(before, after)
-        self.assertEqual(len(after), 14)
+        self.assertEqual(len(after), 15)
         for name in ("ingest_file", "search_corpus", "read_slice"):
             self.assertEqual(self.registry.get(name).version, "1.0")
 

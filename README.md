@@ -117,6 +117,9 @@ python3 flowcredit/viewer/server.py --repo .   # 打开 http://127.0.0.1:8642/
 - 只读回放：`cd flowcredit && python demo.py --serve`；页面加载时用 `crypto.subtle` 重算全链，改一个字节就变红。
 - 右侧案卷：事件按轮分组，关键/全部/人工三档过滤，机械事件折叠为「过程 N 条」；工具契约与用量、完整性封印（链头可复制）、带行号可复制/下载的原文。
 - 设计：喜茶式审美——纯白纸面、近黑墨色、手写体只出现在展示位、拉宽字距的等宽标签、零阴影小圆角；颜色只表达状态，动效只保留进入与墨迹两类（手绘小人只在运行时呼吸）。
+- 长期记忆：终态运行自动投影进案例簿与双时态事实簿；从签名轨迹重建：
+  `PYTHONPATH=flowcredit/src python3 -m flowagent.memory.cases --repo .`、
+  `PYTHONPATH=flowcredit/src python3 -m flowagent.tools.finance.facts --repo .`。
 
 ## 桌面端
 
@@ -151,6 +154,7 @@ open desktop/dist/FCode.app
 | 外部连接器（命名源 + 主机持有端点/凭证 + 超时不重试 + 大小上限） | 已实现（默认关闭） |
 | 工具目录面板（允许/授权、effect、契约版本、每次运行用量） | 已实现 |
 | 长期案例记忆（终态轨迹 → 确定性案例簿；召回事件入链；首轮上下文注入 top-3；删除只墓碑） | 已实现 |
+| 双时态事实记忆（as-of / known-at 查询；修正追加不覆盖；每条事实带来源事件哈希） | 已实现（金融域抽取器） |
 | 域模块协议（模块自给世界/工具/规划器/验证器；模板按模块分组；当前金融研究模块） | 已实现 |
 | 独立验证（Runtime 重算，模型不能自报完成） | 已实现 |
 | 人工审批门（关键步骤 / 逐步 / 自动、超时拒绝、本次运行免询） | 已实现 |
@@ -164,13 +168,13 @@ open desktop/dist/FCode.app
 | Evidence Authority（区分可用与不可用证据） | 已实现（金融域） |
 | Trace 导出与可视化重算 | 已实现 |
 | 实时控制台（SSE 直播 / 运行记录 / 只读回放） | 已实现 |
-| SFT 数据管线（轨迹 → 训练样本，训练与推理 prompt 逐字节一致） | 已实现（2382 条样本） |
+| SFT 数据管线（轨迹 → 训练样本，训练与推理 prompt 逐字节一致） | 已实现（2400 条样本） |
 | 本地模型供应商（Qwen3-4B LoRA · OpenAI 兼容 · 零依赖） | **骨架就绪**，门控关闭 |
 | 真实供应商（一次性传输授权 + 凭证提供者 + 价格快照） | **门控关闭**，仅骨架 |
 
 ## 数字
 
-- **98** 项单元与场景测试，全部离线
+- **107** 项单元与场景测试，全部离线
 - **7** 个可复现场景，其中崩溃场景用真实 `SIGKILL`
 - **0** 个第三方运行时依赖（只用标准库）
 - **9** 轮完成一次完整研究，**4500 µUSD** 合成预算
@@ -186,11 +190,11 @@ flowcredit/          Python Runtime 与 Demo
     runtime/         门控、预算、单轮 harness、多轮 loop（含恢复）
     tools/           封闭注册表；finance/ 只读工具与 Evidence Authority
     providers/       离线确定性 mock（三种策略）
-    memory/          短期观测摘要 + 长期案例簿（确定性投影、可解释检索、墓碑）
+    memory/          短期观测摘要 + 案例簿 + 双时态事实簿（确定性投影、可解释检索）
     trajectory/      记录、导出、独立重算
     demo/            CLI、终端渲染、七个场景、崩溃 worker
   viewer/            实时控制台 + Trace 回放（零依赖零构建）
-  tests/             98 项 unittest
+  tests/             107 项 unittest
   docs/              架构、设计决策、框架对照、JD 映射
 archive/             v1：Node.js 研究原型（保留，不参与 CI）
 ```
