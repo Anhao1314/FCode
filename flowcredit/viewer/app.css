@@ -1390,17 +1390,17 @@ body { background: #ffffff; }
 .foot-text { min-width: 0; }
 .side-gear {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 26px; height: 26px; margin-left: auto; flex: none;
+  width: 30px; height: 30px; margin-left: auto; flex: none;
   border: 0; border-radius: 7px; background: none; color: var(--text-3); cursor: pointer;
 }
 .side-gear:hover { color: var(--text); background: #faf9f7; }
 .side-gear[aria-expanded="true"] { color: var(--text); background: var(--active); }
-.side-gear .d-icon { width: 15px; height: 15px; transition: transform .28s ease; }
+.side-gear .d-icon { width: 19px; height: 19px; transition: transform .28s ease; }
 .side-gear:hover .d-icon { transform: rotate(18deg); }
 body.reduce-motion .side-gear .d-icon { transition: none; }
 
 .settings-panel {
-  position: absolute; left: 8px; right: 8px; bottom: 46px; z-index: 60;
+  position: absolute; left: 8px; right: 8px; bottom: 50px; z-index: 60;
   display: flex; flex-direction: column; max-height: calc(100vh - 64px);
   background: #ffffff; border: 1px solid var(--border); border-radius: 14px;
   overflow: hidden;
