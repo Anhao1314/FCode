@@ -344,7 +344,7 @@ async function renderLedger() {
 
   main.innerHTML = `
     <section class="prompt">
-      <div class="prompt-kicker">工作台</div>
+      <div class="prompt-kicker"><span class="kicker-label">WORKBENCH</span><span>委托账本</span></div>
       <p class="prompt-text">委托账本</p>
       <p class="prompt-note">所有委托的状态、轮次与成本。点击行打开对应运行；删除会移除运行目录，运行中不可删。</p>
     </section>
@@ -1278,6 +1278,14 @@ function renderResult(trace) {
         <div class="metric"><div class="k">FY2025 毛利率</div><div class="v">${pct(result.margin_bp_2025)}</div></div>
         <div class="metric"><div class="k">变化</div><div class="v ${chg >= 0 ? "up" : "down"}">${pp(chg)}</div></div>
       </div>
+      <div class="proof-line">
+        <span class="proof-mark">已复算</span>
+        <span>Runtime 独立重算通过</span>
+        <span class="proof-sep">·</span>
+        <span>${(result.citations || []).length} 处引用</span>
+        <span class="proof-sep">·</span>
+        <span>${(trace.events || []).length} 个事件</span>
+      </div>
       <div class="result-foot">
         <div class="chips" style="margin-top:2px">
           <span class="mini">口径 ${esc(result.basis)} · ${esc(result.consolidation)}</span>
@@ -1298,6 +1306,7 @@ function renderResult(trace) {
         <span class="card-meta">succeeded</span>
       </div>
       <p class="result-answer">任务已完成，结果通过 Runtime 独立校验。</p>
+      <div class="proof-line"><span class="proof-mark">已校验</span><span>Runtime 独立重算通过</span></div>
       <div class="result-foot">${runActionsHtml(trace)}</div>
     </div>`;
   }
@@ -1405,7 +1414,7 @@ async function render(trace, title) {
 
   document.getElementById("main").innerHTML = `
     <section class="prompt">
-      <div class="prompt-kicker">任务 · ${esc(task.principal || "")}</div>
+      <div class="prompt-kicker"><span class="kicker-label">CASE FILE</span><span>${esc(task.principal || "console-operator")}</span></div>
       <p class="prompt-text">${esc(task.objective || "")}</p>
       <p class="prompt-note">${esc(note)}</p>
     </section>
@@ -1455,7 +1464,7 @@ function liveShell(trace) {
   const task = trace.task || {};
   document.getElementById("main").innerHTML = `
     <section class="prompt">
-      <div class="prompt-kicker">任务 · ${esc(task.principal || "console-operator")}</div>
+      <div class="prompt-kicker"><span class="kicker-label">CASE FILE</span><span>${esc(task.principal || "console-operator")}</span></div>
       <p class="prompt-text">${esc(task.objective || "")}</p>
       <p class="prompt-note" id="live-note" aria-live="polite">已提交，等待 Runtime 启动…</p>
     </section>

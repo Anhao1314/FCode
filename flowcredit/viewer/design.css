@@ -1,0 +1,169 @@
+/* ============================================================ Paper & Proof
+   FCode 的设计语言：纸是底稿，墨是结论，线是校对痕。
+   这一层是唯一新增样式入口；旧层只保留布局，新规则写在这里。 */
+
+:root {
+  /* paper & ink */
+  --paper: #ffffff;
+  --paper-wash: #faf9f7;
+  --paper-well: #f6f4f0;
+  --ink: #171717;
+  --ink-2: #4b4b4b;
+  --ink-3: #8d8d8d;
+  --rule: rgba(23, 23, 23, .12);
+  --rule-strong: rgba(23, 23, 23, .26);
+
+  /* status, never decoration */
+  --verified: #2f7d4f;
+  --verified-wash: rgba(47, 125, 79, .10);
+  --alert: #a83a2a;
+  --alert-wash: rgba(168, 58, 42, .10);
+  --pending: #8a6a1f;
+  --pending-wash: rgba(138, 106, 31, .10);
+
+  /* type */
+  --font-display: "Kaiti SC", "STKaiti", "KaiTi", "Songti SC", Georgia, serif;
+  --font-body: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", sans-serif;
+  --font-mono: "SF Mono", "JetBrains Mono", "Cascadia Code", Menlo, monospace;
+
+  /* spacing: 4 的倍数 */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+
+  /* paper cuts */
+  --radius-card: 12px;
+  --radius-menu: 14px;
+  --radius-control: 8px;
+  --radius-chip: 999px;
+
+  /* motion: 翻页，不是弹跳 */
+  --ease-paper: cubic-bezier(.2, .7, .2, 1);
+  --motion-fast: 160ms;
+  --motion-page: 220ms;
+
+  /* aliases used by the existing layout */
+  --bg: var(--paper);
+  --card: var(--paper);
+  --card-2: var(--paper);
+  --well: var(--paper);
+  --active: var(--paper-wash);
+  --border: var(--rule-strong);
+  --border-soft: var(--rule);
+  --text: var(--ink);
+  --text-2: var(--ink-2);
+  --text-3: var(--ink-3);
+  --green: var(--verified);
+  --green-soft: var(--verified-wash);
+  --red: var(--alert);
+  --red-soft: var(--alert-wash);
+  --yellow: var(--pending);
+  --yellow-soft: var(--pending-wash);
+  --serif: var(--font-display);
+  --sans: var(--font-body);
+  --mono: var(--font-mono);
+  --r-card: var(--radius-card);
+  --r-btn: var(--radius-control);
+}
+
+/* 纸面：白底、墨字、无阴影 */
+body { background: var(--paper); color: var(--ink); font-family: var(--font-body); }
+::selection { background: rgba(23, 23, 23, .12); color: var(--ink); }
+:where(button, a, input, textarea, select):focus-visible {
+  outline: 1px solid var(--ink);
+  outline-offset: 2px;
+}
+
+/* 展示位用楷体；机器元信息用等宽；正文用无衬线 */
+.side-brand, .prompt-text, .result-answer, .empty, .wizard-panel .report-title,
+.intake-title, .setpage-title, .set-section h2, .intake-q, .intake-reply,
+.report-title, .rail-title {
+  font-family: var(--font-display);
+}
+.mono, .prompt-note, .card-meta, .statusline, .side-section, .setpage-kicker,
+.intake-kicker, .prompt-kicker .kicker-label, .set-label {
+  font-family: var(--font-mono);
+}
+.metric .v, .set-stat b, .seal-count, .statusline, .raw-pre, .seal-row,
+.budget-edit input, .rf-grid input, .metric .k {
+  font-variant-numeric: tabular-nums;
+}
+
+/* 章节刊头：CASE FILE / WORKBENCH / PREFERENCES 共用一个语法 */
+.prompt-kicker .kicker-label {
+  font-size: 9px; font-weight: 600; letter-spacing: .16em;
+  color: var(--ink-2); text-transform: uppercase;
+}
+.prompt-kicker { gap: 10px; }
+
+/* 校对痕：已验证结论下方的那一道“可签字”线 */
+.proof-line {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
+  padding: 2px 14px 11px;
+  font-family: var(--font-mono); font-size: 9.5px; color: var(--ink-3);
+}
+.proof-mark {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 2px 7px; border: 1px solid var(--ink); border-radius: 3px;
+  font-size: 9px; font-weight: 600; letter-spacing: .08em; color: var(--ink);
+}
+.proof-mark::before { content: "✓"; font-size: 9px; }
+.proof-sep { color: var(--rule-strong); }
+
+/* 纸张裁切：卡片/菜单/输入的统一圆角 */
+.card, .round, .led-card, .intake-draft, .set-stat, .set-mode {
+  border-radius: var(--radius-card);
+}
+.tpl-menu, .slash-menu, .palette-box, .wizard-panel, .report-panel, .settings-panel {
+  border-radius: var(--radius-menu);
+}
+.a-btn, .set-action, .side-gear { border-radius: var(--radius-control); }
+.chip, .mini, .badge, .c-btn, .kbtn, .set-seg, .set-switch { border-radius: var(--radius-chip); }
+
+/* ---------------------------------------------------------------- style guide */
+.guide-body {
+  margin: 0; background: var(--paper); color: var(--ink);
+  font-family: var(--font-body); font-size: 13px; line-height: 1.7;
+}
+.guide {
+  max-width: 980px; margin: 0 auto; padding: 54px 40px 80px;
+}
+.guide-head { border-bottom: 1px dashed var(--rule); padding-bottom: 22px; margin-bottom: 30px; }
+.guide-kicker { font: 600 9px var(--font-mono); letter-spacing: .18em; color: var(--ink-3); }
+.guide-title { margin: 6px 0 0; font: 500 38px/1.15 var(--font-display); }
+.guide-sub { margin: 8px 0 0; max-width: 620px; color: var(--ink-3); font-size: 12.5px; }
+.guide-section { margin: 0 0 40px; }
+.guide-section h2 { margin: 0 0 6px; font: 500 21px var(--font-display); }
+.guide-section > p { margin: 0 0 16px; color: var(--ink-3); font-size: 11.5px; }
+.guide-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.guide-principles { display: grid; grid-template-columns: 1fr 1fr; gap: 0 30px; }
+.guide-principle { padding: 10px 0; border-bottom: 1px dashed var(--rule); }
+.guide-principle b { display: block; font-size: 12.5px; font-weight: 500; }
+.guide-principle small { color: var(--ink-3); font-size: 10.5px; }
+.guide-swatch { padding: 14px; border: 1px solid var(--rule); border-radius: var(--radius-card); }
+.guide-swatch .chipbox { height: 34px; border: 1px solid var(--rule); border-radius: 4px; margin-bottom: 9px; }
+.guide-swatch b { display: block; font: 10px var(--font-mono); }
+.guide-swatch small { color: var(--ink-3); font: 9.5px var(--font-mono); }
+.guide-type { border-top: 1px solid var(--rule); }
+.guide-type > div { display: flex; align-items: baseline; gap: 18px; padding: 10px 0; border-bottom: 1px dashed var(--rule); }
+.guide-type .label { width: 100px; flex: none; font: 9px var(--font-mono); color: var(--ink-3); letter-spacing: .08em; }
+.guide-components { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.guide-banner {
+  padding: 12px 14px; border: 1px solid var(--rule); border-radius: var(--radius-card);
+  font-size: 11px; color: var(--ink-3);
+}
+.guide-dodont { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+.guide-dodont ul { margin: 8px 0 0; padding-left: 16px; font-size: 11.5px; }
+.guide-dodont li { margin: 4px 0; }
+.guide-dodont .do b { color: var(--verified); }
+.guide-dodont .dont b { color: var(--alert); }
+
+@media (max-width: 760px) {
+  .guide { padding: 28px 18px 60px; }
+  .guide-title { font-size: 30px; }
+  .guide-grid, .guide-principles, .guide-dodont { grid-template-columns: 1fr; }
+}

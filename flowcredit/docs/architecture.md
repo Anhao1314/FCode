@@ -156,5 +156,7 @@ hash_n = sha256(canonical_json({sequence, type, payload, prev_hash, at}))
 | `intake.py` | 澄清式委托 | 无状态；回复 + 选项 + TaskSpec；字段白名单校验 |
 | `providers/oracle.py` | 文件式实验 Provider | 复用真实 prompt；缺回复即 unknown |
 | `demo/oracle.py` | LLM 层实验运行器 | 隔离 workdir；不污染控制台记忆 |
+| `viewer/design.css` | Paper & Proof tokens / 组件 | 新样式唯一入口；旧层只留布局 |
+| `viewer/design.html` | 设计系统样式页 | tokens、类型、组件、做与不做 |
 | `trajectory/exporter.py` | 导出 + 重算 | 与 viewer 算法一致 |
 | `demo/runner.py` | 装配 | 唯一选择具体实现的地方 |

@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<title>Paper &amp; Proof · FCode 设计系统</title>
+<link rel="stylesheet" href="app.css?v=47">
+<link rel="stylesheet" href="design.css?v=47">
+</head>
+<body class="guide-body">
+<main class="guide">
+  <header class="guide-head">
+    <div class="guide-kicker">FCODE DESIGN SYSTEM · V1</div>
+    <h1 class="guide-title">Paper &amp; Proof<br>纸与证</h1>
+    <p class="guide-sub">一套为可复核工作底稿而生的界面语言。纸是底稿，墨是结论，线是校对痕；手写只留给人的判断，等宽只留给机器的证据。</p>
+  </header>
+
+  <section class="guide-section">
+    <h2>六条原则</h2>
+    <p>不是风格偏好，是产品承诺的视觉对应。</p>
+    <div class="guide-principles">
+      <div class="guide-principle"><b>01 纸是底稿</b><small>白底、留白、虚线分隔；界面像一张可以归档的纸，不是仪表盘。</small></div>
+      <div class="guide-principle"><b>02 墨只表达确定</b><small>近黑墨色承担结论；颜色只用于已验证、待确认、错误三种状态。</small></div>
+      <div class="guide-principle"><b>03 手写是人的痕迹</b><small>楷体只出现在标题、结论、人工决定；机器数据一律无衬线/等宽。</small></div>
+      <div class="guide-principle"><b>04 数字像账本</b><small>金额、比例、哈希用等宽与 tabular numerals，对齐比装饰重要。</small></div>
+      <div class="guide-principle"><b>05 线是校对痕</b><small>实线分区，虚线表示可裁切/可归档；不用阴影伪造层级。</small></div>
+      <div class="guide-principle"><b>06 动效是翻页</b><small>160–220ms 淡入/位移；手绘小人只在运行时呼吸，不做弹跳。</small></div>
+    </div>
+  </section>
+
+  <section class="guide-section">
+    <h2>颜色</h2>
+    <p>纸、墨、三种状态；没有第四个品牌色。</p>
+    <div class="guide-grid">
+      <div class="guide-swatch"><div class="chipbox" style="background:#ffffff"></div><b>--paper</b><small>#FFFFFF</small></div>
+      <div class="guide-swatch"><div class="chipbox" style="background:#faf9f7"></div><b>--paper-wash</b><small>#FAF9F7</small></div>
+      <div class="guide-swatch"><div class="chipbox" style="background:#171717"></div><b>--ink</b><small>#171717</small></div>
+      <div class="guide-swatch"><div class="chipbox" style="background:rgba(23,23,23,.12)"></div><b>--rule</b><small>rgba(23,23,23,.12)</small></div>
+      <div class="guide-swatch"><div class="chipbox" style="background:#2f7d4f"></div><b>--verified</b><small>#2F7D4F</small></div>
+      <div class="guide-swatch"><div class="chipbox" style="background:#8a6a1f"></div><b>--pending</b><small>#8A6A1F</small></div>
+      <div class="guide-swatch"><div class="chipbox" style="background:#a83a2a"></div><b>--alert</b><small>#A83A2A</small></div>
+    </div>
+  </section>
+
+  <section class="guide-section">
+    <h2>字</h2>
+    <p>楷体是人的声音；无衬线是正文；等宽是证据。</p>
+    <div class="guide-type">
+      <div><span class="label">DISPLAY / 38</span><span style="font:500 38px/1.2 var(--font-display)">纸与证</span></div>
+      <div><span class="label">TITLE / 21</span><span style="font:500 21px var(--font-display)">复核结论与证据</span></div>
+      <div><span class="label">BODY / 13</span><span>两期数据可比，变化为 2.50 个百分点；每个数字都能回到原文。</span></div>
+      <div><span class="label">META / 9</span><span style="font:9px var(--font-mono);letter-spacing:.14em;color:var(--ink-3)">CASE FILE · VERIFIED · SHA256</span></div>
+      <div><span class="label">NUMBER / 22</span><span style="font:22px var(--font-mono);font-variant-numeric:tabular-nums">17.50% · 15.00% · −2.50pp</span></div>
+    </div>
+  </section>
+
+  <section class="guide-section">
+    <h2>组件</h2>
+    <p>按钮只分主次；状态只用三种颜色；选择卡是“结果”，不是菜单。</p>
+    <div class="guide-components" style="margin-bottom:14px">
+      <button class="a-btn strong">开始委托</button>
+      <button class="a-btn">上一步</button>
+      <span class="badge pass"><span class="dot"></span>已验证</span>
+      <span class="badge warn"><span class="dot"></span>待确认</span>
+      <span class="badge deny"><span class="dot"></span>已阻塞</span>
+      <span class="chip">关键审批</span>
+    </div>
+    <div class="proof-line" style="padding-left:0;margin-bottom:18px">
+      <span class="proof-mark">已复算</span>
+      <span>Runtime 独立重算通过</span>
+      <span class="proof-sep">·</span>
+      <span>2 处引用</span>
+      <span class="proof-sep">·</span>
+      <span>49 个事件</span>
+    </div>
+    <div class="card result" style="max-width:560px">
+      <div class="card-head">
+        <span class="card-title">结论</span>
+        <span class="badge pass"><span class="dot"></span>已验证</span>
+        <span class="grow"></span>
+        <span class="card-meta">succeeded · runtime-recomputed</span>
+      </div>
+      <p class="result-answer">两期毛利率可比：FY2024 17.50%，FY2025 15.00%，下降 2.50 个百分点。</p>
+      <div class="metrics">
+        <div class="metric"><div class="k">FY2024 毛利率</div><div class="v">17.50%</div></div>
+        <div class="metric"><div class="k">FY2025 毛利率</div><div class="v">15.00%</div></div>
+        <div class="metric"><div class="k">变化</div><div class="v down">−2.50 pp</div></div>
+      </div>
+      <div class="proof-line"><span class="proof-mark">已复算</span><span>Runtime 独立重算通过</span></div>
+    </div>
+    <div class="intake-choices" style="max-width:620px;margin-top:18px">
+      <button class="intake-choice selected"><span class="t"><b>判断两期能不能直接比</b><span class="intake-badge">推荐</span></span><small>核对单位、口径、重述后，再决定能不能算</small></button>
+      <button class="intake-choice"><span class="t"><b>重点看重述与口径变化</b></span><small>解释 FY2024 重述和 FY2025 的桥接口径</small></button>
+    </div>
+  </section>
+
+  <section class="guide-section">
+    <h2>做与不做</h2>
+    <div class="guide-dodont">
+      <div class="do"><b>做</b><ul>
+        <li>用留白、细线、虚线组织信息。</li>
+        <li>让每个数字旁边有来源或“未验证”标记。</li>
+        <li>手写体只用在标题、结论、人的话。</li>
+        <li>状态色只表达状态，不拿来做装饰。</li>
+      </ul></div>
+      <div class="dont"><b>不做</b><ul>
+        <li>渐变、发光、玻璃拟态、AI 紫。</li>
+        <li>大面积阴影或多层浮起卡片。</li>
+        <li>所有东西都做成胶囊按钮。</li>
+        <li>用 emoji 或 3D 图标代替手绘线稿。</li>
+      </ul></div>
+    </div>
+  </section>
+
+  <p class="guide-sub" style="margin-top:30px">Paper &amp; Proof v1 · FCode · 所有新样式写入 <code>design.css</code>，旧层只保留布局。</p>
+</main>
+</body>
+</html>
