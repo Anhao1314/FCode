@@ -40,6 +40,7 @@ WORKSPACE_TOOLS = [
     "search_cases",
     "read_case",
     "query_facts",
+    "collect_source",
     "fetch_source",
 ]
 
@@ -67,6 +68,7 @@ class ModuleBoundaryTests(unittest.TestCase):
         self.assertEqual([spec.name for spec in specs], WORKSPACE_TOOLS)
         effects = {spec.name: spec.effect for spec in specs}
         self.assertEqual(effects["working_paper_append"], "write")
+        self.assertEqual(effects["collect_source"], "network")
         self.assertEqual(effects["fetch_source"], "network")
 
     def test_domain_tools_do_not_duplicate_workspace_names(self) -> None:

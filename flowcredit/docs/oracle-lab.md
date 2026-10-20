@@ -71,7 +71,7 @@ round-01.reply.json  {"version": "flowagent.plan/v1",
   测到真实拆解能力。下一步需要 planner actor 分离，或让模型自己产出 todo。
 - **`list_documents` 只给 doc id。** 模型看不到标题、期间、kind、unit；文档一多
   就无法选择。当前靠计划预先指定 doc_id 绕过。
-- **15 个工具里只用了 9 个。** `search_cases`/`query_facts` 等记忆工具不在计划
+- **15 个工具（实验当时）里只用了 9 个。** `search_cases`/`query_facts` 等记忆工具不在计划
   里，模型没有动机调用；这不代表它们没用，而是说明“工具可见”不等于“工具会被
   选择”。
 - **没有模型驱动的计划修订。** 跳过/提前仍由操作员控制；模型只能报告阻塞。

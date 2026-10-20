@@ -164,8 +164,9 @@ class ConnectorTests(unittest.TestCase):
     def test_demo_policy_allows_the_tool(self) -> None:
         from flowagent.demo.fixtures import get_scenario
         scenario = get_scenario("full")
+        self.assertIn("collect_source", scenario.allowed_tools)
         self.assertIn("fetch_source", scenario.allowed_tools)
-        self.assertIn("fetch_source", scenario.grant["allowed_tools"])
+        self.assertIn("collect_source", scenario.grant["allowed_tools"])
 
 
 if __name__ == "__main__":

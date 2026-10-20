@@ -57,6 +57,36 @@ def build_workspace_tools(
     def fetch_source(arguments: dict[str, Any]) -> dict[str, Any]:
         return connectors.fetch(arguments["source"], arguments.get("key"))
 
+    def collect_source(arguments: dict[str, Any]) -> dict[str, Any]:
+        collected = connectors.collect(arguments["source"], arguments.get("query"))
+        metadata = {
+            key: collected[key]
+            for key in ("source", "url", "status", "content_type", "retrieved_at", "sha256", "bytes", "title")
+            if key in collected
+        }
+        ingested = evidence.ingest_text(
+            collected["text"],
+            name=collected["source"],
+            kind=collected["kind"],
+            metadata=metadata,
+        )
+        preview = collected["text"][:400]
+        return {
+            "source": collected["source"],
+            "url": collected["url"],
+            "status": collected["status"],
+            "content_type": collected["content_type"],
+            "retrieved_at": collected["retrieved_at"],
+            "sha256": collected["sha256"],
+            "bytes": collected["bytes"],
+            "doc_id": ingested["doc_id"],
+            "kind": ingested["kind"],
+            "lines": ingested["lines"],
+            "title": collected.get("title", ""),
+            "preview": preview,
+            "truncated": len(collected["text"]) > len(preview),
+        }
+
     index = cases or CaseIndex()
     fact_index = facts or FactStore()
 
@@ -236,6 +266,43 @@ def build_workspace_tools(
             outputs=(
                 Param.output("facts", "array"),
                 Param.output("count", "integer"),
+            ),
+            version="1.0",
+        ),
+        ToolSpec(
+            name="collect_source",
+            summary="Collect a host-configured source, extract text, and ingest it as cited evidence",
+            effect=EFFECT_NETWORK,
+            params=(
+                Param(
+                    name="source",
+                    kind="string",
+                    required=True,
+                    enum=connectors.names(),
+                    description="configured source name",
+                ),
+                Param(
+                    name="query",
+                    kind="string",
+                    required=False,
+                    description="optional lookup term appended as the source's query parameter",
+                ),
+            ),
+            handler=collect_source,
+            outputs=(
+                Param.output("source", "string"),
+                Param.output("url", "string"),
+                Param.output("status", "integer"),
+                Param.output("content_type", "string"),
+                Param.output("retrieved_at", "string"),
+                Param.output("sha256", "string"),
+                Param.output("bytes", "integer"),
+                Param.output("doc_id", "string"),
+                Param.output("kind", "string"),
+                Param.output("lines", "integer"),
+                Param.output("title", "string"),
+                Param.output("preview", "string"),
+                Param.output("truncated", "boolean"),
             ),
             version="1.0",
         ),

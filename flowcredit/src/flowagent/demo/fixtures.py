@@ -54,6 +54,7 @@ _ALL_TOOLS = (
     "search_cases",
     "read_case",
     "query_facts",
+    "collect_source",
     "fetch_source",
 )
 

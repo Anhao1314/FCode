@@ -22,6 +22,7 @@ import csv
 import hashlib
 import io
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -44,6 +45,7 @@ class EvidenceDoc:
     lines: list[str]
     rows: int | None = None
     columns: list[str] | None = None
+    metadata: dict[str, Any] | None = None
 
 
 class EvidenceStore:
@@ -108,11 +110,59 @@ class EvidenceStore:
         return {
             "doc_id": doc.doc_id,
             "kind": doc.kind,
+            "path": doc.path,
             "size": doc.size,
             "sha256": doc.sha256,
             "lines": len(doc.lines),
             "rows": doc.rows,
             "columns": doc.columns,
+            "metadata": doc.metadata or {},
+        }
+
+    def ingest_text(
+        self,
+        text: str,
+        *,
+        name: str,
+        kind: str = "text",
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Add collected text as evidence with a content-addressed id.
+
+        The text already came through a host-owned source; this method only
+        anchors it. The virtual path is for display and search results; no file
+        is written outside the store root.
+        """
+        if not isinstance(text, str) or not text.strip():
+            raise AgentError("EVIDENCE_EMPTY", "collected source produced no readable text")
+        data = text.encode("utf-8")
+        if len(data) > MAX_BYTES:
+            raise AgentError("EVIDENCE_TOO_LARGE", f"collected text exceeds {MAX_BYTES} bytes")
+        sha = hashlib.sha256(data).hexdigest()
+        doc_id = f"evidence:{sha[:12]}"
+        if doc_id not in self._docs:
+            slug = re.sub(r"[^a-z0-9_-]+", "-", (name or "source").lower()).strip("-") or "source"
+            doc = EvidenceDoc(
+                doc_id=doc_id,
+                path=f"collected/{slug}-{sha[:12]}.txt",
+                kind=kind,
+                sha256=sha,
+                size=len(data),
+                lines=text.splitlines(),
+                metadata=dict(metadata or {}),
+            )
+            self._docs[doc_id] = doc
+        doc = self._docs[doc_id]
+        return {
+            "doc_id": doc.doc_id,
+            "kind": doc.kind,
+            "path": doc.path,
+            "size": doc.size,
+            "sha256": doc.sha256,
+            "lines": len(doc.lines),
+            "rows": doc.rows,
+            "columns": doc.columns,
+            "metadata": doc.metadata or {},
         }
 
     # ---------------------------------------------------------------- queries
@@ -126,6 +176,7 @@ class EvidenceStore:
                     hits.append({
                         "doc_id": doc.doc_id,
                         "path": doc.path,
+                        "source": (doc.metadata or {}).get("source", ""),
                         "line": number,
                         "snippet": line.strip()[:200],
                     })
@@ -151,4 +202,5 @@ class EvidenceStore:
             "lines": window,
             "truncated": last < total,
             "total_lines": total,
+            "metadata": doc.metadata or {},
         }
