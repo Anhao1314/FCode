@@ -126,7 +126,44 @@
 - 语言层不得改变任何数字、结论或链上事件；
 - 语言层失败时回退模板，不能静默使用坏输出。
 
-## 七、落地顺序
+## 八、用 Claude CLI 做盲评（只评不训）
+
+设备上的 Claude CLI（Claude Code 2.1.302）可以当**盲评评审**，不能把它的文本直接
+当成训练目标。直接拿 Claude 输出做 SFT 可能违反服务条款，也会把“模仿”写进模型，
+而不是形成 FCode 自己的声音。
+
+脚本：`flowcredit/scripts/voice_judge.py`。输入 JSONL：
+
+```json
+{"id":"judgment-good","surface":"judgment","evidence":"...","text":"..."}
+```
+
+调用：
+
+```bash
+python3 flowcredit/scripts/voice_judge.py \
+  --input /tmp/voice-cases.jsonl \
+  --out /tmp/voice-report.jsonl \
+  --limit 20
+```
+
+它用 `claude -p --json-schema` 返回 1–5 分、`numbers_traceable`、
+`conclusion_first`、`specific_next_step`、`issues` 与 `rewrite_hint`。
+2026-10-21 实测：2 条样例约 $0.032；一条好样本 4 分，一条“根据我的分析…”
+阻塞样本 1 分。评分严格到会把 evidence 里没写的 `entity-total` 判为事实增补，
+这正是我们要的尺子。
+
+使用边界：
+
+- 只发合成/演示数据或明确授权的文本；不要把客户资料发给外部服务。
+- **不把 Claude 的 `rewrite_hint` 抄进训练集**。它只用于：
+  1. 校准我们的 prompt 和 golden 示例；
+  2. 发现模型输出里的无依据数字、空泛下一步；
+  3. 给 voice adapter 做盲评门禁。
+- 训练语料仍由我们自己的轨迹、模板和人工改写组成。
+- 需要批量跑时先小样本估成本；脚本逐条写报告，失败不静默跳过。
+
+## 九、落地顺序
 
 1. 写 60–80 条 golden 示例（四个说话面）。
 2. 用 base 模型做 prompt baseline，跑自动评分 + 30 条人工盲评。
