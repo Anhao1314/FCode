@@ -14,6 +14,7 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "src"))
 
 from flowagent.core.contracts import AgentError  # noqa: E402
+from flowagent.core.plan import Plan  # noqa: E402
 from flowagent.core.receipts import ReceiptStore  # noqa: E402
 from flowagent.core.store import TaskStore  # noqa: E402
 from flowagent.domains import DOMAINS  # noqa: E402
@@ -24,6 +25,7 @@ from flowagent.runtime.budget import BudgetLimits  # noqa: E402
 from flowagent.runtime.harness import Harness  # noqa: E402
 from flowagent.runtime.loop import Loop  # noqa: E402
 from flowagent.tools.base import EFFECT_READ, Observation  # noqa: E402
+from flowagent.tools.credit.memo import OPTIONAL_METRICS, REQUIRED_METRICS  # noqa: E402
 from flowagent.tools.credit.planner import BLUEPRINT, DEPENDENTS, CreditPlanner  # noqa: E402
 from flowagent.tools.credit.tools import CREDIT_TOOL_NAMES, build_credit_tools  # noqa: E402
 from flowagent.tools.credit.verifier import verify_observation  # noqa: E402
@@ -203,6 +205,10 @@ class PlannerAndToolTests(unittest.TestCase):
         self.assertEqual(DEPENDENTS["c5"], ("c7", "c9", "c11", "c12"))
         self.assertEqual(DEPENDENTS["c6"], ("c14",))
         self.assertEqual(len(BLUEPRINT), 14)
+        self.assertEqual(
+            {todo.id for todo in plan.todos if not todo.required},
+            {"c6", "c11", "c12", "c14"},
+        )
 
     def test_five_tools_are_all_read_only(self) -> None:
         specs = build_credit_tools(CreditWorld())
@@ -301,6 +307,23 @@ class _AbandonC7Planner(CreditPlanner):
         return plan.mark("c7", "abandoned", reason="test: result todo missing")
 
 
+class _OptionalGapWorld(CreditWorld):
+    """Hengxing with all three optional metrics undisclosed."""
+
+    def compute_credit_metric(self, metric: str, period: str) -> dict:
+        if period == "FY2025" and metric in OPTIONAL_METRICS:
+            return {
+                "computed": False,
+                "metric": metric,
+                "period": period,
+                "kind": "code" if metric == "rating_migration" else "ratio",
+                "inputs": {},
+                "citations": [],
+                "blockers": ["optional_gap"],
+            }
+        return super().compute_credit_metric(metric, period)
+
+
 def _run_stack(world: CreditWorld, *, planner=None, specs=None):
     with tempfile.TemporaryDirectory(prefix="fcode-credit-loop-") as tmp:
         store = TaskStore(Path(tmp) / "task.sqlite")
@@ -390,6 +413,50 @@ class LoopRegressionTests(unittest.TestCase):
         self.assertIn("c7", task.failure["message"])
         self.assertIsNone(task.result)
 
+    def test_optional_computed_false_is_skipped_and_plan_succeeds(self) -> None:
+        task, events = _run_stack(_OptionalGapWorld("hengxing"))
+        self.assertEqual(task.status, "succeeded")
+        self.assertTrue(task.result["verified"])
+        plan = Plan.from_dict(task.plan_state)
+        statuses = {todo.id: todo.status for todo in plan.todos}
+        for todo_id in ("c11", "c12", "c14"):
+            self.assertEqual(statuses[todo_id], "blocked", todo_id)
+        self.assertEqual(
+            [item["metric"] for item in task.result["results"]],
+            list(REQUIRED_METRICS),
+        )
+        self.assertFalse(any(event["type"] == "task_failed" for event in events))
+
+    def test_optional_computed_true_is_still_verified(self) -> None:
+        world = CreditWorld("hengxing")
+        specs = build_credit_tools(world)
+
+        def tampered(arguments: dict) -> dict:
+            result = world.compute_credit_metric(arguments["metric"], arguments["period"])
+            if result.get("computed") and result.get("metric") == "related_party_funding_ratio":
+                result = dict(result)
+                result["value_bp"] += 1
+            return result
+
+        specs = [
+            replace(spec, handler=tampered)
+            if spec.name == "compute_credit_metric"
+            else spec
+            for spec in specs
+        ]
+        task, _ = _run_stack(world, specs=specs)
+        self.assertEqual(task.status, "failed")
+        self.assertEqual(task.failure["code"], "RESULT_VERIFICATION_FAILED")
+
+    def test_required_gap_still_blocks_the_task(self) -> None:
+        task, _ = _run_stack(CreditWorld("yunling"))
+        self.assertEqual(task.status, "failed")
+        self.assertEqual(task.failure["code"], "INSUFFICIENT_EVIDENCE")
+        self.assertIsNone(task.result)
+        plan = Plan.from_dict(task.plan_state)
+        self.assertTrue(plan.is_blocked())
+        self.assertFalse(plan.is_complete())
+
     def test_partial_memory_does_not_record_missing_debt(self) -> None:
         case = run_case("memory-partial", partial=True)
         memory = WorkingMemory(objective="credit", tool_catalog=[])
@@ -415,7 +482,6 @@ class LoopRegressionTests(unittest.TestCase):
                 "interest_coverage": 41667,
                 "receivables_to_revenue": 2296,
                 "audit_opinion": "standard_unqualified",
-                "rating_migration": "stable",
             },
         )
         self.assertIn("missing_document", state["blockers"])

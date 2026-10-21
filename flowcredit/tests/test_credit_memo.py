@@ -17,6 +17,9 @@ sys.path.insert(0, str(ROOT / "src"))
 from flowagent.demo.credit import EXPECTED_RECOMMENDATIONS, run_all, run_issuer  # noqa: E402
 from flowagent.tools.credit.memo import (  # noqa: E402
     MEMO_VERSION,
+    OPTIONAL_METRICS,
+    REQUIRED_METRICS,
+    conclusion_for,
     recommendation_for,
     memo_sha256,
 )
@@ -27,6 +30,12 @@ MISSING_YUNLING = [
     "ocf_to_short_term_debt",
     "related_party_funding_ratio",
     "contingent_liabilities_to_equity",
+    "rating_migration",
+]
+MISSING_OPTIONAL_YUNLING = [
+    "related_party_funding_ratio",
+    "contingent_liabilities_to_equity",
+    "rating_migration",
 ]
 
 
@@ -74,6 +83,48 @@ class MemoPolicyTests(unittest.TestCase):
         self.assertEqual(recommendation, "watch")
         self.assertEqual(rule, "interest_coverage < 4.0x")
 
+    def test_optional_gaps_do_not_block(self) -> None:
+        metrics = _safe_metrics()
+        for metric in OPTIONAL_METRICS:
+            del metrics[metric]
+        recommendation, rule, missing_required, missing_optional = conclusion_for(metrics)
+        self.assertEqual(recommendation, "pass")
+        self.assertEqual(rule, "no threshold fired")
+        self.assertEqual(missing_required, [])
+        self.assertEqual(set(missing_optional), set(OPTIONAL_METRICS))
+
+    def test_optional_rating_downgrade_still_rejects(self) -> None:
+        metrics = _safe_metrics()
+        metrics["rating_migration"]["value_code"] = "downgrade"
+        recommendation, rule, missing_required, _ = conclusion_for(metrics)
+        self.assertEqual(recommendation, "reject")
+        self.assertEqual(rule, "rating_migration == downgrade")
+        self.assertEqual(missing_required, [])
+
+    def test_optional_related_and_contingent_still_watch(self) -> None:
+        for metric, rule in (
+            ("related_party_funding_ratio", "related_party_funding_ratio > 10%"),
+            ("contingent_liabilities_to_equity", "contingent_liabilities_to_equity > 10%"),
+        ):
+            with self.subTest(metric=metric):
+                metrics = _safe_metrics()
+                metrics[metric]["value_bp"] = 1001
+                recommendation, fired, missing_required, _ = conclusion_for(metrics)
+                self.assertEqual(recommendation, "watch")
+                self.assertEqual(fired, rule)
+                self.assertEqual(missing_required, [])
+
+    def test_missing_required_wins_over_optional_thresholds(self) -> None:
+        metrics = _safe_metrics()
+        metrics["rating_migration"]["value_code"] = "downgrade"
+        metrics["related_party_funding_ratio"]["value_bp"] = 5000
+        del metrics["net_debt_to_ebitda"]
+        recommendation, rule, missing_required, missing_optional = conclusion_for(metrics)
+        self.assertEqual(recommendation, "insufficient_evidence")
+        self.assertEqual(rule, "insufficient_evidence")
+        self.assertEqual(missing_required, ["net_debt_to_ebitda"])
+        self.assertEqual(missing_optional, [])
+
 
 class MemoRunTests(unittest.TestCase):
     def test_hengxing_is_watch_issued_but_not_signed(self) -> None:
@@ -100,6 +151,14 @@ class MemoRunTests(unittest.TestCase):
             )
             self.assertNotIn("conclusion", run.memo)
             self.assertEqual(run.memo["memo_version"], MEMO_VERSION)
+            self.assertEqual(run.memo["required_metrics"], list(REQUIRED_METRICS))
+            self.assertEqual(run.memo["optional_metrics"], list(OPTIONAL_METRICS))
+            self.assertEqual(run.memo["missing_required"], [])
+            self.assertEqual(run.memo["missing_optional"], [])
+            self.assertTrue(run.memo["optional_verified"])
+            self.assertEqual(run.missing_required, [])
+            self.assertEqual(run.missing_optional, [])
+            self.assertTrue(run.optional_verified)
             self.assertEqual(len(run.memo["metrics"]), 8)
             self.assertEqual(run.metrics["net_debt_to_ebitda"], 37714)
             self.assertEqual(run.metrics["interest_coverage"], 41667)
@@ -134,6 +193,10 @@ class MemoRunTests(unittest.TestCase):
             self.assertTrue(run.memo["issued"])
             self.assertFalse(run.memo["signed"])
             self.assertTrue(run.memo["verified"])
+            self.assertEqual(run.memo["missing_required"], [])
+            self.assertEqual(run.memo["missing_optional"], [])
+            self.assertTrue(run.memo["optional_verified"])
+            self.assertTrue(run.optional_verified)
             self.assertEqual(run.rule_fired, "rating_migration == downgrade")
             self.assertEqual(run.metrics["net_debt_to_ebitda"], 57500)
             self.assertEqual(run.metrics["rating_migration"], "downgrade")
@@ -180,15 +243,23 @@ class MemoRunTests(unittest.TestCase):
                 {"decision": None, "reason": "", "signed_at": None},
             )
             self.assertEqual(run.memo["missing"], MISSING_YUNLING)
+            self.assertEqual(
+                run.memo["missing_required"],
+                ["net_debt_to_ebitda", "ocf_to_short_term_debt"],
+            )
+            self.assertEqual(run.memo["missing_optional"], MISSING_OPTIONAL_YUNLING)
+            self.assertEqual(run.missing_required, run.memo["missing_required"])
+            self.assertEqual(run.missing_optional, MISSING_OPTIONAL_YUNLING)
+            self.assertFalse(run.memo["optional_verified"])
+            self.assertFalse(run.optional_verified)
             self.assertIn("missing_debt_schedule", run.memo["blockers"])
-            self.assertEqual(len(run.memo["metrics"]), 4)
+            self.assertEqual(len(run.memo["metrics"]), 3)
             self.assertEqual(
                 run.metrics,
                 {
                     "interest_coverage": 36000,
                     "receivables_to_revenue": 2118,
                     "audit_opinion": "standard_unqualified",
-                    "rating_migration": "stable",
                 },
             )
             self.assertFalse(
@@ -263,6 +334,9 @@ class MemoRunTests(unittest.TestCase):
                 self.assertIn("issued", case)
                 self.assertIn("signed", case)
                 self.assertIn("decision_status", case)
+                self.assertIn("missing_required", case)
+                self.assertIn("missing_optional", case)
+                self.assertIn("optional_verified", case)
                 self.assertEqual(case["conclusion_authority"], "policy")
                 self.assertNotIn("conclusion", case)
                 self.assertFalse(case["signed"])
@@ -274,9 +348,18 @@ class MemoRunTests(unittest.TestCase):
                     [] if case["issuer_key"] != "yunling" else MISSING_YUNLING,
                 )
                 if case["issuer_key"] in ("hengxing", "yuanyang"):
+                    self.assertEqual(case["missing_required"], [])
+                    self.assertEqual(case["missing_optional"], [])
+                    self.assertTrue(case["optional_verified"])
                     self.assertTrue(case["issued"])
                     self.assertEqual(case["decision_status"], "pending_human_review")
                 else:
+                    self.assertEqual(
+                        case["missing_required"],
+                        ["net_debt_to_ebitda", "ocf_to_short_term_debt"],
+                    )
+                    self.assertEqual(case["missing_optional"], MISSING_OPTIONAL_YUNLING)
+                    self.assertFalse(case["optional_verified"])
                     self.assertFalse(case["issued"])
                     self.assertEqual(case["decision_status"], "blocked")
 

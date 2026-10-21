@@ -18,7 +18,7 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
 from flowagent.core.contracts import AgentError, Task  # noqa: E402
-from flowagent.core.plan import Plan  # noqa: E402
+from flowagent.core.plan import Plan, Todo  # noqa: E402
 from flowagent.core.receipts import ReceiptStore  # noqa: E402
 from flowagent.core.store import TaskStore  # noqa: E402
 from flowagent.providers.mock import MockProvider  # noqa: E402
@@ -130,6 +130,56 @@ class RevisionTest(unittest.TestCase):
         with self.assertRaises(AgentError) as caught:
             plan.mark("t99", "done")
         self.assertEqual(caught.exception.code, "TODO_UNKNOWN")
+
+
+class RequiredOptionalTest(unittest.TestCase):
+    def test_todo_required_round_trips_and_legacy_plans_default_true(self) -> None:
+        optional = Todo(
+            id="o1",
+            text="optional",
+            tool="read_document",
+            done_when="read",
+            required=False,
+        )
+        restored = Todo.from_dict(optional.to_dict())
+        self.assertFalse(restored.required)
+        self.assertFalse(optional.to_dict()["required"])
+
+        legacy = optional.to_dict()
+        del legacy["required"]
+        self.assertTrue(Todo.from_dict(legacy).required)
+
+        plan = Plan(goal="g", todos=[optional])
+        self.assertFalse(Plan.from_dict(plan.to_dict()).todos[0].required)
+
+    def test_optional_blocked_completes_but_required_blocked_does_not(self) -> None:
+        required_done = Todo(
+            id="r1", text="required", tool="t", done_when="d", status="done"
+        )
+        optional_blocked = Todo(
+            id="o1",
+            text="optional",
+            tool="t",
+            done_when="d",
+            status="blocked",
+            required=False,
+            reason="not disclosed",
+        )
+        plan = Plan(goal="g", todos=[required_done, optional_blocked])
+        self.assertTrue(plan.is_complete())
+        self.assertFalse(plan.is_blocked())
+
+        required_blocked = Todo(
+            id="r2",
+            text="required",
+            tool="t",
+            done_when="d",
+            status="blocked",
+            reason="missing",
+        )
+        failed = Plan(goal="g", todos=[required_done, required_blocked])
+        self.assertFalse(failed.is_complete())
+        self.assertTrue(failed.is_blocked())
 
 
 class ReplayTest(unittest.TestCase):

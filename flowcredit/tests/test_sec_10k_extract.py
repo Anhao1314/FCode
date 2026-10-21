@@ -13,6 +13,11 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "src"))
 
+from flowagent.tools.credit.memo import (  # noqa: E402
+    MEMO_VERSION,
+    OPTIONAL_METRICS,
+    REQUIRED_METRICS,
+)
 from labs.sec_10k.extract import FACT_ORDER, _audit_code, extract_all  # noqa: E402
 from labs.sec_10k.spike import (  # noqa: E402
     EXCERPT_PATH,
@@ -177,7 +182,7 @@ class ExtractionTests(unittest.TestCase):
 
 
 class SpikeTests(unittest.TestCase):
-    def test_spike_is_ok_and_memo_is_blocked(self) -> None:
+    def test_spike_is_ok_and_memo_is_issued_with_optional_gaps(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             result = run_spike(workdir=Path(tmp))
             self.assertTrue(result["ok"])
@@ -196,23 +201,34 @@ class SpikeTests(unittest.TestCase):
             )
             self.assertIn("rating_migration", result["metrics"]["missing"])
             memo = result["memo"]
-            self.assertEqual(memo["recommended_conclusion"], "insufficient_evidence")
+            self.assertEqual(memo["memo_version"], MEMO_VERSION)
+            self.assertEqual(memo["recommended_conclusion"], "pass")
             self.assertEqual(memo["conclusion_authority"], "policy")
-            self.assertFalse(memo["issued"])
+            self.assertTrue(memo["issued"])
             self.assertFalse(memo["signed"])
-            self.assertFalse(memo["verified"])
-            self.assertEqual(memo["decision_status"], "blocked")
+            self.assertTrue(memo["verified"])
+            self.assertFalse(memo["optional_verified"])
+            self.assertEqual(memo["decision_status"], "pending_human_review")
+            self.assertEqual(memo["missing_required"], [])
+            self.assertEqual(set(memo["missing_optional"]), set(OPTIONAL_METRICS))
             self.assertFalse(memo["synthetic"])
             self.assertTrue(memo["research_only"])
+            full_memo = json.loads(Path(memo["path"]).read_text(encoding="utf-8"))
+            self.assertIn(
+                "10-K 未披露 rating_migration / related_party_funding_ratio / "
+                "contingent_liabilities_to_equity；这些可选指标未参与策略结论。",
+                full_memo["caveats"],
+            )
             self.assertTrue(Path(memo["path"]).exists())
             self.assertTrue(Path(memo["md_path"]).exists())
             markdown = Path(memo["md_path"]).read_text(encoding="utf-8")
             self.assertIn("真实公开数据（SEC 10-K）", markdown)
             self.assertNotIn("合成数据", markdown)
-            self.assertIn("策略建议：insufficient_evidence", markdown)
-            self.assertIn("Host 签发：否", markdown)
-            self.assertIn("人工签字：否", markdown)
-            self.assertIn("复核状态：blocked", markdown)
+            self.assertIn("策略建议：pass（策略输出，不是信贷决定）", markdown)
+            self.assertIn("Host 签发：是", markdown)
+            self.assertIn("人工签字：否（待复核）", markdown)
+            self.assertIn("复核状态：pending_human_review", markdown)
+            self.assertIn("缺失可选指标", markdown)
             self.assertIn("rating_migration", markdown)
 
     def test_memo_json_carries_source_and_missing_metrics(self) -> None:
@@ -224,7 +240,15 @@ class SpikeTests(unittest.TestCase):
         self.assertFalse(memo["synthetic"])
         self.assertTrue(memo["research_only"])
         self.assertEqual(memo["as_of"], "FY2025")
-        self.assertIn("rating_migration", memo["missing"])
+        self.assertEqual(memo["required_metrics"], list(REQUIRED_METRICS))
+        self.assertEqual(memo["optional_metrics"], list(OPTIONAL_METRICS))
+        self.assertEqual(memo["missing_required"], [])
+        self.assertEqual(set(memo["missing_optional"]), set(OPTIONAL_METRICS))
+        self.assertFalse(memo["optional_verified"])
+        self.assertEqual(
+            [metric["metric"] for metric in memo["metrics"]],
+            list(REQUIRED_METRICS),
+        )
         self.assertNotIn("related_party_funding_ratio", [m["metric"] for m in memo["metrics"]])
         for metric in memo["metrics"]:
             self.assertTrue(metric["citations"])

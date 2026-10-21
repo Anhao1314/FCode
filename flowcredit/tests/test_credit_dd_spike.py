@@ -53,9 +53,9 @@ class LabSeamTests(unittest.TestCase):
 
         statuses = {todo.id: todo.status for todo in case.plan.todos}
         self.assertEqual(statuses["c5"], "blocked")
-        for todo_id in ("c7", "c9", "c11", "c12"):
+        for todo_id in ("c6", "c7", "c9", "c11", "c12", "c14"):
             self.assertEqual(statuses[todo_id], "abandoned")
-        for todo_id in ("c8", "c10", "c13", "c14"):
+        for todo_id in ("c8", "c10", "c13"):
             self.assertEqual(statuses[todo_id], "done")
         self.assertFalse(case.has_computed_net_debt())
         self.assertEqual(case.summary["metrics"], {})
