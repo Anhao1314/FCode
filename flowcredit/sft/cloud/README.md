@@ -8,6 +8,7 @@
 ```
 sft/data/train_smoke.jsonl   125 条   （51 条来自真实轨迹 + 74 条生成）
 sft/data/train_full.jsonl   2271 条   （51 条来自真实轨迹 + 2220 条生成）
+sft/data/choices_lab_*.jsonl  6005 条 choice 样本（train 5223 / val 782，见 4b）
 sft/data/stats_*.json        生成统计（prompt_version 与来源计数）
 ```
 
@@ -56,6 +57,61 @@ bash /root/fcode-sft/cloud/train-smoke.sh
 bash /root/fcode-sft/cloud/train-full.sh
 ```
 
+## 4b. Choice SFT：packet policy head（下一轮的主线）
+
+full-proposal 语料有一个致命缺口：**没有任何一条 assistant 标签选择
+`report_blocked`**。所以 open-ended 只会一直读资料，不会如实停止。choice
+SFT 从同一批上下文重建 packet，把 192 个阻塞上下文改标成
+`report_blocked(insufficient_evidence)`，再做候选置换与负例。
+
+本机生成（不需要 GPU）：
+
+```bash
+cd flowcredit
+PYTHONPATH=src python3 -m flowagent.sft.choice_lab \
+  --data sft/data/train_full.jsonl \
+  --variants 3 --val-every 7 --seed 7
+```
+
+Gate 1（2026-10-21 实测，`sft/data/choices_lab_stats.json`）：
+
+- 6,005 条样本（train 5,223 / val 782），6,005 个唯一 prompt，无冲突标签；
+- `report_blocked` 标签 669 条（11.1%）；
+- label 位置分布 1276/1294/1278/1171/986，位置熵 2.316 / 上限 2.322；
+- 负例：提前停止 1,787、重复动作 1,444、错误参数 1,397；
+- 单候选包 121 个跳过（host 单候选快路径不需要模型）。
+
+上传并训练（冒烟先行）：
+
+```bash
+# 本机执行
+tar czf - -C flowcredit/sft \
+  data/choices_lab_train.jsonl data/choices_lab_val.jsonl \
+  cloud/dataset_info.json cloud/qwen3_choice_smoke.yaml \
+  cloud/qwen3_choice_lora.yaml cloud/train-choice-smoke.sh cloud/train-choice.sh \
+  | ssh fcode-aliyun 'mkdir -p /root/fcode-sft && tar xzf - -C /root/fcode-sft'
+
+# 云端执行
+bash /root/fcode-sft/cloud/train-choice-smoke.sh   # ~10 分钟，先看 loss 与 adapter
+bash /root/fcode-sft/cloud/train-choice.sh         # 2 epoch，1.5-3 小时
+```
+
+导出 policy 模型（不要覆盖 full-proposal 那个）：
+
+```bash
+ADAPTER_DIR=/root/fcode-sft/saves/choice-full \
+MODEL_NAME=fcode-qwen3-4b-policy \
+bash /root/fcode-sft/cloud/merge-and-export.sh
+```
+
+注意：`template: qwen3` 的 assistant 目标会带空 `<think></think>` 前缀，
+`parse_choice_text` 会剥掉，packet 推理不需要额外配置。
+
+排错：如果你的 LLaMA-Factory 版本不认识 `eval_dataset`，把两个 choice yaml 里的
+`eval_dataset: fcode_choice_val` 删掉，改成 `val_size: 0.05`，其余不动。
+冒烟跑起来之后再看 `choice-smoke.log`：loss 应该很快降到 0.05 以下，
+因为候选集只有几个 id。
+
 ## 5. 合并 + 导出 GGUF（10-20 分钟）
 
 ```bash
@@ -66,16 +122,18 @@ bash /root/fcode-sft/cloud/merge-and-export.sh
 再 `dequantize()` 成 fp16；直接合进原始 fp16 基座会改变首 token 分布，模型会退化
 成重复的 `</tool_call>`。脚本可重复执行，已存在的 `out/merged` 会跳过。
 
-产物：`/root/fcode-sft/out/fcode-qwen3-4b-Q4_K_M.gguf`（~2.5 GB）+ `Modelfile`。
-`Modelfile` 不再写 `SYSTEM`：FCode 每次请求都会发送自己的 system prompt，双重
+产物：`/root/fcode-sft/out/${MODEL_NAME}-Q4_K_M.gguf`（~2.5 GB）+
+`Modelfile-${MODEL_NAME}`。默认合并 `saves/full`、命名 `fcode-qwen3-4b`；
+导出 policy 模型时用 `ADAPTER_DIR` / `MODEL_NAME` 覆盖（见 4b）。
+`Modelfile` 不写 `SYSTEM`：FCode 每次请求都会发送自己的 system prompt，双重
 system 会改变训练分布。
 
 ## 6. 回本机，装进 Ollama
 
 ```bash
 scp root@<ip>:/root/fcode-sft/out/fcode-qwen3-4b-Q4_K_M.gguf .
-scp root@<ip>:/root/fcode-sft/out/Modelfile .
-ollama create fcode-qwen3-4b -f Modelfile
+scp root@<ip>:/root/fcode-sft/out/Modelfile-fcode-qwen3-4b .
+ollama create fcode-qwen3-4b -f Modelfile-fcode-qwen3-4b
 ```
 
 然后释放实例（不是停止）。
@@ -123,16 +181,15 @@ unknown；端点不支持结构化输出时去掉该参数，并接受更高的�
 （每个决策点的候选与正确 choice），或在 host loop 里加“同一动作无状态变化
 即要求 report_blocked”的进度守卫。`--structured` 只是格式约束，不解决策略问题。
 
-packet 模式是另一条验收线，要求模型只输出 `{"choice": "aN"}`。当前 adapter
-没有在 packet 数据上训练，`flowagent.sft.accept` 的结果如上，不能按“通过”处理。
-要接 packet 模式，先补足 choice SFT（本地 `choices_full.jsonl`
-只有 12 条、1 个唯一目标，远不够），再训练一个 policy head。
+packet 模式是另一条验收线，要求模型只输出 `{"choice": "aN"}`。full-proposal
+模型（`fcode-qwen3-4b`）在 packet 上是 1/2：open-ended 正确，full 过早阻塞。
+choice SFT 训练完成后用 `fcode-qwen3-4b-policy` 验收：
 
 ```bash
 PYTHONPATH=src python3 -m flowagent.sft.accept \
-  --workdir /tmp/fcode-accept \
+  --workdir /tmp/fcode-accept-policy \
   --endpoint http://127.0.0.1:11434/v1 \
-  --model fcode-qwen3-4b
+  --model fcode-qwen3-4b-policy
 ```
 
 `repaired` 会作为警告显示，不静默忽略；报告同时记录 model calls、tokens、

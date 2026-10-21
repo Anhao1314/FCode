@@ -4,18 +4,26 @@
 # ~10-20 min on T4. Output: /root/fcode-sft/out/fcode-qwen3-4b-Q4_K_M.gguf (~2.5 GB)
 set -euo pipefail
 ROOT=/root/fcode-sft
+# Which adapter to merge and what to name the outputs. Override per model:
+#   ADAPTER_DIR=$ROOT/saves/choice-full MODEL_NAME=fcode-qwen3-4b-policy \
+#     bash cloud/merge-and-export.sh
+ADAPTER_DIR="${ADAPTER_DIR:-$ROOT/saves/full}"
+MODEL_NAME="${MODEL_NAME:-fcode-qwen3-4b}"
+MERGED="$ROOT/out/${MODEL_NAME}-merged"
+F16_GGUF="$ROOT/out/${MODEL_NAME}-f16.gguf"
+Q4_GGUF="$ROOT/out/${MODEL_NAME}-Q4_K_M.gguf"
 # shellcheck disable=SC1091
 source "$ROOT/.venv/bin/activate"
 mkdir -p "$ROOT/out" "$ROOT/llama.cpp"
 
 echo "==> [1/3] merge LoRA -> fp16 (from the 4-bit training base)"
-if [ -f "$ROOT/out/merged/config.json" ] && [ -f "$ROOT/out/merged/model.safetensors.index.json" ]; then
+if [ -f "$MERGED/config.json" ] && [ -f "$MERGED/model.safetensors.index.json" ]; then
   echo "    merged checkpoint exists, skipping"
 else
   python "$ROOT/cloud/merge_4bit.py" \
     --base "$ROOT/models/Qwen3-4B-Instruct-2507" \
-    --adapter "$ROOT/saves/full" \
-    --out "$ROOT/out/merged"
+    --adapter "$ADAPTER_DIR" \
+    --out "$MERGED"
 fi
 
 echo "==> [2/3] fetch llama.cpp converter"
@@ -33,26 +41,26 @@ fi
 pip install -q -i https://mirrors.aliyun.com/pypi/simple/ -r "$ROOT/llama.cpp/requirements/requirements-convert_hf_to_gguf.txt"
 
 echo "==> [3/3] convert + quantize"
-python "$ROOT/llama.cpp/convert_hf_to_gguf.py" "$ROOT/out/merged" \
-  --outfile "$ROOT/out/fcode-qwen3-4b-f16.gguf" --outtype f16
+python "$ROOT/llama.cpp/convert_hf_to_gguf.py" "$MERGED" \
+  --outfile "$F16_GGUF" --outtype f16
 if [ ! -x "$ROOT/llama.cpp/build/bin/llama-quantize" ]; then
   echo "    building llama-quantize"
   cmake -S "$ROOT/llama.cpp" -B "$ROOT/llama.cpp/build" -DGGML_CUDA=OFF -DLLAMA_CURL=OFF >/dev/null
   cmake --build "$ROOT/llama.cpp/build" --target llama-quantize -j"$(nproc)" >/dev/null
 fi
 "$ROOT/llama.cpp/build/bin/llama-quantize" \
-  "$ROOT/out/fcode-qwen3-4b-f16.gguf" "$ROOT/out/fcode-qwen3-4b-Q4_K_M.gguf" Q4_K_M
+  "$F16_GGUF" "$Q4_GGUF" Q4_K_M
 
-cat > "$ROOT/out/Modelfile" <<'EOF'
-FROM ./fcode-qwen3-4b-Q4_K_M.gguf
+cat > "$ROOT/out/Modelfile-$MODEL_NAME" <<EOF
+FROM ./$(basename "$Q4_GGUF")
 PARAMETER temperature 0
 PARAMETER num_ctx 4096
 EOF
 
 echo
 echo "done -> $ROOT/out/"
-ls -lh "$ROOT/out/"*.gguf "$ROOT/out/Modelfile" 2>/dev/null || true
+ls -lh "$Q4_GGUF" "$ROOT/out/Modelfile-$MODEL_NAME" 2>/dev/null || true
 echo
 echo "download to the Mac:"
-echo "  scp root@<ip>:$ROOT/out/fcode-qwen3-4b-Q4_K_M.gguf $ROOT/out/Modelfile ."
-echo "  ollama create fcode-qwen3-4b -f Modelfile"
+echo "  scp root@<ip>:$Q4_GGUF $ROOT/out/Modelfile-$MODEL_NAME ."
+echo "  ollama create $MODEL_NAME -f Modelfile-$MODEL_NAME"
