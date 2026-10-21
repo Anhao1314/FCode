@@ -1,4 +1,4 @@
-"""SEC 10-K extraction spike: 11 facts -> same credit plan -> blocked memo.
+"""SEC 10-K extraction spike: 21 facts -> same credit plan -> blocked memo.
 
 Run from ``flowcredit/``::
 

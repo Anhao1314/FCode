@@ -1,4 +1,4 @@
-"""SEC 10-K extraction spike: 11 facts, citations and the blocked memo."""
+"""SEC 10-K extraction spike: 21 facts, citations and the blocked memo."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "src"))
 
-from labs.sec_10k.extract import FACT_ORDER, extract_all  # noqa: E402
+from labs.sec_10k.extract import FACT_ORDER, _audit_code, extract_all  # noqa: E402
 from labs.sec_10k.spike import (  # noqa: E402
     EXCERPT_PATH,
     GROUND_TRUTH_PATH,
@@ -32,28 +32,34 @@ class ExtractionTests(unittest.TestCase):
         self.ground_truth = json.loads(GROUND_TRUTH_PATH.read_text(encoding="utf-8"))
         self.extracted = extract_all(EXCERPT_PATH, META_PATH)
 
-    def test_ground_truth_has_eleven_well_formed_entries(self) -> None:
+    def test_ground_truth_has_twenty_one_well_formed_entries(self) -> None:
         self.assertEqual([item["fact"] for item in self.ground_truth], list(FACT_ORDER))
-        self.assertEqual(len(self.ground_truth), 11)
+        self.assertEqual(len(self.ground_truth), 21)
+        self.assertEqual(sum(not fact.endswith("_prior") for fact in FACT_ORDER), 11)
+        self.assertEqual(sum(fact.endswith("_prior") for fact in FACT_ORDER), 10)
         for item in self.ground_truth:
             self.assertGreaterEqual(item["line"], 1)
             self.assertLessEqual(item["line"], len(self.excerpt))
             self.assertEqual(self.excerpt[item["line"] - 1], item["snippet"])
             self.assertEqual(item["source_url"], self.meta["source_url"])
             self.assertEqual(item["accession"], self.meta["accession"])
+            if item["fact"].endswith("_prior"):
+                self.assertEqual(item["period"], self.meta["prior_fiscal_year"])
+            else:
+                self.assertEqual(item["period"], self.meta["fiscal_year"])
             if item["source_unit"] == "USD millions":
                 self.assertEqual(item["unit"], "USD")
                 self.assertEqual(item["value"] % 1_000_000, 0)
             else:
                 self.assertEqual(item["unit"], "code")
 
-    def test_extractor_matches_all_eleven_facts(self) -> None:
+    def test_extractor_matches_all_twenty_one_facts(self) -> None:
         matches = []
         for fact in FACT_ORDER:
             expected = next(item for item in self.ground_truth if item["fact"] == fact)
             actual = self.extracted[fact]
             matches.append(all(expected.get(field) == actual.get(field) for field in COMPARE_FIELDS))
-        self.assertEqual(matches, [True] * 11)
+        self.assertEqual(matches, [True] * 21)
 
     def test_every_extracted_citation_reads_back_from_the_excerpt(self) -> None:
         for fact, item in self.extracted.items():
@@ -86,9 +92,88 @@ class ExtractionTests(unittest.TestCase):
             citation = {
                 "doc_id": item["doc_id"],
                 "line": item["line"],
-                "field": fact,
+                "field": fact.removesuffix("_prior"),
             }
             self.assertTrue(world.verify_citation(citation), citation)
+
+    def test_world_prior_document_uses_extracted_comparative_values(self) -> None:
+        world = Sec10kWorld(self.extracted, self.meta, self.excerpt)
+        fields = world.read_document("doc_10k_fy2024")["fields"]
+        expected = {
+            item["fact"][: -len("_prior")]: item["value"]
+            for item in self.ground_truth
+            if item["fact"].endswith("_prior")
+        }
+        for fact, value in expected.items():
+            self.assertEqual(fields[fact], value, fact)
+        self.assertEqual(
+            fields["audit_opinion"],
+            self.extracted["audit_opinion"]["value"],
+        )
+
+        ebitda = fields["operating_income"] + fields["depreciation_amortization"]
+        numerator = fields["total_debt"] - fields["cash_and_equivalents"]
+        expected_bp = (numerator * 10000 + ebitda // 2) // ebitda
+        result = world.compute_credit_metric("net_debt_to_ebitda", "FY2024")
+        self.assertTrue(result["computed"])
+        self.assertEqual(result["value_bp"], expected_bp)
+
+    def _extract_audit(self, text: str) -> dict:
+        with tempfile.TemporaryDirectory() as tmp:
+            excerpt = Path(tmp) / "excerpt.txt"
+            excerpt.write_text(f"### AUDIT REPORT\n{text}\n", encoding="utf-8")
+            return extract_all(excerpt, META_PATH)["audit_opinion"]
+
+    def test_audit_opinion_classification_precedence(self) -> None:
+        fixtures = {
+            "standard": (
+                "In our opinion, the consolidated financial statements present fairly, "
+                "in all material respects, the financial position of the Company.",
+                "standard_unqualified",
+            ),
+            "qualified": (
+                "In our opinion, except for the effect of the matter described in the "
+                "Basis for Qualified Opinion section, the consolidated financial "
+                "statements present fairly, in all material respects, the financial "
+                "position of the Company.",
+                "qualified",
+            ),
+            "adverse": (
+                "In our opinion, because of the significance of the matter described in "
+                "the Basis for Adverse Opinion section, the consolidated financial "
+                "statements do not present fairly the financial position of the Company.",
+                "adverse",
+            ),
+            "disclaimer": (
+                "We do not express an opinion on the consolidated financial statements "
+                "of the Company.",
+                "disclaimer",
+            ),
+        }
+        for label, (text, expected) in fixtures.items():
+            with self.subTest(label=label):
+                actual = self._extract_audit(text)
+                self.assertEqual(actual["status"], "ok")
+                self.assertEqual(actual["value"], expected)
+
+    def test_ambiguous_audit_opinion_is_not_guessed(self) -> None:
+        text = "The consolidated financial statements are presented in accordance with GAAP."
+        self.assertIsNone(_audit_code(text))
+        actual = self._extract_audit(text)
+        self.assertEqual(actual["status"], "missing")
+        self.assertEqual(actual["reason"], "missing_audit_opinion")
+        self.assertNotIn("value", actual)
+
+    def test_except_for_outside_opinion_paragraph_does_not_qualify_standard(self) -> None:
+        text = (
+            "We have audited the consolidated financial statements, except for the "
+            "matter described in Note 14.\n"
+            "In our opinion, the consolidated financial statements present fairly, in "
+            "all material respects, the financial position of the Company."
+        )
+        actual = self._extract_audit(text)
+        self.assertEqual(actual["status"], "ok")
+        self.assertEqual(actual["value"], "standard_unqualified")
 
 
 class SpikeTests(unittest.TestCase):
@@ -96,7 +181,7 @@ class SpikeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             result = run_spike(workdir=Path(tmp))
             self.assertTrue(result["ok"])
-            self.assertEqual(len(result["facts"]), 11)
+            self.assertEqual(len(result["facts"]), 21)
             self.assertTrue(all(item["match"] for item in result["facts"]))
             self.assertTrue(result["metrics"]["match"])
             self.assertEqual(

@@ -10,9 +10,9 @@ Phase 1 的信用域能在合成数据上跑通 8 个指标和 Host memo。Phase
 > 一份真实的 SEC 10-K，能不能在不改 Runtime、不引入第三方运行时依赖、
 > 不用 LLM 抽数的前提下，被确定性地转成同一套事实、指标和行级 citation？
 
-答案：能。11/11 事实精确匹配，5 个可算指标与 ground truth 一致；缺失的
-rating / related-party / contingent 如实进入 `missing`，memo 为 blocked、
-`issued: false`、`signed: false`。
+答案：能。21/21 事实精确匹配（11 个当前期 + 10 个比较期），5 个可算指标与
+ground truth 一致；缺失的 rating / related-party / contingent 如实进入
+`missing`，memo 为 blocked、`issued: false`、`signed: false`。
 
 ## Filing
 
@@ -48,8 +48,8 @@ SEC primary HTML
   -> full line list
   -> fetch.py excerpt selector (six deterministic ranges)
   -> data/excerpt.txt (122 lines)
-  -> extract.py (section + label + first numeric cell)
-  -> 11 facts with doc_id / line / snippet
+  -> extract.py (section + label + first/second numeric cell)
+  -> 21 facts with doc_id / line / snippet
   -> Sec10kWorld -> CreditPlanner -> verify_observation -> build_memo
 ```
 
@@ -100,7 +100,9 @@ SEC primary HTML
 单位换算：10-K 报 USD millions；公开事实值统一为 USD，
 `value = millions × 1_000_000`，`source_unit` 保留原始单位。
 
-### 11 个事实
+### 21 个事实（11 当前期 + 10 比较期）
+
+当前期：
 
 | fact | value (USD) | line | doc |
 | --- | ---: | ---: | --- |
@@ -116,9 +118,51 @@ SEC primary HTML
 | equity | 46,843,000,000 | 48 | doc_10k_fy2025 |
 | audit_opinion | `standard_unqualified` | 6 | doc_10k_fy2025 |
 
+比较期（FY2024，同一行的第二个数字单元格）：
+
+| fact | value (USD) | line | doc |
+| --- | ---: | ---: | --- |
+| revenue_prior | 53,803,000,000 | 57 | doc_10k_fy2024 |
+| operating_income_prior | 12,181,000,000 | 70 | doc_10k_fy2024 |
+| depreciation_amortization_prior | 2,507,000,000 | 85 | doc_10k_fy2024 |
+| interest_expense_prior | 1,006,000,000 | 72 | doc_10k_fy2024 |
+| cash_and_equivalents_prior | 7,508,000,000 | 13 | doc_10k_fy2024 |
+| total_debt_prior | 30,962,000,000 | 107 | doc_debt_fy2025 |
+| short_term_debt_prior | 11,341,000,000 | 122 | doc_debt_fy2025 |
+| operating_cash_flow_prior | 10,880,000,000 | 100 | doc_10k_fy2024 |
+| accounts_receivable_prior | 6,685,000,000 | 15 | doc_10k_fy2024 |
+| equity_prior | 45,457,000,000 | 48 | doc_10k_fy2024 |
+
+**prior-year 口径**：比较列由同一个 `extract.py` 抽取，不使用
+`world.py` 里的手写常量。`ground_truth.json` 的 21 条全部参与 gate：每条都必须
+在 `value`、`unit`、`source_unit`、`period`、`doc_id`、`line`、`snippet` 上
+精确匹配。审计报告只有一份意见，同时覆盖 FY2025 和 FY2024，因此不重复计一条
+`audit_opinion_prior`；`Sec10kWorld` 的 FY2024 视图复用当前审计意见。
+债务附注的 `total_debt` / `short_term_debt` 同一行包含两列，所以 prior 值仍
+引用 `doc_debt_fy2025`；其余 prior 值引用 `doc_10k_fy2024`。
+
 `depreciation_amortization` 使用现金流量表的
 `Depreciation, amortization, and other` 行；它包含 “and other”，是 10-K 的
 D&A 代理口径，README 已写明。
+
+### 审计意见分类
+
+`_audit_code` 按“先否定、后肯定”的顺序分类，任何模糊文本返回 `None`，不默认
+standard：
+
+1. `disclaimer`：`disclaimer of opinion` 或 `do not express an opinion`；
+2. `adverse`：`adverse opinion` 或 `do not present fairly`；
+3. `qualified`：`qualified opinion` 或 `basis for qualified opinion`，或意见段
+   里的 `except for` + `present fairly`；
+4. `standard_unqualified`：`in our opinion` + `present fairly`，且前三类都不成立；
+5. 其余返回 `None`。
+
+`_find_audit_paragraph` 优先选 `in our opinion` / `do not express an opinion` /
+`disclaimer of opinion` 所在段，而不是更早的 `Basis for Qualified Opinion`
+标题；`except for` 本身不是选段条件。因此，标准意见在别的段落提到
+`except for` 不会被误判为 qualified。模糊段落会以
+`unrecognised_audit_opinion` 或 `missing_audit_opinion` 进入 missing，而不是
+猜一个类别。
 
 ## 抽取器
 
@@ -126,14 +170,13 @@ D&A 代理口径，README 已写明。
 
 - 按 `###` section 切分节选；
 - 在正确 section 里找 label 前缀；
-- 取 label 后第一个数字单元格，跳过 `$`、`—`、空单元格；
+- 当前期取 label 后第一个数字单元格，比较期取第二个；跳过 `$`、`—`、空单元格；
 - 括号数字视为负数；`interest_expense` 取绝对值；
-- `audit_opinion` 把 `In our opinion … present fairly` 映射为
-  `standard_unqualified`；
+- `audit_opinion` 按上一节的优先级分类，模糊文本返回 missing；
 - 找不到 section/label/number 时返回 `status: "missing"` + `reason`，不带
   `value`，不补 0，不猜。
 
-**没有使用 XBRL。** 本 spike 的 11 个事实全部来自 HTML 节选；没有
+**没有使用 XBRL。** 本 spike 的 21 个事实全部来自 HTML 节选；没有
 `companyfacts` 依赖，也没有“XBRL 取数 + HTML 找 citation”的双源路径。
 如果未来某个 HTML 表格太脆，可以增加 XBRL 数值源，但仍必须在节选里找到同一
 数值的 HTML 行作为 citation，并在文档中逐 fact 说明。
@@ -179,7 +222,9 @@ EBITDA 代理 = `operating_income + depreciation_amortization` =
   “contingent liabilities” 总额；
 - `rating_migration`：10-K 没有评级报告。
 
-这些指标返回 `computed: false` + `blockers`，不写 0，不猜。
+这些指标返回 `computed: false` + `blockers`，不写 0，不猜。**这是产品语义，
+不是抽取 bug**：10-K 本身没有这些披露，memo 因此 `issued: false`、
+`decision_status: blocked`，等待人工复核；不要为了凑 8 个指标去补值。
 
 ### Memo
 
@@ -216,20 +261,24 @@ PYTHONPATH=src python3.12 labs/credit_dd/spike.py
 PYTHONPATH=src python3.12 labs/sec_10k/spike.py
 ```
 
-Phase 2a 的结果：
+Phase 2a.1 的结果：
 
-- 11/11 事实的 `value`、`line`、`snippet` 与 ground truth 精确匹配；
+- 21/21 事实的 `value`、`unit`、`source_unit`、`period`、`doc_id`、`line`、
+  `snippet` 与 ground truth 精确匹配（11 当前期 + 10 比较期）；
 - 5 个可算指标与 ground truth 一致；3 个缺失指标没有编造值；
+- 四类审计意见（standard / qualified / adverse / disclaimer）分类正确，模糊
+  文本返回 `None`；
 - 每条 citation 都能在 `excerpt.txt` 回读；
 - memo `recommended_conclusion=insufficient_evidence`、`issued=false`、
   `decision_status=blocked`，`missing` 包含 `rating_migration`；
-- 223 个旧测试、金融 v10 golden、`demo.py all`、multi-agent、credit spike
-  全部不回归。
+- 231 个既有测试 + 4 个新增测试、金融 v10 golden、`demo.py all`、multi-agent、
+  credit spike 全部不回归。
 
 ## Go / No-Go
 
-**Go（建议进入 Phase 2b）**：11/11 事实精确匹配，5/5 可算指标一致，抽取路径
-完全确定性、零第三方、零 LLM。下一阶段可以扩到第二份 10-K 和 10 家评测。
+**Go（建议进入 Phase 2b）**：21/21 事实精确匹配，5/5 可算指标一致，抽取路径
+完全确定性、零第三方、零 LLM。下一阶段先扩到第二份 10-K，而不是直接做 10 家
+评测。
 
 但需要带着以下边界进入：
 

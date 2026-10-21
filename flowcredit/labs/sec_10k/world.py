@@ -11,6 +11,10 @@ Document mapping:
 * ``doc_debt_fy2025``: MD&A total debt + Note 12 short-term debt
 * ``doc_rating_fy2025``: does not exist in a 10-K; reads return missing
 
+Both columns come from ``extract.py``; there are no hand-written prior-year
+constants. The audit report's single opinion covers both years, so the current
+``audit_opinion`` value is also used for FY2024.
+
 The 10-K does not disclose a rating migration, a related-party loan total or a
 single contingent-liability total. Those metrics are returned as blocked, never
 as zero.
@@ -41,21 +45,6 @@ METRICS = (
     "audit_opinion",
     "rating_migration",
 )
-
-#: Prior-year amounts read from the comparative column of the same excerpt.
-PRIOR_MILLIONS: dict[str, int] = {
-    "revenue": 53_803,
-    "operating_income": 12_181,
-    "depreciation_amortization": 2_507,
-    "interest_expense": 1_006,
-    "cash_and_equivalents": 7_508,
-    "total_debt": 30_962,
-    "short_term_debt": 11_341,
-    "operating_cash_flow": 10_880,
-    "accounts_receivable": 6_685,
-    "equity": 45_457,
-}
-PRIOR_AUDIT = "standard_unqualified"
 
 #: The excerpt line for each prior/current field. Values on those lines include
 #: both the current and comparative columns.
@@ -139,11 +128,7 @@ class Sec10kWorld:
             self._snippets[(DEBT_DOC, field)] = self._excerpt_lines[FIELD_LINES[field] - 1]
             self._snippets[(PRIOR_DOC, field)] = self._excerpt_lines[FIELD_LINES[field] - 1]
         self._current = self._current_values()
-        self._prior = {
-            field: value * 1_000_000
-            for field, value in PRIOR_MILLIONS.items()
-        }
-        self._prior["audit_opinion"] = PRIOR_AUDIT
+        self._prior = self._prior_values()
         self._body = "\n".join(self._excerpt_lines)
 
     # ---------------------------------------------------------------- documents
@@ -411,11 +396,22 @@ class Sec10kWorld:
     # ----------------------------------------------------------------- helpers
 
     def _current_values(self) -> dict[str, Any]:
-        current: dict[str, Any] = {}
-        for fact, result in self.facts.items():
-            if result.get("status") == "ok":
-                current[fact] = result["value"]
-        return current
+        return {
+            fact: result["value"]
+            for fact, result in self.facts.items()
+            if result.get("status") == "ok" and not fact.endswith("_prior")
+        }
+
+    def _prior_values(self) -> dict[str, Any]:
+        prior = {
+            fact[: -len("_prior")]: result["value"]
+            for fact, result in self.facts.items()
+            if fact.endswith("_prior") and result.get("status") == "ok"
+        }
+        # One audit opinion covers the current and comparative years.
+        if "audit_opinion" in self._current:
+            prior["audit_opinion"] = self._current["audit_opinion"]
+        return prior
 
     def _citation(self, doc_id: str, field: str) -> dict[str, Any]:
         return {
