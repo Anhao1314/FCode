@@ -1,19 +1,17 @@
 """A CreditWorld-compatible adapter over one real SEC 10-K excerpt.
 
-This is deliberately a lab adapter, not a production domain. It exposes the
-same methods the production ``CreditWorld`` does, so the production
-``CreditPlanner``, ``verify_observation`` and ``memo.build_memo`` run unchanged.
+The adapter is issuer-agnostic. The caller supplies ``issuer_key``, extracted
+``facts``, ``meta``, the excerpt lines and a ``field_lines`` index; periods and
+document ids are derived from ``meta``. The production ``CreditPlanner``,
+``verify_observation`` and ``memo.build_memo`` run unchanged.
 
-Document mapping:
+Documents are virtual views over the same excerpt:
 
-* ``doc_10k_fy2025`` / ``doc_ar_fy2025``: FY2025 current column
-* ``doc_10k_fy2024`` / ``doc_ar_fy2024``: FY2024 comparative column
-* ``doc_debt_fy2025``: MD&A total debt + Note 12 short-term debt
-* ``doc_rating_fy2025``: does not exist in a 10-K; reads return missing
+* current column / prior column / debt note / a missing rating report.
 
 Both columns come from ``extract.py``; there are no hand-written prior-year
 constants. The audit report's single opinion covers both years, so the current
-``audit_opinion`` value is also used for FY2024.
+``audit_opinion`` value is also used for the prior period.
 
 The 10-K does not disclose a rating migration, a related-party loan total or a
 single contingent-liability total. Those metrics are returned as blocked, never
@@ -24,17 +22,8 @@ from __future__ import annotations
 
 from typing import Any
 
-__all__ = ["Sec10kWorld", "CURRENT_DOC", "PRIOR_DOC", "DEBT_DOC", "RATING_DOC"]
+__all__ = ["Sec10kWorld", "METRICS"]
 
-CURRENT_PERIOD = "FY2025"
-PRIOR_PERIOD = "FY2024"
-CURRENT_DOC = "doc_10k_fy2025"
-PRIOR_DOC = "doc_10k_fy2024"
-DEBT_DOC = "doc_debt_fy2025"
-RATING_DOC = "doc_rating_fy2025"
-ALIASES = {"doc_ar_fy2025": CURRENT_DOC, "doc_ar_fy2024": PRIOR_DOC}
-
-PERIODS = (PRIOR_PERIOD, CURRENT_PERIOD)
 METRICS = (
     "net_debt_to_ebitda",
     "interest_coverage",
@@ -44,34 +33,6 @@ METRICS = (
     "contingent_liabilities_to_equity",
     "audit_opinion",
     "rating_migration",
-)
-
-#: The excerpt line for each prior/current field. Values on those lines include
-#: both the current and comparative columns.
-FIELD_LINES: dict[str, int] = {
-    "revenue": 57,
-    "operating_income": 70,
-    "depreciation_amortization": 85,
-    "interest_expense": 72,
-    "cash_and_equivalents": 13,
-    "total_debt": 107,
-    "short_term_debt": 122,
-    "operating_cash_flow": 100,
-    "accounts_receivable": 15,
-    "equity": 48,
-    "audit_opinion": 6,
-}
-DEBT_FIELDS = ("total_debt", "short_term_debt")
-CURRENT_FIELDS = (
-    "revenue",
-    "operating_income",
-    "depreciation_amortization",
-    "interest_expense",
-    "cash_and_equivalents",
-    "operating_cash_flow",
-    "accounts_receivable",
-    "equity",
-    "audit_opinion",
 )
 
 
@@ -95,53 +56,111 @@ class Sec10kWorld:
 
     def __init__(
         self,
+        issuer_key: str,
         facts: dict[str, dict[str, Any]],
         meta: dict[str, Any],
         excerpt_lines: list[str],
+        field_lines: dict[str, int],
     ) -> None:
+        self.issuer_key = issuer_key
         self.facts = facts
         self.meta = meta
+        self.field_lines = dict(field_lines)
         self._excerpt_lines = list(excerpt_lines)
         self.display_name = str(meta.get("company") or "SEC filer")
-        self.issuer_key = "cisco"
+        self.current_period = str(meta.get("fiscal_year") or "FY2025")
+        self.prior_period = str(meta.get("prior_fiscal_year") or "FY2024")
+        self.periods = (self.prior_period, self.current_period)
+        self.current_doc = f"doc_10k_{self.current_period.lower()}"
+        self.prior_doc = f"doc_10k_{self.prior_period.lower()}"
+        self.debt_doc = f"doc_debt_{self.current_period.lower()}"
+        self.rating_doc = f"doc_rating_{self.current_period.lower()}"
+        self.aliases = {
+            f"doc_ar_{self.current_period.lower()}": self.current_doc,
+            f"doc_ar_{self.prior_period.lower()}": self.prior_doc,
+        }
+        self.document_ids = (
+            self.prior_doc,
+            self.current_doc,
+            self.debt_doc,
+            self.rating_doc,
+            *self.aliases,
+        )
         self.restatement = None
         self.read_documents: set[str] = set()
         self.blockers: list[dict[str, Any]] = []
-        self.document_ids = (
-            PRIOR_DOC,
-            CURRENT_DOC,
-            DEBT_DOC,
-            RATING_DOC,
-            "doc_ar_fy2024",
-            "doc_ar_fy2025",
-        )
-        self._line_refs: dict[str, dict[str, int]] = {
-            CURRENT_DOC: {field: FIELD_LINES[field] for field in CURRENT_FIELDS},
-            PRIOR_DOC: {field: FIELD_LINES[field] for field in CURRENT_FIELDS + DEBT_FIELDS},
-            DEBT_DOC: {field: FIELD_LINES[field] for field in DEBT_FIELDS},
-        }
+        self._line_refs: dict[str, dict[str, int]] = {}
         self._snippets: dict[tuple[str, str], str] = {}
-        for field in CURRENT_FIELDS:
-            self._snippets[(CURRENT_DOC, field)] = self._excerpt_lines[FIELD_LINES[field] - 1]
-            self._snippets[(PRIOR_DOC, field)] = self._excerpt_lines[FIELD_LINES[field] - 1]
-        for field in DEBT_FIELDS:
-            self._snippets[(DEBT_DOC, field)] = self._excerpt_lines[FIELD_LINES[field] - 1]
-            self._snippets[(PRIOR_DOC, field)] = self._excerpt_lines[FIELD_LINES[field] - 1]
+        self._citation_index: dict[tuple[str, int, str], str] = {}
+        self._index_facts()
+        self._index_debt_view()
         self._current = self._current_values()
         self._prior = self._prior_values()
         self._body = "\n".join(self._excerpt_lines)
 
+    # ---------------------------------------------------------------- indexing
+
+    def _index_facts(self) -> None:
+        for fact, result in self.facts.items():
+            if result.get("status") != "ok":
+                continue
+            base = fact[: -len("_prior")] if fact.endswith("_prior") else fact
+            doc_id = str(result.get("doc_id") or "")
+            line = result.get("line")
+            snippet = str(result.get("snippet") or "")
+            if not doc_id or not isinstance(line, int):
+                continue
+            self._line_refs.setdefault(doc_id, {})[base] = line
+            self._snippets[(doc_id, base)] = snippet
+            self._citation_index[(doc_id, line, base)] = snippet
+            for component in result.get("components") or ():
+                field = str(component.get("field") or "")
+                comp_doc = str(component.get("doc_id") or doc_id)
+                comp_line = component.get("line")
+                comp_snippet = str(component.get("snippet") or "")
+                if not field or not isinstance(comp_line, int):
+                    continue
+                self._line_refs.setdefault(comp_doc, {})[field] = comp_line
+                self._snippets[(comp_doc, field)] = comp_snippet
+                self._citation_index[(comp_doc, comp_line, field)] = comp_snippet
+        # Caller-supplied line index for the compact read_document view.
+        for fact, line in self.field_lines.items():
+            result = self.facts.get(fact)
+            if not result or result.get("status") != "ok":
+                continue
+            base = fact[: -len("_prior")] if fact.endswith("_prior") else fact
+            doc_id = str(result.get("doc_id") or "")
+            if doc_id and isinstance(line, int):
+                self._line_refs.setdefault(doc_id, {})[base] = line
+
+    def _index_debt_view(self) -> None:
+        for field in ("total_debt", "short_term_debt"):
+            result = self.facts.get(field)
+            if not result or result.get("status") != "ok":
+                continue
+            self._line_refs.setdefault(self.debt_doc, {})[field] = result["line"]
+            self._snippets[(self.debt_doc, field)] = result["snippet"]
+            self._citation_index[(self.debt_doc, result["line"], field)] = result["snippet"]
+
     # ---------------------------------------------------------------- documents
 
     def available_document_ids(self) -> tuple[str, ...]:
-        return (PRIOR_DOC, CURRENT_DOC, DEBT_DOC)
+        return (self.prior_doc, self.current_doc, self.debt_doc)
 
     def list_documents(self) -> dict[str, Any]:
         documents = []
         for doc_id, title, period in (
-            (CURRENT_DOC, "Form 10-K (FY2025 current column)", CURRENT_PERIOD),
-            (PRIOR_DOC, "Form 10-K (FY2024 comparative column)", PRIOR_PERIOD),
-            (DEBT_DOC, "Debt note (MD&A total debt + Note 12)", CURRENT_PERIOD),
+            (
+                self.current_doc,
+                f"Form 10-K ({self.current_period} current column)",
+                self.current_period,
+            ),
+            (
+                self.prior_doc,
+                f"Form 10-K ({self.prior_period} comparative column)",
+                self.prior_period,
+            ),
+            (self.debt_doc, "Debt view (current total and short-term debt)", self.current_period),
         ):
             documents.append(
                 {
@@ -155,35 +174,35 @@ class Sec10kWorld:
         return {"documents": documents}
 
     def read_document(self, doc_id: str) -> dict[str, Any]:
-        canonical = ALIASES.get(doc_id, doc_id)
-        if canonical == RATING_DOC:
+        canonical = self.aliases.get(doc_id, doc_id)
+        if canonical == self.rating_doc:
             return {
                 "found": False,
-                "doc_id": RATING_DOC,
+                "doc_id": self.rating_doc,
                 "reason": "missing_document",
             }
-        if canonical not in self._line_refs:
+        if canonical == self.current_doc:
+            fields = dict(self._current)
+            period = self.current_period
+            title = f"Form 10-K ({self.current_period} current column)"
+        elif canonical == self.prior_doc:
+            fields = dict(self._prior)
+            period = self.prior_period
+            title = f"Form 10-K ({self.prior_period} comparative column)"
+        elif canonical == self.debt_doc:
+            fields = {
+                "total_debt": self._current["total_debt"],
+                "short_term_debt": self._current["short_term_debt"],
+            }
+            period = self.current_period
+            title = "Debt view (current total and short-term debt)"
+        else:
             return {
                 "found": False,
                 "doc_id": doc_id,
                 "reason": "missing_document",
             }
         self.read_documents.add(canonical)
-        if canonical == CURRENT_DOC:
-            fields = dict(self._current)
-            period = CURRENT_PERIOD
-            title = "Form 10-K (FY2025 current column)"
-        elif canonical == PRIOR_DOC:
-            fields = dict(self._prior)
-            period = PRIOR_PERIOD
-            title = "Form 10-K (FY2024 comparative column)"
-        else:
-            fields = {
-                "total_debt": self._current["total_debt"],
-                "short_term_debt": self._current["short_term_debt"],
-            }
-            period = CURRENT_PERIOD
-            title = "Debt note (MD&A total debt + Note 12)"
         return {
             "found": True,
             "doc_id": canonical,
@@ -191,28 +210,28 @@ class Sec10kWorld:
             "period": period,
             "unit": "USD",
             "body": self._body,
-            "line_refs": dict(self._line_refs[canonical]),
+            "line_refs": dict(self._line_refs.get(canonical, {})),
             "fields": fields,
             "synthetic": False,
             "research_only": True,
         }
 
     def check_restatement(self, doc_id: str) -> dict[str, Any]:
-        """The 10-K has no restatement of the comparative FY2024 column."""
-        if doc_id not in (PRIOR_DOC, "doc_ar_fy2024"):
-            raise ValueError("check_restatement supports doc_ar_fy2024 only")
+        """The 10-K has no restatement of the comparative prior column."""
+        if doc_id not in (self.prior_doc, f"doc_ar_{self.prior_period.lower()}"):
+            raise ValueError(f"check_restatement supports {self.prior_doc} only")
         ebitda = self._prior["operating_income"] + self._prior["depreciation_amortization"]
         return {
-            "period": PRIOR_PERIOD,
+            "period": self.prior_period,
             "restated": False,
             "original_ebitda": ebitda,
             "restated_ebitda": ebitda,
             "delta": 0,
             "superseded_by": None,
-            "citations": [
-                self._citation(PRIOR_DOC, "operating_income"),
-                self._citation(PRIOR_DOC, "depreciation_amortization"),
-            ],
+            "citations": (
+                self._citations("operating_income_prior")
+                + self._citations("depreciation_amortization_prior")
+            ),
         }
 
     # ----------------------------------------------------------------- metrics
@@ -220,10 +239,11 @@ class Sec10kWorld:
     def compute_credit_metric(self, metric: str, period: str) -> dict[str, Any]:
         if metric not in METRICS:
             return self._blocked(metric, period, "ratio", ["unknown_metric"])
-        if period not in PERIODS:
+        if period not in self.periods:
             return self._blocked(metric, period, self._kind(metric), ["missing_period"])
-        values = self._current if period == CURRENT_PERIOD else self._prior
-        doc = CURRENT_DOC if period == CURRENT_PERIOD else PRIOR_DOC
+        current = period == self.current_period
+        values = self._current if current else self._prior
+        suffix = "" if current else "_prior"
 
         if metric == "related_party_funding_ratio":
             return self._blocked(metric, period, "ratio", ["missing_related_party_disclosure"])
@@ -244,7 +264,7 @@ class Sec10kWorld:
                 "value_code": code,
                 "display": code,
                 "inputs": {"audit_opinion": code},
-                "citations": [self._citation(doc, "audit_opinion")],
+                "citations": self._citations("audit_opinion"),
                 "blockers": [],
             }
 
@@ -273,12 +293,12 @@ class Sec10kWorld:
                     "operating_income": values["operating_income"],
                     "depreciation_amortization": values["depreciation_amortization"],
                 },
-                "citations": [
-                    self._citation(DEBT_DOC, "total_debt"),
-                    self._citation(doc, "cash_and_equivalents"),
-                    self._citation(doc, "operating_income"),
-                    self._citation(doc, "depreciation_amortization"),
-                ],
+                "citations": (
+                    self._citations("total_debt" + suffix)
+                    + self._citations("cash_and_equivalents" + suffix)
+                    + self._citations("operating_income" + suffix)
+                    + self._citations("depreciation_amortization" + suffix)
+                ),
                 "blockers": [],
             }
 
@@ -305,11 +325,11 @@ class Sec10kWorld:
                     "operating_income": values["operating_income"],
                     "depreciation_amortization": values["depreciation_amortization"],
                 },
-                "citations": [
-                    self._citation(doc, "operating_income"),
-                    self._citation(doc, "depreciation_amortization"),
-                    self._citation(doc, "interest_expense"),
-                ],
+                "citations": (
+                    self._citations("operating_income" + suffix)
+                    + self._citations("depreciation_amortization" + suffix)
+                    + self._citations("interest_expense" + suffix)
+                ),
                 "blockers": [],
             }
 
@@ -333,10 +353,10 @@ class Sec10kWorld:
                     "operating_cash_flow": values["operating_cash_flow"],
                     "short_term_debt": values["short_term_debt"],
                 },
-                "citations": [
-                    self._citation(doc, "operating_cash_flow"),
-                    self._citation(DEBT_DOC, "short_term_debt"),
-                ],
+                "citations": (
+                    self._citations("operating_cash_flow" + suffix)
+                    + self._citations("short_term_debt" + suffix)
+                ),
                 "blockers": [],
             }
 
@@ -360,10 +380,10 @@ class Sec10kWorld:
                     "accounts_receivable": values["accounts_receivable"],
                     "revenue": values["revenue"],
                 },
-                "citations": [
-                    self._citation(doc, "accounts_receivable"),
-                    self._citation(doc, "revenue"),
-                ],
+                "citations": (
+                    self._citations("accounts_receivable" + suffix)
+                    + self._citations("revenue" + suffix)
+                ),
                 "blockers": [],
             }
 
@@ -379,21 +399,44 @@ class Sec10kWorld:
 
     def verify_citation(self, citation: dict[str, Any]) -> bool:
         doc_id = citation.get("doc_id")
-        if doc_id not in self._line_refs:
-            return False
         field = citation.get("field")
         line = citation.get("line")
-        if self._line_refs[doc_id].get(field) != line:
+        if not isinstance(doc_id, str) or not isinstance(field, str):
             return False
         if not isinstance(line, int) or not 1 <= line <= len(self._excerpt_lines):
             return False
-        snippet = self._snippets.get((doc_id, field))
-        return snippet is None or self._excerpt_lines[line - 1] == snippet
+        snippet = self._citation_index.get((doc_id, line, field))
+        if snippet is None:
+            return False
+        return self._excerpt_lines[line - 1] == snippet
 
     def apply_state(self, state: dict[str, Any]) -> None:
         self.read_documents = set(state.get("read_documents", []))
 
     # ----------------------------------------------------------------- helpers
+
+    def _citations(self, fact: str) -> list[dict[str, Any]]:
+        result = self.facts.get(fact)
+        if not result or result.get("status") != "ok":
+            return []
+        base = fact[: -len("_prior")] if fact.endswith("_prior") else fact
+        components = result.get("components") or ()
+        if components:
+            return [
+                {
+                    "doc_id": component["doc_id"],
+                    "line": component["line"],
+                    "field": component["field"],
+                }
+                for component in components
+            ]
+        return [
+            {
+                "doc_id": result["doc_id"],
+                "line": result["line"],
+                "field": base,
+            }
+        ]
 
     def _current_values(self) -> dict[str, Any]:
         return {
@@ -408,17 +451,9 @@ class Sec10kWorld:
             for fact, result in self.facts.items()
             if fact.endswith("_prior") and result.get("status") == "ok"
         }
-        # One audit opinion covers the current and comparative years.
         if "audit_opinion" in self._current:
             prior["audit_opinion"] = self._current["audit_opinion"]
         return prior
-
-    def _citation(self, doc_id: str, field: str) -> dict[str, Any]:
-        return {
-            "doc_id": doc_id,
-            "line": self._line_refs[doc_id][field],
-            "field": field,
-        }
 
     @staticmethod
     def _kind(metric: str) -> str:
