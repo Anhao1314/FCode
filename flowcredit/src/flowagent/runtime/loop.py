@@ -57,6 +57,7 @@ class Loop:
         control: Control | None = None,
         policy: Any = None,
         compiler: Any = None,
+        result_tools: tuple[str, ...] = ("calculate_margin",),
     ) -> None:
         self.harness = harness
         self.planner = planner
@@ -65,6 +66,10 @@ class Loop:
         self.control = control
         self.policy = policy
         self.compiler = compiler or compile_packet
+        #: Tools whose computed observation is the domain's answer. The kernel
+        #: does not know a domain's final tool; the caller (or module) declares
+        #: it. The default preserves the finance module's original behaviour.
+        self.result_tools = tuple(result_tools)
 
     def run(self, task_id: str) -> Task:
         task = self.harness.store.load(task_id)
@@ -214,7 +219,11 @@ class Loop:
 
             if observation.tool == "report_blocked":
                 return self._reported_blocked(task, plan, observation)
-            if observation.tool == "calculate_margin" and observation.result.get("computed"):
+            if (
+                observation.tool in self.result_tools
+                and observation.result.get("computed")
+                and plan.is_complete()
+            ):
                 verified = self.harness.verify(observation)
                 return self._succeed(task, verified, plan)
 
