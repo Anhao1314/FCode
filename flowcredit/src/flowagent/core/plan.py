@@ -44,6 +44,7 @@ class Todo:
     status: str = "pending"
     evidence: tuple[str, ...] = ()
     reason: str = ""
+    required: bool = True
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -55,6 +56,7 @@ class Todo:
             "status": self.status,
             "evidence": list(self.evidence),
             "reason": self.reason,
+            "required": self.required,
         }
 
     @classmethod
@@ -68,6 +70,9 @@ class Todo:
             status=data.get("status", "pending"),
             evidence=tuple(data.get("evidence") or ()),
             reason=data.get("reason", ""),
+            # Plans written before Phase 2b have no ``required`` key; every
+            # todo in them was required by construction.
+            required=bool(data.get("required", True)),
         )
 
 
@@ -92,13 +97,24 @@ class Plan:
         return sum(1 for todo in self.todos if todo.status in ("pending", "active"))
 
     def is_complete(self) -> bool:
-        return all(todo.status in ("done", "abandoned") for todo in self.todos)
+        """True when no work remains and no required todo was refused.
+
+        An optional todo may finish as ``blocked``: the plan is complete, but
+        the gap must still be reported by the domain (the credit memo's
+        ``missing_optional``). A required ``blocked`` todo is never complete;
+        the caller must stop instead of issuing a partial answer.
+        """
+        return all(
+            todo.status in ("done", "abandoned")
+            or (not todo.required and todo.status == "blocked")
+            for todo in self.todos
+        )
 
     def is_blocked(self) -> bool:
-        """True when nothing is left to try and something was never satisfied."""
+        """True when nothing is left to try and a required todo was refused."""
         if self.open_count():
             return False
-        return any(todo.status == "blocked" for todo in self.todos)
+        return any(todo.required and todo.status == "blocked" for todo in self.todos)
 
     def progress(self) -> dict[str, Any]:
         counts = {state: 0 for state in TODO_STATES}

@@ -319,30 +319,59 @@ class Loop:
     def _verify_result_set(self, task_id: str, plan: Plan) -> dict[str, Any]:
         """Verify every declared result observation, not just the last one.
 
-        A plan can be ``is_complete()`` while a result-bearing todo was
+        Required and optional are todo-level properties. A required result todo
+        must be ``done`` and its observation must compute and independently
+        verify. An optional result todo may be ``done``, ``abandoned`` or
+        ``blocked``; a ``computed: false`` optional observation is a reported
+        gap, not a verification failure. Any observation that *does* compute is
+        verified, optional or not — optional never means unchecked.
+
+        A plan can be ``is_complete()`` while a required result-bearing todo was
         ``abandoned``; that is "finished", not "evidence complete". The todo
-        check below is what turns that distinction into a stable failure instead
-        of a partial answer labelled succeeded.
+        check below turns that distinction into a stable failure instead of a
+        partial answer labelled succeeded.
         """
         result_todos = [todo for todo in plan.todos if todo.tool in self.result_tools]
-        incomplete = [todo.id for todo in result_todos if todo.status != "done"]
+        required = [todo for todo in result_todos if todo.required]
+        optional = [todo for todo in result_todos if not todo.required]
+
+        incomplete = [todo.id for todo in required if todo.status != "done"]
         if incomplete:
             raise AgentError(
                 "RESULT_INCOMPLETE",
-                f"result todos are not done: {', '.join(incomplete)}",
+                f"required result todos are not done: {', '.join(incomplete)}",
+            )
+        invalid_optional = [
+            todo.id
+            for todo in optional
+            if todo.status not in ("done", "abandoned", "blocked")
+        ]
+        if invalid_optional:
+            raise AgentError(
+                "RESULT_INCOMPLETE",
+                f"optional result todos are still open: {', '.join(invalid_optional)}",
             )
 
         observations = self._result_observations(task_id)
-        observed = {observation.tool for observation in observations}
-        missing = [tool for tool in self.result_tools if tool not in observed]
-        if missing:
-            raise AgentError(
-                "RESULT_INCOMPLETE",
-                f"no observation for declared result tool(s): {', '.join(missing)}",
-            )
+        for todo in required:
+            if not any(self._same_result_step(todo, observation) for observation in observations):
+                raise AgentError(
+                    "RESULT_INCOMPLETE",
+                    f"no observation for required result todo {todo.id}",
+                )
 
         verified: list[dict[str, Any]] = []
         for observation in observations:
+            todo = self._result_todo_for_observation(result_todos, observation)
+            computed = observation.result.get("computed") is not False
+            if not computed:
+                if todo is not None and not todo.required:
+                    continue
+                label = todo.id if todo is not None else "unplanned result"
+                raise AgentError(
+                    "RESULT_INCOMPLETE",
+                    f"required result {label} was not computed",
+                )
             item = self.harness.verify(observation)
             if not item.get("verified"):
                 raise AgentError(
@@ -369,6 +398,25 @@ class Loop:
             "verification": verified[0].get("verification", "runtime-recomputed"),
             "results": [dict(item["result"]) for item in verified],
         }
+
+    @staticmethod
+    def _same_result_step(todo: Any, observation: Observation) -> bool:
+        """True when an observation is the step a result todo names."""
+        return todo.tool == observation.tool and all(
+            observation.arguments.get(key) == value
+            for key, value in todo.arguments.items()
+        )
+
+    @classmethod
+    def _result_todo_for_observation(
+        cls,
+        result_todos: list[Any],
+        observation: Observation,
+    ) -> Any | None:
+        for todo in result_todos:
+            if cls._same_result_step(todo, observation):
+                return todo
+        return None
 
     def _result_observations(self, task_id: str) -> list[Observation]:
         """Read every committed observation produced by a declared result tool."""
