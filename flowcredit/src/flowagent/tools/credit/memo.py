@@ -1,10 +1,16 @@
-"""Host-assembled credit memo and frozen conclusion policy.
+"""Host-assembled credit memo and frozen recommendation policy.
 
 The model never writes a number into the memo. This module reads the committed
 observations, recomputes every metric with the domain verifier, validates every
 citation against the world's line index, and only then assembles the JSON and
-Markdown documents. A missing required metric makes the memo unsigned; it never
-fills the gap with a plausible value.
+Markdown documents.
+
+The memo separates two authorities. **Host issuance** (``issued``) means every
+required metric verified, every citation resolved and the Host assembled the
+memo; it is not a human signature. **Human sign-off** (``signed``) is true only
+when ``reviewer.decision`` is one of :data:`REVIEW_DECISIONS`; Phase 1 has no
+review flow, so it is always false. The policy output is a recommendation, not
+a credit decision.
 """
 
 from __future__ import annotations
@@ -23,7 +29,8 @@ from .world import METRICS, CreditWorld
 __all__ = [
     "MEMO_VERSION",
     "REQUIRED_METRICS",
-    "conclusion_for",
+    "REVIEW_DECISIONS",
+    "recommendation_for",
     "build_memo",
     "memo_sha256",
     "memo_to_markdown",
@@ -32,6 +39,8 @@ __all__ = [
 
 MEMO_VERSION = "credit-memo/v1"
 REQUIRED_METRICS: tuple[str, ...] = METRICS
+#: A memo is human-signed only when a reviewer records one of these decisions.
+REVIEW_DECISIONS: tuple[str, ...] = ("accept", "needs_evidence", "qualified", "redo")
 
 
 def _present(result: dict[str, Any] | None) -> bool:
@@ -44,13 +53,13 @@ def _present(result: dict[str, Any] | None) -> bool:
     return False
 
 
-def conclusion_for(
+def recommendation_for(
     results: dict[str, dict[str, Any]],
 ) -> tuple[str, str, list[str]]:
-    """Return ``(conclusion, rule_fired, missing_metrics)``.
+    """Return ``(recommendation, rule_fired, missing_metrics)``.
 
-    Order is frozen: ``insufficient_evidence`` → ``reject`` → ``watch`` →
-    ``pass``. The thresholds are product policy, not investment advice.
+    The recommendation is a policy output, not a credit decision. Order is
+    frozen: ``insufficient_evidence`` → ``reject`` → ``watch`` → ``pass``.
     """
     missing = [metric for metric in REQUIRED_METRICS if not _present(results.get(metric))]
     if missing:
@@ -121,7 +130,7 @@ def build_memo(
             continue
         results[metric] = verified["result"]
 
-    conclusion, rule_fired, missing = conclusion_for(results)
+    recommendation, rule_fired, missing = recommendation_for(results)
 
     blockers: set[str] = set()
     for result in blocked.values():
@@ -139,7 +148,12 @@ def build_memo(
     verified = not missing and not verification_errors and all(
         result.get("computed") for result in results.values()
     )
-    signed = verified and conclusion != "insufficient_evidence"
+    issued = verified and recommendation != "insufficient_evidence"
+    decision_status = (
+        "blocked" if recommendation == "insufficient_evidence" else "pending_human_review"
+    )
+    reviewer = {"decision": None, "reason": "", "signed_at": None}
+    signed = reviewer["decision"] in REVIEW_DECISIONS
 
     metric_entries: list[dict[str, Any]] = []
     for metric in REQUIRED_METRICS:
@@ -174,7 +188,7 @@ def build_memo(
         restated = world.restatement["restated_ebitda"]
         caveats.append(f"FY2024 EBITDA 从 {original:,} 重述为 {restated:,}。")
     if missing:
-        caveats.append("部分必需指标缺失，memo 未签字，未写入任何推测数值。")
+        caveats.append("部分必需指标缺失，Host 未签发，memo 未写入任何推测数值。")
 
     return {
         "memo_version": MEMO_VERSION,
@@ -182,17 +196,20 @@ def build_memo(
         "issuer_key": world.issuer_key,
         "as_of": "FY2025",
         "synthetic": True,
-        "conclusion": conclusion,
+        "recommended_conclusion": recommendation,
+        "conclusion_authority": "policy",
+        "decision_status": decision_status,
+        "issued": issued,
+        "signed": signed,
         "rule_fired": rule_fired,
         "metrics": metric_entries,
         "trend": trend,
         "caveats": caveats,
-        "reviewer": {"decision": None, "reason": ""},
+        "reviewer": reviewer,
         "missing": missing,
         "blockers": sorted(blockers),
         "chain_head": chain_head,
         "verified": verified,
-        "signed": signed,
     }
 
 
@@ -234,14 +251,23 @@ def memo_sha256(memo: dict[str, Any]) -> str:
 
 def memo_to_markdown(memo: dict[str, Any], sha256: str) -> str:
     """Render the human-readable memo from the JSON values, not model prose."""
+    recommendation = memo["recommended_conclusion"]
+    if recommendation == "insufficient_evidence":
+        recommendation_line = f"- 策略建议：{recommendation}（证据不足，未签发）"
+        human_line = "- 人工签字：否"
+    else:
+        recommendation_line = f"- 策略建议：{recommendation}（策略输出，不是信贷决定）"
+        human_line = "- 人工签字：否（待复核）"
     lines = [
         f"# 信用核查备忘录 — {memo['issuer']}",
         "",
         "> 合成数据，仅用于 FCode 信用尽调实验；不构成任何信贷或投资意见。",
         "",
-        f"- 结论：**{memo['conclusion']}**",
+        recommendation_line,
         f"- 触发规则：`{memo['rule_fired']}`",
-        f"- 签字：{'是' if memo['signed'] else '否'}",
+        f"- Host 签发：{'是' if memo['issued'] else '否'}",
+        human_line,
+        f"- 复核状态：{memo['decision_status']}",
         f"- 已验证：{'是' if memo['verified'] else '否'}",
         f"- 链头：`{memo['chain_head']}`",
         f"- memo sha256：`{sha256}`",
@@ -296,6 +322,7 @@ def memo_to_markdown(memo: dict[str, Any], sha256: str) -> str:
             ]
         )
     decision = memo["reviewer"]["decision"]
+    signed_at = memo["reviewer"].get("signed_at") or "—"
     lines.extend(
         [
             "",
@@ -303,8 +330,10 @@ def memo_to_markdown(memo: dict[str, Any], sha256: str) -> str:
             "",
             f"- 决定：{decision if decision is not None else '待定'}",
             f"- 理由：{memo['reviewer']['reason'] or '（待人工填写）'}",
+            f"- 签字时间：{signed_at}",
             "",
             "本备忘录由 Host 从已验证 observation 组装；模型未写入任何数字。",
+            "Host 签发只表示结果已验证并由 Host 组装，不等于人工签字或信贷决定。",
             "",
         ]
     )

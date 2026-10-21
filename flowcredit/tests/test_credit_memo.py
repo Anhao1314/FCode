@@ -1,4 +1,4 @@
-"""Host memo assembly, frozen conclusion policy and three-issuer CLI."""
+"""Host memo assembly, policy recommendations and the issuance/sign-off split."""
 
 from __future__ import annotations
 
@@ -14,10 +14,10 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "src"))
 
-from flowagent.demo.credit import EXPECTED_CONCLUSIONS, run_all, run_issuer  # noqa: E402
+from flowagent.demo.credit import EXPECTED_RECOMMENDATIONS, run_all, run_issuer  # noqa: E402
 from flowagent.tools.credit.memo import (  # noqa: E402
     MEMO_VERSION,
-    conclusion_for,
+    recommendation_for,
     memo_sha256,
 )
 from flowagent.tools.credit.world import CreditWorld  # noqa: E402
@@ -45,8 +45,8 @@ def _safe_metrics() -> dict[str, dict]:
 
 class MemoPolicyTests(unittest.TestCase):
     def test_pass_branch_is_reachable(self) -> None:
-        conclusion, rule, missing = conclusion_for(_safe_metrics())
-        self.assertEqual(conclusion, "pass")
+        recommendation, rule, missing = recommendation_for(_safe_metrics())
+        self.assertEqual(recommendation, "pass")
         self.assertEqual(rule, "no threshold fired")
         self.assertEqual(missing, [])
 
@@ -54,8 +54,8 @@ class MemoPolicyTests(unittest.TestCase):
         metrics = _safe_metrics()
         metrics["net_debt_to_ebitda"]["value_bp"] = 60000
         del metrics["audit_opinion"]
-        conclusion, rule, missing = conclusion_for(metrics)
-        self.assertEqual(conclusion, "insufficient_evidence")
+        recommendation, rule, missing = recommendation_for(metrics)
+        self.assertEqual(recommendation, "insufficient_evidence")
         self.assertEqual(rule, "insufficient_evidence")
         self.assertEqual(missing, ["audit_opinion"])
 
@@ -63,30 +63,42 @@ class MemoPolicyTests(unittest.TestCase):
         metrics = _safe_metrics()
         metrics["audit_opinion"]["value_code"] = "qualified"
         metrics["net_debt_to_ebitda"]["value_bp"] = 50001
-        conclusion, rule, _ = conclusion_for(metrics)
-        self.assertEqual(conclusion, "reject")
+        recommendation, rule, _ = recommendation_for(metrics)
+        self.assertEqual(recommendation, "reject")
         self.assertEqual(rule, "net_debt_to_ebitda > 5.0x")
 
     def test_watch_rules(self) -> None:
         metrics = _safe_metrics()
         metrics["interest_coverage"]["value_bp"] = 39999
-        conclusion, rule, _ = conclusion_for(metrics)
-        self.assertEqual(conclusion, "watch")
+        recommendation, rule, _ = recommendation_for(metrics)
+        self.assertEqual(recommendation, "watch")
         self.assertEqual(rule, "interest_coverage < 4.0x")
 
 
 class MemoRunTests(unittest.TestCase):
-    def test_hengxing_is_watch_and_signed(self) -> None:
+    def test_hengxing_is_watch_issued_but_not_signed(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             run = run_issuer("hengxing", workdir=Path(tmp) / "hengxing")
             self.assertEqual(run.status, "succeeded")
             self.assertEqual(run.failure_code, "")
-            self.assertEqual(run.conclusion, "watch")
-            self.assertEqual(run.rule_fired, "net_debt_to_ebitda > 3.5x")
+            self.assertEqual(run.recommended_conclusion, "watch")
+            self.assertEqual(run.conclusion_authority, "policy")
+            self.assertEqual(run.decision_status, "pending_human_review")
+            self.assertTrue(run.issued)
+            self.assertFalse(run.signed)
             self.assertTrue(run.verified)
             self.assertTrue(run.chain_verified)
-            self.assertTrue(run.memo["signed"])
+            self.assertEqual(run.memo["recommended_conclusion"], "watch")
+            self.assertEqual(run.memo["conclusion_authority"], "policy")
+            self.assertEqual(run.memo["decision_status"], "pending_human_review")
+            self.assertTrue(run.memo["issued"])
+            self.assertFalse(run.memo["signed"])
             self.assertTrue(run.memo["verified"])
+            self.assertEqual(
+                run.memo["reviewer"],
+                {"decision": None, "reason": "", "signed_at": None},
+            )
+            self.assertNotIn("conclusion", run.memo)
             self.assertEqual(run.memo["memo_version"], MEMO_VERSION)
             self.assertEqual(len(run.memo["metrics"]), 8)
             self.assertEqual(run.metrics["net_debt_to_ebitda"], 37714)
@@ -98,20 +110,31 @@ class MemoRunTests(unittest.TestCase):
             self.assertEqual(run.memo_sha256, memo_sha256(run.memo))
             self.assertEqual(json.loads(Path(run.memo_path).read_text(encoding="utf-8")), run.memo)
 
+            markdown = Path(run.memo_md_path).read_text(encoding="utf-8")
+            self.assertNotIn("签字：是", markdown)
+            self.assertIn("策略建议：watch（策略输出，不是信贷决定）", markdown)
+            self.assertIn("Host 签发：是", markdown)
+            self.assertIn("人工签字：否（待复核）", markdown)
+            self.assertIn("复核状态：pending_human_review", markdown)
+
             world = CreditWorld("hengxing")
             for metric in run.memo["metrics"]:
                 self.assertTrue(metric["citations"], metric["metric"])
                 for citation in metric["citations"]:
                     self.assertTrue(world.verify_citation(citation), citation)
 
-    def test_yuanyang_is_reject_with_restated_trend_and_caveat(self) -> None:
+    def test_yuanyang_is_reject_issued_but_not_signed(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             run = run_issuer("yuanyang", workdir=Path(tmp) / "yuanyang")
             self.assertEqual(run.status, "succeeded")
-            self.assertEqual(run.conclusion, "reject")
-            self.assertEqual(run.rule_fired, "rating_migration == downgrade")
-            self.assertTrue(run.memo["signed"])
+            self.assertEqual(run.recommended_conclusion, "reject")
+            self.assertEqual(run.decision_status, "pending_human_review")
+            self.assertTrue(run.issued)
+            self.assertFalse(run.signed)
+            self.assertTrue(run.memo["issued"])
+            self.assertFalse(run.memo["signed"])
             self.assertTrue(run.memo["verified"])
+            self.assertEqual(run.rule_fired, "rating_migration == downgrade")
             self.assertEqual(run.metrics["net_debt_to_ebitda"], 57500)
             self.assertEqual(run.metrics["rating_migration"], "downgrade")
 
@@ -128,17 +151,34 @@ class MemoRunTests(unittest.TestCase):
             for citation in trend["citations"]:
                 self.assertTrue(world.verify_citation(citation), citation)
 
-    def test_yunling_is_unsigned_and_lists_the_four_missing_metrics(self) -> None:
+            markdown = Path(run.memo_md_path).read_text(encoding="utf-8")
+            self.assertNotIn("签字：是", markdown)
+            self.assertIn("策略建议：reject（策略输出，不是信贷决定）", markdown)
+            self.assertIn("Host 签发：是", markdown)
+            self.assertIn("人工签字：否（待复核）", markdown)
+            self.assertIn("复核状态：pending_human_review", markdown)
+
+    def test_yunling_is_blocked_not_issued_and_lists_missing_metrics(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             run = run_issuer("yunling", workdir=Path(tmp) / "yunling")
             self.assertEqual(run.status, "failed")
             self.assertEqual(run.failure_code, "INSUFFICIENT_EVIDENCE")
-            self.assertEqual(run.conclusion, "insufficient_evidence")
-            self.assertEqual(run.rule_fired, "insufficient_evidence")
+            self.assertEqual(run.recommended_conclusion, "insufficient_evidence")
+            self.assertEqual(run.conclusion_authority, "policy")
+            self.assertEqual(run.decision_status, "blocked")
+            self.assertFalse(run.issued)
+            self.assertFalse(run.signed)
             self.assertFalse(run.verified)
             self.assertTrue(run.chain_verified)
+            self.assertEqual(run.rule_fired, "insufficient_evidence")
+            self.assertFalse(run.memo["issued"])
             self.assertFalse(run.memo["signed"])
             self.assertFalse(run.memo["verified"])
+            self.assertEqual(run.memo["decision_status"], "blocked")
+            self.assertEqual(
+                run.memo["reviewer"],
+                {"decision": None, "reason": "", "signed_at": None},
+            )
             self.assertEqual(run.memo["missing"], MISSING_YUNLING)
             self.assertIn("missing_debt_schedule", run.memo["blockers"])
             self.assertEqual(len(run.memo["metrics"]), 4)
@@ -157,19 +197,46 @@ class MemoRunTests(unittest.TestCase):
             self.assertTrue(Path(run.memo_path).exists())
             self.assertTrue(Path(run.memo_md_path).exists())
 
-    def test_run_all_reaches_the_three_expected_conclusions(self) -> None:
+            markdown = Path(run.memo_md_path).read_text(encoding="utf-8")
+            self.assertNotIn("签字：是", markdown)
+            self.assertIn("策略建议：insufficient_evidence（证据不足，未签发）", markdown)
+            self.assertIn("Host 签发：否", markdown)
+            self.assertIn("人工签字：否", markdown)
+            self.assertIn("复核状态：blocked", markdown)
+
+    def test_host_issuance_is_not_human_signoff(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            runs = run_all(workdir=Path(tmp))
+            for run in runs:
+                self.assertFalse(run.signed)
+                self.assertFalse(run.memo["signed"])
+                self.assertEqual(
+                    run.issued,
+                    run.verified and run.recommended_conclusion != "insufficient_evidence",
+                )
+                self.assertEqual(
+                    run.decision_status,
+                    "blocked"
+                    if run.recommended_conclusion == "insufficient_evidence"
+                    else "pending_human_review",
+                )
+                markdown = Path(run.memo_md_path).read_text(encoding="utf-8")
+                self.assertNotIn("签字：是", markdown)
+                self.assertIn("人工签字：否", markdown)
+
+    def test_run_all_reaches_the_three_expected_recommendations(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             runs = run_all(workdir=Path(tmp))
             self.assertEqual(
-                [run.conclusion for run in runs],
-                [EXPECTED_CONCLUSIONS[key] for key in ("hengxing", "yuanyang", "yunling")],
+                [run.recommended_conclusion for run in runs],
+                [EXPECTED_RECOMMENDATIONS[key] for key in ("hengxing", "yuanyang", "yunling")],
             )
             self.assertTrue(all(run.ok for run in runs))
             for run in runs:
                 self.assertTrue(Path(run.memo_path).exists())
                 self.assertTrue(Path(run.memo_md_path).exists())
 
-    def test_cli_all_writes_memos_and_exits_zero(self) -> None:
+    def test_cli_all_exposes_issuance_and_signoff_fields(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             completed = subprocess.run(
                 [
@@ -188,14 +255,30 @@ class MemoRunTests(unittest.TestCase):
             payload = json.loads(completed.stdout)
             self.assertTrue(payload["ok"])
             self.assertEqual(
-                [case["conclusion"] for case in payload["cases"]],
+                [case["recommended_conclusion"] for case in payload["cases"]],
                 ["watch", "reject", "insufficient_evidence"],
             )
             for case in payload["cases"]:
+                self.assertIn("recommended_conclusion", case)
+                self.assertIn("issued", case)
+                self.assertIn("signed", case)
+                self.assertIn("decision_status", case)
+                self.assertEqual(case["conclusion_authority"], "policy")
+                self.assertNotIn("conclusion", case)
+                self.assertFalse(case["signed"])
                 self.assertTrue(Path(case["memo_path"]).exists())
                 self.assertTrue(Path(case["memo_md_path"]).exists())
                 self.assertTrue(case["chain_verified"])
-                self.assertEqual(case["missing"], [] if case["issuer_key"] != "yunling" else MISSING_YUNLING)
+                self.assertEqual(
+                    case["missing"],
+                    [] if case["issuer_key"] != "yunling" else MISSING_YUNLING,
+                )
+                if case["issuer_key"] in ("hengxing", "yuanyang"):
+                    self.assertTrue(case["issued"])
+                    self.assertEqual(case["decision_status"], "pending_human_review")
+                else:
+                    self.assertFalse(case["issued"])
+                    self.assertEqual(case["decision_status"], "blocked")
 
 
 if __name__ == "__main__":

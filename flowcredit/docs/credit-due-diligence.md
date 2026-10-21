@@ -11,10 +11,13 @@
 - 输入：合成年报、债务明细、评级报告、重述说明；
 - 输出：8 个指标、一份由 Host 组装的 `memo.json` + `memo.md`、可验证的
   trace 哈希链；
-- 证据不足时：memo `signed: false`，列出 `missing`，不写任何编造数值，
-  终态 `failed / INSUFFICIENT_EVIDENCE`。
+- 证据不足时：memo `issued: false`、`signed: false`、
+  `decision_status: blocked`，列出 `missing`，不写任何编造数值，终态
+  `failed / INSUFFICIENT_EVIDENCE`。
 
-模型只提议读哪一个文档、算哪一个指标；它不能传数值，也不能写 memo。
+模型只提议读哪一个文档、算哪一个指标；它不能传数值，也不能写 memo。Host 可以
+验证数字、组装 memo、给出策略建议，但它不替人签字，也不把策略输出包装成信贷
+决定。
 
 ## 代码位置
 
@@ -24,7 +27,7 @@
 | `flowagent/tools/credit/tools.py` | 5 个 `effect=read` 工具 |
 | `flowagent/tools/credit/planner.py` | 14 个普通 todo 的蓝图与依赖 |
 | `flowagent/tools/credit/verifier.py` | 独立重算，逐字段比较 |
-| `flowagent/tools/credit/memo.py` | Host 组装 memo + 冻结结论策略 |
+| `flowagent/tools/credit/memo.py` | Host 组装 memo + 冻结策略建议 |
 | `flowagent/domains/credit.py` | `CREDIT_DOMAIN`（`credit-due-diligence`） |
 | `flowagent/demo/credit.py` | 模块驱动的 runner |
 | `credit_demo.py` | 根入口 CLI |
@@ -37,7 +40,7 @@
 
 单位 CNY 千元。完整事实见 `world.py`。
 
-| 发行人 | key | 特征 | 预期结论 |
+| 发行人 | key | 特征 | 预期策略建议 |
 | --- | --- | --- | --- |
 | 恒星智造 | `hengxing` | 两期 standard audit，AA- 稳定，杠杆偏高 | `watch` |
 | 远洋材料 | `yuanyang` | FY2024 EBITDA 300,000 → 270,000 重述，qualified audit，A → BBB downgrade | `reject` |
@@ -108,7 +111,7 @@ c14 compute rating_migration FY2025
 一个结果 observation 时保留金融域的单结果形状；多个结果 observation 时
 `task.result` 使用 `{"verified": true, "results": [...]}`，顺序与事件链一致。
 
-## 结论策略（冻结）
+## 策略建议（冻结，不是信贷决定）
 
 顺序：`insufficient_evidence` → `reject` → `watch` → `pass`。
 
@@ -124,20 +127,40 @@ c14 compute rating_migration FY2025
 `memo.rule_fired` 记录第一条触发的规则，例如
 `net_debt_to_ebitda > 3.5x`、`rating_migration == downgrade`。
 
-这是产品策略，不是信贷建议；阈值冻结在 `memo.py::conclusion_for`。
+这是产品策略，不是信贷建议；阈值冻结在 `memo.py::recommendation_for`。
 
 ## Memo
 
-`memo.py` 从已验证 observation、world 和重述结果组装，不调用模型：
+`memo.py` 从已验证 observation、world 和重述结果组装，不调用模型。
+
+### Host 签发 ≠ 人工签字
+
+- **Host 签发（`issued`）**：所有必需指标已验证、citation 可回读、memo 由
+  Host 组装完成。它不是信贷决定，也不是人的签字。
+- **策略建议（`recommended_conclusion`）**：`watch` / `reject` / `pass` /
+  `insufficient_evidence` 是冻结策略的输出，`conclusion_authority` 恒为
+  `"policy"`。
+- **人工签字（`signed`）**：只有 `reviewer.decision` 属于
+  `accept / needs_evidence / qualified / redo` 时才为 true。Phase 1 没有接
+  人工复核流程，因此 A/B/C 的 `signed` 都为 false。
+- **复核状态（`decision_status`）**：A/B 为 `pending_human_review`，C 为
+  `blocked`。
+
+字段与规则：
 
 - `memo_version: "credit-memo/v1"`、`issuer`、`issuer_key`、`as_of`、
   `synthetic: true`；
-- `conclusion`、`rule_fired`、`metrics`、`trend`、`caveats`、
-  `reviewer`、`missing`、`blockers`、`chain_head`、`verified`、`signed`；
+- `recommended_conclusion`、`conclusion_authority: "policy"`、
+  `decision_status`、`issued`、`signed`、`rule_fired`、`metrics`、`trend`、
+  `caveats`、`reviewer`、`missing`、`blockers`、`chain_head`、`verified`；
 - 每个 metric 至少 1 条 citation；memo 会回读 `doc_id` / `line` / `field`，
   不合法则抛 `MEMO_CITATION_INVALID`；
-- `signed: true` 只在 `insufficient_evidence` 之外且所有指标 verified 时成立；
-- 拒绝 memo 用 `signed: false`、`missing`、`blockers`，不写编造数值。
+- `issued = verified and recommended_conclusion != "insufficient_evidence"`；
+- `signed` 只由 `reviewer.decision` 决定；Phase 1 `reviewer.decision` 为 null，
+  所以 `signed: false`；
+- 拒绝 memo 用 `issued: false`、`signed: false`、`missing`、`blockers`，
+  不写编造数值；
+- `reviewer` 包含 `decision`、`reason`、`signed_at`。
 
 恒星智造示例（truncated）：
 
@@ -148,7 +171,11 @@ c14 compute rating_migration FY2025
   "issuer_key": "hengxing",
   "as_of": "FY2025",
   "synthetic": true,
-  "conclusion": "watch",
+  "recommended_conclusion": "watch",
+  "conclusion_authority": "policy",
+  "decision_status": "pending_human_review",
+  "issued": true,
+  "signed": false,
   "rule_fired": "net_debt_to_ebitda > 3.5x",
   "metrics": [
     {
@@ -161,10 +188,9 @@ c14 compute rating_migration FY2025
   ],
   "trend": null,
   "caveats": [],
-  "reviewer": {"decision": null, "reason": ""},
+  "reviewer": {"decision": null, "reason": "", "signed_at": null},
   "chain_head": "…",
-  "verified": true,
-  "signed": true
+  "verified": true
 }
 ```
 
@@ -172,10 +198,11 @@ c14 compute rating_migration FY2025
 5.40x（54000 bp），FY2025 为 3.00x（30000 bp），`change_bp = -24000`；memo
 caveat 明确写出 `FY2024 EBITDA 从 300,000 重述为 270,000。`
 
-云岭设备的 memo `signed: false`，`missing` 列出
-`net_debt_to_ebitda` / `ocf_to_short_term_debt` /
+云岭设备的 memo `issued: false`、`signed: false`、`decision_status: blocked`，
+`missing` 列出 `net_debt_to_ebitda` / `ocf_to_short_term_debt` /
 `related_party_funding_ratio` / `contingent_liabilities_to_equity`，只包含
-可计算的 4 个指标，不写编造数值。
+可计算的 4 个指标，不写编造数值。它的 `verified: false` 表示必需结果集不完整；
+trace 链仍然可以独立验证。
 
 `memo.json` 与 `memo.md` 写入 run 目录；`memo.md` 的数字全部来自 JSON。
 `memo_sha256` 是对 memo 的 canonical JSON 计算的 SHA-256；CLI 同时输出
@@ -191,10 +218,12 @@ python credit_demo.py --issuer yunling
 python credit_demo.py --all
 ```
 
-`--all` 顺序跑三家，只有三家结论都达到预期时 exit 0。输出字段包括
-`issuer`、`status`、`failure_code`、`conclusion`、`rule_fired`、`metrics`、
-`memo_path`、`memo_sha256`、`chain_head`、`verified`，以及
-`chain_verified`、`signed`、`missing`、`memo_md_path`。
+`--all` 顺序跑三家，只有三家策略建议都达到预期时 exit 0。输出字段包括
+`issuer`、`status`、`failure_code`、`recommended_conclusion`、
+`conclusion_authority`、`decision_status`、`issued`、`signed`、`rule_fired`、
+`metrics`、`memo_path`、`memo_sha256`、`chain_head`、`verified`，以及
+`chain_verified`、`missing`、`memo_md_path`。不使用裸 `conclusion` 字段表示
+决定。
 
 默认 run 目录是 `flowcredit/work/credit/<issuer_key>/`（`work/` 已在
 `.gitignore` 中）：
@@ -210,9 +239,9 @@ memo.md
 
 - `test_credit_domain.py`：三家发行人的 8 个指标精确值、14 步蓝图、
   5 个只读工具、restatement、verifier 篡改拒绝、domain 注册；
-- `test_credit_memo.py`：memo citation 可回读、signed/verified 规则、
-  A/B/C 结论、B 的 restated trend 与 caveat、C 的 missing、pass 纯策略单测、
-  `credit_demo.py --all`；
+- `test_credit_memo.py`：memo citation 可回读、issued/signed/decision_status
+  规则、A/B/C 策略建议、B 的 restated trend 与 caveat、C 的 missing、pass 纯
+  策略单测、`credit_demo.py --all`；
 - `test_credit_dd_spike.py`：lab 薄封装与 Phase 0 seam；
 - `test_sft_export.py`：金融 v10 golden hash 与信用 context fields/metrics。
 

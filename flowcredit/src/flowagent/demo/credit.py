@@ -4,7 +4,7 @@ This is the module-driven assembly for the credit domain: it selects a
 ``CreditWorld`` for one synthetic issuer, binds the module's five tools, runs the
 real ``Harness``/``Loop`` with the offline mock, then lets the Host assemble and
 write the memo. The model never writes a number into the memo, and the memo is
-still written when the run is refused (unsigned).
+still written when the run is refused (not issued).
 """
 
 from __future__ import annotations
@@ -33,7 +33,7 @@ from ..trajectory.recorder import TraceRecorder
 __all__ = [
     "PROJECT_ROOT",
     "WORK_DIR",
-    "EXPECTED_CONCLUSIONS",
+    "EXPECTED_RECOMMENDATIONS",
     "CreditRun",
     "run_issuer",
     "run_all",
@@ -43,7 +43,7 @@ __all__ = [
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 WORK_DIR = PROJECT_ROOT / "work" / "credit"
 
-EXPECTED_CONCLUSIONS: dict[str, str] = {
+EXPECTED_RECOMMENDATIONS: dict[str, str] = {
     "hengxing": "watch",
     "yuanyang": "reject",
     "yunling": "insufficient_evidence",
@@ -59,7 +59,11 @@ class CreditRun:
     expected: str
     status: str
     failure_code: str
-    conclusion: str
+    recommended_conclusion: str
+    conclusion_authority: str
+    decision_status: str
+    issued: bool
+    signed: bool
     rule_fired: str
     metrics: dict[str, Any]
     memo: dict[str, Any]
@@ -73,7 +77,7 @@ class CreditRun:
 
     @property
     def ok(self) -> bool:
-        return self.conclusion == self.expected
+        return self.recommended_conclusion == self.expected
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -82,7 +86,11 @@ class CreditRun:
             "expected": self.expected,
             "status": self.status,
             "failure_code": self.failure_code,
-            "conclusion": self.conclusion,
+            "recommended_conclusion": self.recommended_conclusion,
+            "conclusion_authority": self.conclusion_authority,
+            "decision_status": self.decision_status,
+            "issued": self.issued,
+            "signed": self.signed,
             "rule_fired": self.rule_fired,
             "metrics": dict(self.metrics),
             "memo_path": self.memo_path,
@@ -91,7 +99,6 @@ class CreditRun:
             "chain_head": self.chain_head,
             "chain_verified": self.chain_verified,
             "verified": self.verified,
-            "signed": bool(self.memo.get("signed")),
             "missing": list(self.memo.get("missing") or []),
         }
 
@@ -131,7 +138,7 @@ def run_issuer(
     """Run one synthetic issuer through the real runtime and write its memo."""
     if issuer_key not in ISSUER_KEYS:
         raise ValueError(f"unknown issuer {issuer_key!r}; known: {list(ISSUER_KEYS)}")
-    expected = EXPECTED_CONCLUSIONS[issuer_key]
+    expected = EXPECTED_RECOMMENDATIONS[issuer_key]
     target = Path(workdir) if workdir is not None else WORK_DIR / issuer_key
     target.mkdir(parents=True, exist_ok=True)
     db_path = target / "task.sqlite"
@@ -217,7 +224,11 @@ def run_issuer(
             expected=expected,
             status=task.status,
             failure_code=failure.get("code", ""),
-            conclusion=memo["conclusion"],
+            recommended_conclusion=memo["recommended_conclusion"],
+            conclusion_authority=memo["conclusion_authority"],
+            decision_status=memo["decision_status"],
+            issued=bool(memo["issued"]),
+            signed=bool(memo["signed"]),
             rule_fired=memo["rule_fired"],
             metrics=metrics,
             memo=memo,
