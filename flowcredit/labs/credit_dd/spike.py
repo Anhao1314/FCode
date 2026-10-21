@@ -42,9 +42,9 @@ from flowagent.tools.registry import ToolRegistry  # noqa: E402
 from flowagent.trajectory.exporter import verify_trace  # noqa: E402
 from flowagent.trajectory.recorder import TraceRecorder  # noqa: E402
 
+from labs.credit_dd.module import CREDIT_DD_DOMAIN  # noqa: E402
 from labs.credit_dd.planner import CreditPlanner  # noqa: E402
 from labs.credit_dd.tools import TOOL_NAMES, build_credit_tools  # noqa: E402
-from labs.credit_dd.verifier import CreditVerifier  # noqa: E402
 from labs.credit_dd.world import CreditWorld  # noqa: E402
 
 __all__ = ["CaseRun", "EXPECTED_METRICS", "run_case", "main"]
@@ -53,6 +53,21 @@ EXPECTED_METRICS: dict[str, int] = {
     "net_debt_to_ebitda": 377,
     "interest_coverage": 417,
 }
+
+
+def _metrics_from_result(result: dict[str, Any] | None) -> dict[str, int]:
+    """Read metrics from either the single-result or multi-result shape."""
+    if not result:
+        return {}
+    if "results" in result:
+        return {
+            item["metric"]: item["value_x100"]
+            for item in result["results"]
+            if item.get("computed") and item.get("metric") and "value_x100" in item
+        }
+    if result.get("computed") and result.get("metric") and "value_x100" in result:
+        return {result["metric"]: result["value_x100"]}
+    return {}
 
 
 @dataclass
@@ -110,8 +125,15 @@ class CaseRun:
         return False
 
 
-def run_case(name: str, *, partial: bool = False, max_rounds: int = 12) -> CaseRun:
+def run_case(
+    name: str,
+    *,
+    partial: bool = False,
+    max_rounds: int = 12,
+    planner: Any | None = None,
+) -> CaseRun:
     """Assemble the real stack, run one case, and return its trace and state."""
+    active_planner = planner or CreditPlanner()
     with tempfile.TemporaryDirectory(prefix=f"fcode-credit-{name}-") as tmp:
         store = TaskStore(Path(tmp) / "task.sqlite")
         try:
@@ -119,7 +141,6 @@ def run_case(name: str, *, partial: bool = False, max_rounds: int = 12) -> CaseR
             registry = ToolRegistry(build_credit_tools(world))
             receipts = ReceiptStore(store)
             provider = MockProvider(policy="research")
-            verifier = CreditVerifier(world, store)
             limits = BudgetLimits(
                 max_calls=max_rounds,
                 max_reads=max_rounds,
@@ -133,7 +154,7 @@ def run_case(name: str, *, partial: bool = False, max_rounds: int = 12) -> CaseR
                 world=world,
                 limits=limits,
                 receipts=receipts,
-                verifier=verifier,
+                verifier=lambda observation: CREDIT_DD_DOMAIN.verify(world, observation),
             )
 
             allowed = list(TOOL_NAMES)
@@ -159,8 +180,6 @@ def run_case(name: str, *, partial: bool = False, max_rounds: int = 12) -> CaseR
                     "max_tokens": 20_000,
                 },
             )
-            verifier.bind(task.id)
-
             recorder = TraceRecorder(
                 store,
                 provider_name=provider.name,
@@ -168,12 +187,12 @@ def run_case(name: str, *, partial: bool = False, max_rounds: int = 12) -> CaseR
             )
             task = Loop(
                 harness,
-                planner=CreditPlanner(),
+                planner=active_planner,
                 max_rounds=max_rounds,
                 observer=recorder,
-                # The second-domain seam: the caller declares which tool's
-                # computed observation is the domain's answer.
-                result_tools=("compute_credit_metric",),
+                # The module, not the kernel, declares which tool's verified
+                # observations are the domain's answer.
+                result_tools=CREDIT_DD_DOMAIN.result_tools,
             ).run(task.id)
 
             trace = recorder.build(task)
@@ -182,18 +201,14 @@ def run_case(name: str, *, partial: bool = False, max_rounds: int = 12) -> CaseR
             plan = (
                 Plan.from_dict(task.plan_state)
                 if task.plan_state
-                else CreditPlanner().decompose(task.objective)
+                else active_planner.decompose(task.objective)
             )
             failure = task.failure or {}
             summary = {
                 "name": name,
                 "status": task.status,
                 "failure_code": failure.get("code", ""),
-                "metrics": (
-                    dict(task.result.get("metrics") or {})
-                    if task.status == "succeeded"
-                    else {}
-                ),
+                "metrics": _metrics_from_result(task.result),
                 "events": len(events),
                 "chain_head": verification["head_hash"],
                 "verified": bool(verification["verified"]),

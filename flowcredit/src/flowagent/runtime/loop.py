@@ -57,7 +57,7 @@ class Loop:
         control: Control | None = None,
         policy: Any = None,
         compiler: Any = None,
-        result_tools: tuple[str, ...] = ("calculate_margin",),
+        result_tools: tuple[str, ...],
     ) -> None:
         self.harness = harness
         self.planner = planner
@@ -66,9 +66,9 @@ class Loop:
         self.control = control
         self.policy = policy
         self.compiler = compiler or compile_packet
-        #: Tools whose computed observation is the domain's answer. The kernel
-        #: does not know a domain's final tool; the caller (or module) declares
-        #: it. The default preserves the finance module's original behaviour.
+        #: Tools whose verified observations are the domain's answer. Required:
+        #: the kernel must not carry a domain's tool name as a default. Callers
+        #: with no result tool pass ``()`` and cannot silently succeed.
         self.result_tools = tuple(result_tools)
 
     def run(self, task_id: str) -> Task:
@@ -219,12 +219,11 @@ class Loop:
 
             if observation.tool == "report_blocked":
                 return self._reported_blocked(task, plan, observation)
-            if (
-                observation.tool in self.result_tools
-                and observation.result.get("computed")
-                and plan.is_complete()
-            ):
-                verified = self.harness.verify(observation)
+            if observation.tool in self.result_tools and plan.is_complete():
+                try:
+                    verified = self._verify_result_set(task.id, plan)
+                except AgentError as error:
+                    return self._abort(task.id, error)
                 return self._succeed(task, verified, plan)
 
     # -------------------------------------------------------------- resumption
@@ -317,9 +316,90 @@ class Loop:
         task.plan_state = plan.to_dict()
         return self.harness.record(task, "plan_updated", {"round": round_no, "plan": plan.to_dict()})
 
+    def _verify_result_set(self, task_id: str, plan: Plan) -> dict[str, Any]:
+        """Verify every declared result observation, not just the last one.
+
+        A plan can be ``is_complete()`` while a result-bearing todo was
+        ``abandoned``; that is "finished", not "evidence complete". The todo
+        check below is what turns that distinction into a stable failure instead
+        of a partial answer labelled succeeded.
+        """
+        result_todos = [todo for todo in plan.todos if todo.tool in self.result_tools]
+        incomplete = [todo.id for todo in result_todos if todo.status != "done"]
+        if incomplete:
+            raise AgentError(
+                "RESULT_INCOMPLETE",
+                f"result todos are not done: {', '.join(incomplete)}",
+            )
+
+        observations = self._result_observations(task_id)
+        observed = {observation.tool for observation in observations}
+        missing = [tool for tool in self.result_tools if tool not in observed]
+        if missing:
+            raise AgentError(
+                "RESULT_INCOMPLETE",
+                f"no observation for declared result tool(s): {', '.join(missing)}",
+            )
+
+        verified: list[dict[str, Any]] = []
+        for observation in observations:
+            item = self.harness.verify(observation)
+            if not item.get("verified"):
+                raise AgentError(
+                    "RESULT_VERIFICATION_FAILED",
+                    f"the domain verifier rejected {observation.tool!r}",
+                )
+            if not isinstance(item.get("result"), dict):
+                raise AgentError(
+                    "RESULT_INCOMPLETE",
+                    f"the domain verifier returned no result for {observation.tool!r}",
+                )
+            verified.append(item)
+
+        if not verified:
+            raise AgentError("RESULT_INCOMPLETE", "no result observations to verify")
+
+        # One verified observation keeps the historical single-result shape
+        # (finance's margin fields). Multiple observations use a deterministic
+        # list ordered by the committed event sequence.
+        if len(verified) == 1:
+            return verified[0]
+        return {
+            "verified": True,
+            "verification": verified[0].get("verification", "runtime-recomputed"),
+            "results": [dict(item["result"]) for item in verified],
+        }
+
+    def _result_observations(self, task_id: str) -> list[Observation]:
+        """Read every committed observation produced by a declared result tool."""
+        observations: list[Observation] = []
+        for event in self.harness.store.events(task_id):
+            if event["type"] != "tool_succeeded":
+                continue
+            detail = event["payload"].get("detail", {})
+            if detail.get("tool") not in self.result_tools:
+                continue
+            observations.append(
+                Observation(
+                    tool=detail["tool"],
+                    arguments=dict(detail.get("arguments") or {}),
+                    result=dict(detail.get("result") or {}),
+                    result_hash=detail.get("result_hash", ""),
+                    tool_version=detail.get("tool_version", ""),
+                )
+            )
+        return observations
+
     def _succeed(self, task: Task, verified: dict[str, Any], plan: Plan) -> Task:
-        result = dict(verified["result"])
-        result["verification"] = verified["verification"]
+        if "results" in verified:
+            result = {
+                "verified": True,
+                "verification": verified.get("verification", "runtime-recomputed"),
+                "results": [dict(item) for item in verified["results"]],
+            }
+        else:
+            result = dict(verified["result"])
+            result["verification"] = verified["verification"]
         result["plan"] = plan.progress()
         task = self.harness.finalize(task, "verifying", result=None, event="verification_started")
         task = self.harness.finalize(task, "succeeded", result=result, event="task_succeeded")

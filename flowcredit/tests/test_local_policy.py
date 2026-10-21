@@ -17,7 +17,7 @@ from flowagent.core.contracts import AgentError  # noqa: E402
 from flowagent.core.receipts import ReceiptStore  # noqa: E402
 from flowagent.core.store import TaskStore  # noqa: E402
 from flowagent.demo.fixtures import get_scenario  # noqa: E402
-from flowagent.domains.finance import verify_observation  # noqa: E402
+from flowagent.domains.finance import FINANCE_DOMAIN, verify_observation  # noqa: E402
 from flowagent.providers.local_policy import LocalPolicy  # noqa: E402
 from flowagent.providers.mock import MockProvider  # noqa: E402
 from flowagent.providers.packet_prompt import render_policy_prompt  # noqa: E402
@@ -159,6 +159,7 @@ class LocalPolicyTests(unittest.TestCase):
                     planner=FinancePlanner(),
                     max_rounds=scenario.max_rounds,
                     policy=self.policy(),
+                    result_tools=FINANCE_DOMAIN.result_tools,
                 )
                 task = loop.run(task.id)
                 self.assertEqual(task.status, "succeeded")

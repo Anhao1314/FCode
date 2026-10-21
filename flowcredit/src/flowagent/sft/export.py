@@ -44,7 +44,7 @@ from ..tools.finance.fixtures import FinanceWorld
 from ..tools.finance.planner import FinancePlanner
 from ..tools.finance.tools import build_finance_tools
 from ..tools.registry import ToolRegistry
-from ..domains.finance import verify_observation as verify_finance
+from ..domains.finance import FINANCE_DOMAIN, verify_observation as verify_finance
 
 __all__ = ["reconstruct_trace", "generate_episodes", "samples_to_sharegpt", "export_main"]
 
@@ -214,6 +214,7 @@ def generate_episodes(episodes_per_scenario: int) -> list[dict[str, Any]]:
                     harness,
                     planner=FinancePlanner(),
                     max_rounds=scenario.max_rounds,
+                    result_tools=FINANCE_DOMAIN.result_tools,
                 ).run(task.id)
                 store.close()
             for index, (context, proposal) in enumerate(zip(provider.captured, provider.proposals), start=1):

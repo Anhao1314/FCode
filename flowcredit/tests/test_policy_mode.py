@@ -14,7 +14,7 @@ from flowagent.core.hashing import canonical_json  # noqa: E402
 from flowagent.core.receipts import ReceiptStore  # noqa: E402
 from flowagent.core.store import TaskStore  # noqa: E402
 from flowagent.demo.fixtures import get_scenario  # noqa: E402
-from flowagent.domains.finance import verify_observation  # noqa: E402
+from flowagent.domains.finance import FINANCE_DOMAIN, verify_observation  # noqa: E402
 from flowagent.providers.mock import MockProvider  # noqa: E402
 from flowagent.runtime.harness import Harness  # noqa: E402
 from flowagent.runtime.loop import Loop  # noqa: E402
@@ -59,6 +59,7 @@ class PolicyModeTests(unittest.TestCase):
                 planner=FinancePlanner(),
                 max_rounds=scenario.max_rounds,
                 policy=MockPolicy(),
+                result_tools=FINANCE_DOMAIN.result_tools,
             )
             task = loop.run(task.id)
             self.assertEqual(task.status, "succeeded")
@@ -80,7 +81,13 @@ class PolicyModeTests(unittest.TestCase):
     def test_open_ended_still_blocks_honestly_under_policy_mode(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             scenario, store, harness, task = build_stack(pathlib.Path(tmp), "open-ended")
-            loop = Loop(harness, planner=FinancePlanner(), max_rounds=scenario.max_rounds, policy=MockPolicy())
+            loop = Loop(
+                harness,
+                planner=FinancePlanner(),
+                max_rounds=scenario.max_rounds,
+                policy=MockPolicy(),
+                result_tools=FINANCE_DOMAIN.result_tools,
+            )
             task = loop.run(task.id)
             self.assertEqual(task.status, "failed")
             self.assertEqual(task.failure["code"], "INSUFFICIENT_EVIDENCE")
@@ -92,7 +99,12 @@ class PolicyModeTests(unittest.TestCase):
     def test_packet_is_materially_smaller_than_the_legacy_context(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             scenario, store, harness, task = build_stack(pathlib.Path(tmp))
-            loop = Loop(harness, planner=FinancePlanner(), policy=MockPolicy())
+            loop = Loop(
+                harness,
+                planner=FinancePlanner(),
+                policy=MockPolicy(),
+                result_tools=FINANCE_DOMAIN.result_tools,
+            )
             memory = loop.restore(task)
             plan = loop.rebuild_plan(task, memory)
             budget = harness.budget(task).snapshot()

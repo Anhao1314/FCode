@@ -15,7 +15,7 @@ from flowagent.providers.base import Proposal  # noqa: E402
 from flowagent.core.receipts import ReceiptStore  # noqa: E402
 from flowagent.core.store import TaskStore  # noqa: E402
 from flowagent.demo.fixtures import get_scenario  # noqa: E402
-from flowagent.domains.finance import verify_observation  # noqa: E402
+from flowagent.domains.finance import FINANCE_DOMAIN, verify_observation  # noqa: E402
 from flowagent.runtime.harness import Harness  # noqa: E402
 from flowagent.runtime.loop import Loop  # noqa: E402
 from flowagent.tools.finance.fixtures import FinanceWorld  # noqa: E402
@@ -75,7 +75,12 @@ class ReportBlockedTests(unittest.TestCase):
                 allowed_tools=list(scenario.allowed_tools),
                 grant=dict(scenario.grant),
             )
-            task = Loop(harness, planner=FinancePlanner(), max_rounds=9).run(task.id)
+            task = Loop(
+                harness,
+                planner=FinancePlanner(),
+                max_rounds=9,
+                result_tools=FINANCE_DOMAIN.result_tools,
+            ).run(task.id)
             self.assertEqual(provider.calls, 1)
             self.assertEqual(task.status, "failed")
             self.assertEqual(task.failure["code"], "INSUFFICIENT_EVIDENCE")
@@ -113,7 +118,12 @@ class ReportBlockedTests(unittest.TestCase):
                 allowed_tools=list(scenario.allowed_tools),
                 grant=dict(scenario.grant),
             )
-            task = Loop(harness, planner=FinancePlanner(), max_rounds=9).run(task.id)
+            task = Loop(
+                harness,
+                planner=FinancePlanner(),
+                max_rounds=9,
+                result_tools=FINANCE_DOMAIN.result_tools,
+            ).run(task.id)
             self.assertEqual(task.status, "failed")
             self.assertEqual(task.failure["code"], "BUDGET_EXHAUSTED")
             self.assertIn("budget", task.failure["message"])

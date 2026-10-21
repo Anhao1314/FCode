@@ -15,7 +15,7 @@ from pathlib import Path
 from flowagent.core.plan import Plan, Todo
 from flowagent.core.receipts import ReceiptStore
 from flowagent.core.store import TaskStore
-from flowagent.domains.finance import verify_observation
+from flowagent.domains.finance import FINANCE_DOMAIN, verify_observation
 from flowagent.providers.mock import MockProvider
 from flowagent.runtime.budget import BudgetLimits
 from flowagent.runtime.harness import Harness
@@ -75,7 +75,12 @@ def main() -> int:
         )
         task = harness.record(task, "plan_steered", {"plan": plan.to_dict(), "reason": "seam-spike"})
 
-        loop = Loop(harness, planner=FinancePlanner(), max_rounds=5)
+        loop = Loop(
+            harness,
+            planner=FinancePlanner(),
+            max_rounds=5,
+            result_tools=FINANCE_DOMAIN.result_tools,
+        )
         loaded = store.load(task.id)
         rebuilt = loop.rebuild_plan(loaded, loop.restore(loaded))
         rebuilt_tools = [todo.tool for todo in rebuilt.todos]
@@ -90,6 +95,7 @@ def main() -> int:
             planner=FinancePlanner(),
             max_rounds=5,
             observer=recorder,
+            result_tools=FINANCE_DOMAIN.result_tools,
         ).run(task.id)
 
         events = store.events(task.id)

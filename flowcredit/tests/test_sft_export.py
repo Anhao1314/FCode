@@ -43,7 +43,7 @@ from flowagent.tools.finance.tools import build_finance_tools  # noqa: E402
 from flowagent.tools.registry import ToolRegistry  # noqa: E402
 from flowagent.trajectory.exporter import export_trace  # noqa: E402
 from flowagent.trajectory.recorder import TraceRecorder  # noqa: E402
-from flowagent.domains.finance import verify_observation as verify_finance
+from flowagent.domains.finance import FINANCE_DOMAIN, verify_observation as verify_finance
 
 
 def run_episode(
@@ -78,7 +78,13 @@ def run_episode(
     )
     if prior_cases:
         task = harness.record_recall(task, prior_cases)
-    Loop(harness, planner=FinancePlanner(), max_rounds=scenario.max_rounds, observer=recorder).run(task.id)
+    Loop(
+        harness,
+        planner=FinancePlanner(),
+        max_rounds=scenario.max_rounds,
+        observer=recorder,
+        result_tools=FINANCE_DOMAIN.result_tools,
+    ).run(task.id)
     trace = recorder.build(store.load(task.id))
     store.close()
     return trace, provider.captured, provider.proposals

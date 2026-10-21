@@ -4,6 +4,9 @@ The verifier never reads ``observation.result["inputs"]`` as an answer. It asks
 the world for the metric again, then compares every field of the model-visible
 result with the recomputed one. A single changed digit raises
 ``RESULT_VERIFICATION_FAILED`` and the run cannot be marked succeeded.
+
+``verify_observation`` is the function the module declares and the harness
+calls; the loop invokes it once per committed result observation.
 """
 
 from __future__ import annotations
@@ -13,9 +16,9 @@ from typing import Any
 from flowagent.core.contracts import AgentError
 from flowagent.tools.base import Observation
 
-from .world import COMPANY, METRICS, PERIODS, CreditWorld
+from .world import METRICS, PERIODS, CreditWorld
 
-__all__ = ["VERIFIED_FIELDS", "verify_observation", "CreditVerifier"]
+__all__ = ["VERIFIED_FIELDS", "verify_observation"]
 
 #: Every field a successful metric observation promises. The comparison is
 #: exhaustive on purpose: a tool that silently changes its citation or inputs
@@ -66,70 +69,8 @@ def verify_observation(world: CreditWorld, observation: Observation) -> dict[str
                 f"{key} differs: recorded {recorded.get(key)!r} "
                 f"vs recomputed {recomputed.get(key)!r}",
             )
-    return recomputed
-
-
-class CreditVerifier:
-    """Harness-facing verifier that checks every metric in the committed chain.
-
-    ``Harness.verify`` receives one observation, but a credit memo has two.
-    This adapter reads the task's ``tool_succeeded`` events, recomputes each
-    ``compute_credit_metric`` observation independently, and returns the merged
-    metric map. It is still the same path to ``succeeded``: no model-produced
-    number is accepted without a world recomputation.
-    """
-
-    def __init__(self, world: CreditWorld, store: Any) -> None:
-        self.world = world
-        self.store = store
-        self.task_id = ""
-
-    def bind(self, task_id: str) -> None:
-        self.task_id = task_id
-
-    def __call__(self, observation: Observation) -> dict[str, Any]:
-        observations = self._observations()
-        if not observations:
-            raise AgentError(
-                "RESULT_INCOMPLETE",
-                "no compute_credit_metric observation to verify",
-            )
-
-        metrics: dict[str, int] = {}
-        periods: set[str] = set()
-        for item in observations:
-            recomputed = verify_observation(self.world, item)
-            metrics[recomputed["metric"]] = recomputed["value_x100"]
-            periods.add(recomputed["period"])
-
-        return {
-            "verified": True,
-            "verification": "runtime-recomputed",
-            "result": {
-                "company": COMPANY,
-                "periods": sorted(periods),
-                "metrics": metrics,
-                "verified_observations": len(observations),
-            },
-        }
-
-    def _observations(self) -> list[Observation]:
-        if not self.task_id:
-            raise AgentError("RESULT_INCOMPLETE", "the verifier is not bound to a task")
-        observations: list[Observation] = []
-        for event in self.store.events(self.task_id):
-            if event["type"] != "tool_succeeded":
-                continue
-            detail = event["payload"].get("detail", {})
-            if detail.get("tool") != "compute_credit_metric":
-                continue
-            observations.append(
-                Observation(
-                    tool=detail["tool"],
-                    arguments=dict(detail.get("arguments") or {}),
-                    result=dict(detail.get("result") or {}),
-                    result_hash=detail.get("result_hash", ""),
-                    tool_version=detail.get("tool_version", ""),
-                )
-            )
-        return observations
+    return {
+        "verified": True,
+        "verification": "runtime-recomputed",
+        "result": recomputed,
+    }

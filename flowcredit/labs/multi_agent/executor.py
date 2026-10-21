@@ -10,7 +10,7 @@ from flowagent.core.hashing import canonical_json
 from flowagent.core.plan import Plan
 from flowagent.core.receipts import ReceiptStore
 from flowagent.core.store import TaskStore
-from flowagent.domains.finance import verify_observation
+from flowagent.domains.finance import FINANCE_DOMAIN, verify_observation
 from flowagent.providers.mock import MockProvider
 from flowagent.runtime.budget import BudgetLimits
 from flowagent.runtime.harness import Harness
@@ -97,6 +97,7 @@ class ChildExecutor:
             planner=FinancePlanner(),
             max_rounds=int(spec.get("max_rounds") or 12),
             observer=recorder,
+            result_tools=FINANCE_DOMAIN.result_tools,
         ).run(task.id)
 
         events = store.events(task.id)
