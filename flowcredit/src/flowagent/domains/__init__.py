@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 from .base import DomainModule
+from .credit import CREDIT_DOMAIN
 from .finance import FINANCE_DOMAIN
 
-__all__ = ["DomainModule", "DOMAINS", "get_domain", "list_domains"]
+__all__ = ["DomainModule", "DOMAINS", "FINANCE_DOMAIN", "CREDIT_DOMAIN", "get_domain", "list_domains"]
 
-DOMAINS: dict[str, DomainModule] = {FINANCE_DOMAIN.key: FINANCE_DOMAIN}
+DOMAINS: dict[str, DomainModule] = {
+    FINANCE_DOMAIN.key: FINANCE_DOMAIN,
+    CREDIT_DOMAIN.key: CREDIT_DOMAIN,
+}
 
 
 def get_domain(key: str) -> DomainModule:

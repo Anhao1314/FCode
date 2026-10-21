@@ -78,7 +78,7 @@ class WorkingMemory:
         computed = False
         blockers: list[str] = []
         margins: dict[str, Any] = {}
-        metrics: dict[str, int] = {}
+        metrics: dict[str, Any] = {}
 
         for record in self.records:
             tool, result = record.tool, record.result
@@ -101,14 +101,18 @@ class WorkingMemory:
                 restatement_checked = True
                 restatement_applied = bool(result.get("restated"))
             elif tool == "compute_credit_metric":
-                value = result.get("value_x100")
-                if (
-                    result.get("computed")
-                    and result.get("metric")
-                    and isinstance(value, int)
-                    and not isinstance(value, bool)
-                ):
-                    metrics[result["metric"]] = value
+                metric = result.get("metric")
+                value_bp = result.get("value_bp")
+                value_code = result.get("value_code")
+                if result.get("computed") and metric:
+                    if (
+                        result.get("kind") == "ratio"
+                        and isinstance(value_bp, int)
+                        and not isinstance(value_bp, bool)
+                    ):
+                        metrics[metric] = value_bp
+                    elif result.get("kind") == "code" and isinstance(value_code, str):
+                        metrics[metric] = value_code
                 else:
                     blockers.extend(result.get("blockers") or [])
             elif tool == "calculate_margin":
@@ -246,9 +250,21 @@ class WorkingMemory:
             return {
                 "metric": result.get("metric"),
                 "period": result.get("period"),
-                "value_x100": result.get("value_x100"),
+                "kind": result.get("kind"),
+                "value_bp": result.get("value_bp"),
+                "value_code": result.get("value_code"),
+                "display": result.get("display"),
                 "computed": result.get("computed"),
                 "blockers": result.get("blockers", []),
+            }
+        if record.tool == "check_restatement" and "original_ebitda" in result:
+            return {
+                "period": result.get("period"),
+                "restated": result.get("restated"),
+                "original_ebitda": result.get("original_ebitda"),
+                "restated_ebitda": result.get("restated_ebitda"),
+                "delta": result.get("delta"),
+                "superseded_by": result.get("superseded_by"),
             }
         if record.tool == "normalize_units":
             return {
