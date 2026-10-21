@@ -1,20 +1,23 @@
-"""SEC 10-K extraction spike: 21 facts -> same credit plan -> tiered memo.
+"""Profile-driven SEC 10-K extraction spike.
 
 Run from ``flowcredit/``::
 
-    PYTHONPATH=src python3.12 labs/sec_10k/spike.py
+    PYTHONPATH=src python3.12 labs/sec_10k/spike.py --issuer cisco
+    PYTHONPATH=src python3.12 labs/sec_10k/spike.py --issuer home-depot
+    PYTHONPATH=src python3.12 labs/sec_10k/spike.py --all
 
-The spike (1) prints the ground-truth vs extractor comparison, (2) runs the
-production fourteen-step credit plan through the real Harness/Loop with a
-``Sec10kWorld`` adapter, and (3) emits JSON with the facts, metrics and memo
-state. No network and no third-party library are used at run time.
+Each issuer reads its own ``data/<issuer>/`` excerpt, metadata, ground truth and
+profile. The spike (1) prints the ground-truth vs extractor comparison, (2) runs
+the production fourteen-step credit plan through the real Harness/Loop with a
+``Sec10kWorld`` adapter, and (3) emits JSON with facts, metrics and memo state.
+No network and no third-party library are used at run time.
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 import sys
-import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -45,14 +48,40 @@ from flowagent.trajectory.recorder import TraceRecorder  # noqa: E402
 from labs.sec_10k.extract import FACT_ORDER, extract_all  # noqa: E402
 from labs.sec_10k.world import Sec10kWorld  # noqa: E402
 
-__all__ = ["run_spike", "main"]
+__all__ = ["available_issuers", "issuer_paths", "run_spike", "main"]
 
 LAB_DIR = Path(__file__).resolve().parent
-DATA_DIR = LAB_DIR / "data"
-EXCERPT_PATH = DATA_DIR / "excerpt.txt"
-META_PATH = DATA_DIR / "meta.json"
-GROUND_TRUTH_PATH = DATA_DIR / "ground_truth.json"
-WORK_DIR = ROOT / "work" / "sec_10k"
+DATA_ROOT = LAB_DIR / "data"
+WORK_ROOT = ROOT / "work" / "sec_10k"
+
+
+def available_issuers() -> tuple[str, ...]:
+    """Issuers with a complete data directory, discovered from disk."""
+    if not DATA_ROOT.exists():
+        return ()
+    return tuple(
+        sorted(
+            path.name
+            for path in DATA_ROOT.iterdir()
+            if path.is_dir()
+            and (path / "meta.json").exists()
+            and (path / "profile.json").exists()
+            and (path / "excerpt.txt").exists()
+            and (path / "ground_truth.json").exists()
+        )
+    )
+
+
+def issuer_paths(issuer: str) -> dict[str, Path]:
+    base = DATA_ROOT / issuer
+    return {
+        "base": base,
+        "excerpt": base / "excerpt.txt",
+        "meta": base / "meta.json",
+        "ground_truth": base / "ground_truth.json",
+        "profile": base / "profile.json",
+    }
+
 
 def _ratio_bp(numerator: int, denominator: int) -> int:
     return (numerator * 10000 + denominator // 2) // denominator
@@ -85,7 +114,16 @@ def _facts_report(
     for fact in FACT_ORDER:
         expected = truth[fact]
         actual = extracted[fact]
-        fields = ("value", "unit", "source_unit", "period", "doc_id", "line", "snippet")
+        fields = (
+            "value",
+            "unit",
+            "source_unit",
+            "period",
+            "doc_id",
+            "line",
+            "snippet",
+            "components",
+        )
         match = all(expected.get(field) == actual.get(field) for field in fields)
         report.append(
             {
@@ -124,19 +162,25 @@ def _fresh_database(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
 
 
-def run_spike(workdir: Path | None = None) -> dict[str, Any]:
-    """Run extraction + the production credit plan; return the spike JSON."""
-    target = Path(workdir) if workdir is not None else WORK_DIR
+def run_spike(issuer: str, workdir: Path | None = None) -> dict[str, Any]:
+    """Run one issuer: extraction + the production credit plan; return JSON."""
+    paths = issuer_paths(issuer)
+    target = Path(workdir) if workdir is not None else WORK_ROOT / issuer
     target.mkdir(parents=True, exist_ok=True)
     db_path = target / "task.sqlite"
     _fresh_database(db_path)
 
-    excerpt_lines = EXCERPT_PATH.read_text(encoding="utf-8").splitlines()
-    meta = json.loads(META_PATH.read_text(encoding="utf-8"))
-    ground_truth = json.loads(GROUND_TRUTH_PATH.read_text(encoding="utf-8"))
-    extracted = extract_all(EXCERPT_PATH, META_PATH)
+    excerpt_lines = paths["excerpt"].read_text(encoding="utf-8").splitlines()
+    meta = json.loads(paths["meta"].read_text(encoding="utf-8"))
+    ground_truth = json.loads(paths["ground_truth"].read_text(encoding="utf-8"))
+    extracted = extract_all(paths["excerpt"], paths["meta"], paths["profile"])
     facts = _facts_report(ground_truth, extracted)
-    world = Sec10kWorld(extracted, meta, excerpt_lines)
+    field_lines = {
+        fact: item["line"]
+        for fact, item in extracted.items()
+        if item.get("status") == "ok" and isinstance(item.get("line"), int)
+    }
+    world = Sec10kWorld(issuer, extracted, meta, excerpt_lines, field_lines)
 
     store = TaskStore(db_path)
     try:
@@ -153,13 +197,16 @@ def run_spike(workdir: Path | None = None) -> dict[str, Any]:
         )
         allowed = list(CREDIT_TOOL_NAMES)
         task = harness.create(
-            task_id="task-sec-10k-cisco",
-            objective="Cisco FY2025 10-K extraction and credit-plan spike",
+            task_id=f"task-sec-10k-{issuer}",
+            objective=(
+                f"{meta.get('company', issuer)} {meta.get('fiscal_year', '')} "
+                "10-K extraction and credit-plan spike"
+            ),
             principal="sec-10k-lab",
             binding={
                 "scenario": "sec-10k",
                 "module": CREDIT_DOMAIN.key,
-                "issuer": "cisco",
+                "issuer": issuer,
                 "synthetic": False,
                 "research_only": True,
             },
@@ -217,19 +264,17 @@ def run_spike(workdir: Path | None = None) -> dict[str, Any]:
         }
         expected = _expected_metrics(ground_truth)
         metrics_match = computed == expected
+        issued = bool(memo.get("issued"))
+        expected_issued = bool(memo.get("verified")) and (
+            memo.get("recommended_conclusion") != "insufficient_evidence"
+        )
         memo_state_ok = (
-            memo.get("recommended_conclusion") == "pass"
-            and memo.get("issued") is True
+            issued == expected_issued
             and memo.get("signed") is False
-            and memo.get("decision_status") == "pending_human_review"
-            and memo.get("missing_required") == []
-            and len(memo.get("missing_optional") or []) == 3
-            and len(memo.get("optional_gaps") or []) == 3
-            and all(
-                gap.get("reason") == "not_disclosed"
-                for gap in memo.get("optional_gaps") or []
-            )
-            and memo.get("optional_verified") is False
+            and memo.get("decision_status")
+            == ("pending_human_review" if issued else "blocked")
+            and len(memo.get("missing_optional") or [])
+            == len(memo.get("optional_gaps") or [])
         )
         ok = (
             all(item["match"] for item in facts)
@@ -239,7 +284,10 @@ def run_spike(workdir: Path | None = None) -> dict[str, Any]:
         )
         return {
             "ok": ok,
+            "issuer_key": issuer,
             "issuer": world.display_name,
+            "company": meta.get("company", ""),
+            "fiscal_year": meta.get("fiscal_year", ""),
             "facts": facts,
             "metrics": {
                 "computed": computed,
@@ -255,10 +303,13 @@ def run_spike(workdir: Path | None = None) -> dict[str, Any]:
                 "memo_version": memo.get("memo_version"),
                 "recommended_conclusion": memo.get("recommended_conclusion"),
                 "conclusion_authority": memo.get("conclusion_authority"),
+                "rule_fired": memo.get("rule_fired"),
                 "issued": memo.get("issued"),
                 "signed": memo.get("signed"),
                 "decision_status": memo.get("decision_status"),
                 "verified": memo.get("verified"),
+                "required_metrics": list(memo.get("required_metrics") or []),
+                "optional_metrics": list(memo.get("optional_metrics") or []),
                 "missing_required": list(memo.get("missing_required") or []),
                 "missing_optional": list(memo.get("missing_optional") or []),
                 "optional_gaps": [
@@ -266,6 +317,7 @@ def run_spike(workdir: Path | None = None) -> dict[str, Any]:
                 ],
                 "optional_verified": bool(memo.get("optional_verified")),
                 "missing": list(memo.get("missing") or []),
+                "caveats": list(memo.get("caveats") or []),
                 "blockers": list(memo.get("blockers") or []),
                 "synthetic": memo.get("synthetic"),
                 "research_only": memo.get("research_only"),
@@ -276,29 +328,48 @@ def run_spike(workdir: Path | None = None) -> dict[str, Any]:
         store.close()
 
 
-def main() -> int:
-    try:
-        result = run_spike()
-    except Exception as error:  # noqa: BLE001 - the spike must fail as JSON too
-        print(
-            json.dumps(
-                {"ok": False, "error": f"{type(error).__name__}: {error}"},
-                ensure_ascii=False,
-                indent=2,
-            )
-        )
-        return 1
-    for item in result["facts"]:
+def _print_comparison(result: dict[str, Any]) -> None:
+    issuer = result.get("issuer_key", "?")
+    for item in result.get("facts") or ():
         gt = item["ground_truth"]
         ex = item["extracted"]
         print(
-            f"{item['fact']:28} {'MATCH' if item['match'] else 'FAIL':5} "
+            f"{issuer:12} {item['fact']:30} "
+            f"{'MATCH' if item['match'] else 'FAIL':5} "
             f"gt_line={gt.get('line')} ex_line={ex.get('line')} "
             f"gt_value={gt.get('value')} ex_value={ex.get('value')}",
             file=sys.stderr,
         )
-    print(json.dumps(result, ensure_ascii=False, indent=2))
-    return 0 if result["ok"] else 1
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Run the SEC 10-K extraction spike")
+    parser.add_argument("--issuer", choices=available_issuers(), default=None)
+    parser.add_argument("--all", action="store_true", help="run every complete issuer")
+    args = parser.parse_args(argv)
+    if not args.all and not args.issuer:
+        parser.error("pass --issuer or --all")
+
+    targets = available_issuers() if args.all else (args.issuer,)
+    results: list[dict[str, Any]] = []
+    for issuer in targets:
+        try:
+            result = run_spike(issuer)
+        except Exception as error:  # noqa: BLE001 - the spike must fail as JSON too
+            result = {
+                "ok": False,
+                "issuer_key": issuer,
+                "error": f"{type(error).__name__}: {error}",
+            }
+        _print_comparison(result)
+        results.append(result)
+
+    ok = all(result.get("ok") for result in results)
+    payload: dict[str, Any] = (
+        {"ok": ok, "issuers": results} if args.all else results[0]
+    )
+    print(json.dumps(payload, ensure_ascii=False, indent=2))
+    return 0 if ok else 1
 
 
 if __name__ == "__main__":
