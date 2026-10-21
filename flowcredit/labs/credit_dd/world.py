@@ -97,7 +97,6 @@ def _document(
     lines.append(footer)
     return {
         "doc_id": doc_id,
-        "id": doc_id,
         "title": title,
         "period": period,
         "unit": UNIT,
@@ -192,7 +191,7 @@ class CreditWorld:
         )
 
     def list_documents(self) -> dict[str, Any]:
-        keys = ("doc_id", "id", "title", "period", "unit", "synthetic")
+        keys = ("doc_id", "title", "period", "unit", "synthetic")
         return {
             "documents": [
                 {key: self._documents[doc_id][key] for key in keys}

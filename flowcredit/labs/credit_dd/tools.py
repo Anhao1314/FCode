@@ -82,10 +82,6 @@ def build_credit_tools(world: CreditWorld) -> list[ToolSpec]:
     document_outputs = (
         _out("found", "boolean"),
         _out("doc_id", "string"),
-        # `id` mirrors doc_id for the kernel's finance-shaped working memory;
-        # it is omitted when the document is missing so the memory never records
-        # an unread document as read.
-        _out("id", "string", required=False),
         _out("reason", "string", required=False),
         _out("title", "string", required=False),
         _out("period", "string", required=False),

@@ -78,13 +78,18 @@ class WorkingMemory:
         computed = False
         blockers: list[str] = []
         margins: dict[str, Any] = {}
+        metrics: dict[str, int] = {}
 
         for record in self.records:
             tool, result = record.tool, record.result
             if tool == "list_documents":
                 listed = True
-            elif tool == "read_document" and "id" in result:
-                read_documents.append(result["id"])
+            elif tool == "read_document":
+                doc_id = result.get("doc_id") or result.get("id")
+                if doc_id and result.get("found", True):
+                    read_documents.append(doc_id)
+                elif not result.get("found", True):
+                    blockers.append(result.get("reason") or "document missing")
             elif tool == "normalize_units" and "id" in result:
                 normalised.append(result["id"])
             elif tool == "reconcile_basis" and "period" in result:
@@ -95,6 +100,17 @@ class WorkingMemory:
             elif tool == "check_restatement":
                 restatement_checked = True
                 restatement_applied = bool(result.get("restated"))
+            elif tool == "compute_credit_metric":
+                value = result.get("value_x100")
+                if (
+                    result.get("computed")
+                    and result.get("metric")
+                    and isinstance(value, int)
+                    and not isinstance(value, bool)
+                ):
+                    metrics[result["metric"]] = value
+                else:
+                    blockers.extend(result.get("blockers") or [])
             elif tool == "calculate_margin":
                 computed = bool(result.get("computed"))
                 blockers = list(result.get("blockers") or [])
@@ -119,9 +135,10 @@ class WorkingMemory:
             "reconciled_documents": sorted(set(reconciled_documents)),
             "restatement_checked": restatement_checked,
             "restatement_applied": restatement_applied,
-            "computed": computed,
+            "computed": computed or bool(metrics),
             "blockers": blockers,
             "margins": margins,
+            "metrics": metrics,
         }
 
     def _documents_for_period(self, period: str) -> list[str]:
@@ -195,15 +212,32 @@ class WorkingMemory:
         """Compress one observation to the fields a decision needs."""
         result = record.result
         if record.tool == "list_documents":
-            return {"documents": [item["id"] for item in result.get("documents", [])]}
-        if record.tool == "read_document":
             return {
-                "id": result.get("id"),
+                "documents": [
+                    item.get("doc_id") or item.get("id")
+                    for item in result.get("documents", [])
+                ]
+            }
+        if record.tool == "read_document":
+            summary = {
+                "found": result.get("found", True),
+                "doc_id": result.get("doc_id") or result.get("id"),
                 "period": result.get("period"),
                 "unit": result.get("unit"),
-                "basis": result.get("basis"),
-                "revenue": result.get("revenue"),
-                "gross_profit": result.get("gross_profit"),
+            }
+            if "fields" in result:
+                summary["fields"] = dict(result.get("fields") or {})
+            else:
+                summary["revenue"] = result.get("revenue")
+                summary["gross_profit"] = result.get("gross_profit")
+            return summary
+        if record.tool == "compute_credit_metric":
+            return {
+                "metric": result.get("metric"),
+                "period": result.get("period"),
+                "value_x100": result.get("value_x100"),
+                "computed": result.get("computed"),
+                "blockers": result.get("blockers", []),
             }
         if record.tool == "normalize_units":
             return {
