@@ -10,11 +10,14 @@
 | **AutoGen** | 多智能体对话 | 会话历史 | 重新发消息 | 对话终止条件 | 目标是"多角色协作"，不是"单任务可审计" |
 | **CrewAI** | 角色化团队、任务委派 | 任务对象 | 重试 | 任务完成 | 抽象层次更高，审计粒度更粗 |
 | **OpenAI Agents SDK** | 厂商 SDK、handoff、tracing | 会话 + trace | 内置重试 | agent 返回 | tracing 是日志，不是防篡改证据 |
+| **OpenAI Codex CLI** | 本地编码代理：沙箱 + 审批 + 执行策略 | rollout JSONL + SQLite 索引 | 沙箱拒绝后可升级重试 | agent 返回 / 沙箱判定 | 工具与协议可借；状态未哈希，失败语义与 FCode 相反 |
 | **Temporal** | 通用持久执行 | 事件历史（强） | 确定性重放 | workflow 返回 | **最接近的工程同类**，但没有模型调用语义 |
 | **Inspect（UK AISI）** | 模型能力评测 | eval log | 单样本失败 | scorer 判定 | 评"模型多强"，不是"该不该用模型" |
 | **本项目** | 单任务的可证明执行 | sqlite 事件哈希链，可脱离代码验证 | unknown 不重试，只能对账 | Runtime 独立重算 | — |
 
 ## 三条实质差异
+
+> Codex 的工具/审批/沙箱细节与融合方案见 [`codex-integration.md`](codex-integration.md)。
 
 ### 一、状态的**可验证性**，不是持久性
 
