@@ -192,6 +192,7 @@ def run_spike(workdir: Path | None = None) -> dict[str, Any]:
             world,
             _observations(store.events(task.id)),
             chain_head=verification["head_hash"],
+            plan=task.plan_state,
             synthetic=bool(meta.get("synthetic", False)),
             research_only=bool(meta.get("research_only", True)),
             source_url=str(meta.get("source_url", "")),
@@ -223,6 +224,11 @@ def run_spike(workdir: Path | None = None) -> dict[str, Any]:
             and memo.get("decision_status") == "pending_human_review"
             and memo.get("missing_required") == []
             and len(memo.get("missing_optional") or []) == 3
+            and len(memo.get("optional_gaps") or []) == 3
+            and all(
+                gap.get("reason") == "not_disclosed"
+                for gap in memo.get("optional_gaps") or []
+            )
             and memo.get("optional_verified") is False
         )
         ok = (
@@ -255,6 +261,9 @@ def run_spike(workdir: Path | None = None) -> dict[str, Any]:
                 "verified": memo.get("verified"),
                 "missing_required": list(memo.get("missing_required") or []),
                 "missing_optional": list(memo.get("missing_optional") or []),
+                "optional_gaps": [
+                    dict(gap) for gap in memo.get("optional_gaps") or []
+                ],
                 "optional_verified": bool(memo.get("optional_verified")),
                 "missing": list(memo.get("missing") or []),
                 "blockers": list(memo.get("blockers") or []),

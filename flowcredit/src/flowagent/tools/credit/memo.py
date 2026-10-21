@@ -14,7 +14,10 @@ a credit decision.
 
 Metrics are tiered: five required metrics can block issuance, while three
 optional metrics participate in the policy only when disclosed. A missing
-optional metric is a caveat, not an insufficient-evidence verdict.
+optional metric is a caveat, not an insufficient-evidence verdict. Each such
+gap carries a reason: the source may not disclose it, or the Host may have
+stopped optional work after a required blocker. Those are different facts and
+must not share one caveat sentence.
 """
 
 from __future__ import annotations
@@ -35,6 +38,7 @@ __all__ = [
     "REQUIRED_METRICS",
     "OPTIONAL_METRICS",
     "ALL_METRICS",
+    "OPTIONAL_GAP_REASONS",
     "REVIEW_DECISIONS",
     "recommendation_for",
     "conclusion_for",
@@ -66,6 +70,21 @@ CAVEAT_ORDER: tuple[str, ...] = (
     "related_party_funding_ratio",
     "contingent_liabilities_to_equity",
 )
+#: Optional metrics that require the FY2025 debt schedule.
+DEBT_OPTIONAL_METRICS: tuple[str, ...] = (
+    "related_party_funding_ratio",
+    "contingent_liabilities_to_equity",
+)
+#: Why an optional metric is absent. ``not_disclosed`` means the source does not
+#: contain it; ``not_attempted_after_required_block`` means the Host stopped
+#: optional work after a required blocker, even though the source may exist.
+OPTIONAL_GAP_REASONS: tuple[str, ...] = (
+    "not_disclosed",
+    "missing_debt_schedule",
+    "missing_document",
+    "not_attempted_after_required_block",
+    "verification_failed",
+)
 #: A memo is human-signed only when a reviewer records one of these decisions.
 REVIEW_DECISIONS: tuple[str, ...] = ("accept", "needs_evidence", "qualified", "redo")
 
@@ -78,6 +97,270 @@ def _present(result: dict[str, Any] | None) -> bool:
     if result.get("kind") == "code":
         return isinstance(result.get("value_code"), str)
     return False
+
+
+def _plan_todos(plan: Any) -> dict[str, dict[str, Any]]:
+    """Normalise a ``Plan`` or durable ``plan_state`` into todo dicts."""
+    if plan is None:
+        return {}
+    if isinstance(plan, dict):
+        data = plan
+        if "todos" not in data and isinstance(data.get("plan"), dict):
+            data = data["plan"]
+        items = data.get("todos") or []
+    else:
+        items = [
+            todo.to_dict() if hasattr(todo, "to_dict") else dict(todo)
+            for todo in getattr(plan, "todos", ())
+        ]
+    todos: dict[str, dict[str, Any]] = {}
+    for item in items:
+        if isinstance(item, dict) and item.get("id"):
+            todos[str(item["id"])] = item
+    return todos
+
+
+def _todo_for_metric(
+    todos: dict[str, dict[str, Any]], metric: str
+) -> dict[str, Any] | None:
+    for todo in todos.values():
+        if todo.get("tool") != "compute_credit_metric":
+            continue
+        if (todo.get("arguments") or {}).get("metric") == metric:
+            return todo
+    return None
+
+
+def _doc_id(todo: dict[str, Any] | None) -> str:
+    return str(((todo or {}).get("arguments") or {}).get("doc_id") or "")
+
+
+def _referenced_todo_id(reason: str) -> str | None:
+    for prefix in ("required ", "dependency "):
+        if reason.startswith(prefix):
+            parts = reason.split()
+            if len(parts) >= 2:
+                return parts[1]
+    return None
+
+
+def _blocker_label(
+    todo: dict[str, Any] | None,
+    observation: dict[str, Any] | None = None,
+) -> str:
+    """Return the most specific blocker, mapping a missing debt document."""
+    reasons: list[str] = []
+    if observation:
+        reasons.extend(str(item) for item in observation.get("blockers") or [] if item)
+        if observation.get("reason"):
+            reasons.append(str(observation["reason"]))
+    if todo and todo.get("reason"):
+        reasons.append(str(todo["reason"]))
+    text = "; ".join(dict.fromkeys(reasons))
+    if _doc_id(todo) == "doc_debt_fy2025" and (
+        not text or "missing_document" in text
+    ):
+        return "missing_debt_schedule"
+    return text
+
+
+def _abandoned_optional_ids(
+    todos: dict[str, dict[str, Any]], metric: str
+) -> str:
+    """The optional read/result todos abandoned while chasing *metric*."""
+    ids = []
+    for todo_id, todo in todos.items():
+        if todo.get("required", True) or todo.get("status") != "abandoned":
+            continue
+        arguments = todo.get("arguments") or {}
+        if arguments.get("metric") == metric or (
+            metric == "rating_migration"
+            and arguments.get("doc_id") == "doc_rating_fy2025"
+        ):
+            ids.append(todo_id)
+    return "/".join(ids)
+
+
+def _optional_gap(
+    metric: str,
+    *,
+    blocked: dict[str, dict[str, Any]],
+    verification_errors: dict[str, str],
+    todos: dict[str, dict[str, Any]],
+) -> dict[str, str]:
+    """Explain one optional gap from the plan, not from a generic caveat."""
+    if metric in verification_errors:
+        return {
+            "metric": metric,
+            "reason": "verification_failed",
+            "detail": verification_errors[metric],
+        }
+
+    todo = _todo_for_metric(todos, metric)
+    observation = blocked.get(metric)
+    if todo is None:
+        detail = _blocker_label(None, observation) or "no optional todo or observation"
+        return {"metric": metric, "reason": "not_disclosed", "detail": detail}
+
+    todo_id = str(todo.get("id") or metric)
+    status = str(todo.get("status") or "")
+    todo_reason = str(todo.get("reason") or "")
+
+    if status == "blocked":
+        label = _blocker_label(todo, observation)
+        if metric in DEBT_OPTIONAL_METRICS and label == "missing_debt_schedule":
+            return {
+                "metric": metric,
+                "reason": "missing_debt_schedule",
+                "detail": "doc_debt_fy2025 missing",
+            }
+        return {
+            "metric": metric,
+            "reason": "not_disclosed",
+            "detail": label or "optional metric was refused without a disclosure",
+        }
+
+    if status == "abandoned":
+        reference_id = _referenced_todo_id(todo_reason)
+        reference = todos.get(reference_id or "")
+        if reference is not None and reference.get("status") == "blocked":
+            reference_label = _blocker_label(reference)
+            if reference.get("required", True):
+                if (
+                    metric in DEBT_OPTIONAL_METRICS
+                    and reference_label == "missing_debt_schedule"
+                ):
+                    return {
+                        "metric": metric,
+                        "reason": "missing_debt_schedule",
+                        "detail": "doc_debt_fy2025 missing",
+                    }
+                chain = _abandoned_optional_ids(todos, metric)
+                detail = f"{reference_id} {reference_label} blocked"
+                if chain:
+                    detail += f"; {chain} abandoned"
+                return {
+                    "metric": metric,
+                    "reason": "not_attempted_after_required_block",
+                    "detail": detail,
+                }
+            document = _doc_id(reference)
+            label = (
+                f"{document} missing"
+                if document
+                else (reference_label or "optional prerequisite blocked")
+            )
+            return {
+                "metric": metric,
+                "reason": "not_disclosed",
+                "detail": f"{label}; {reference_id} blocked; {todo_id} abandoned",
+            }
+
+        if todo_reason.startswith("required "):
+            return {
+                "metric": metric,
+                "reason": "not_attempted_after_required_block",
+                "detail": todo_reason,
+            }
+        return {
+            "metric": metric,
+            "reason": "not_disclosed",
+            "detail": _blocker_label(todo, observation)
+            or todo_reason
+            or "optional todo was abandoned without a recorded reason",
+        }
+
+    if status in ("pending", "active"):
+        required_blocked = any(
+            item.get("required", True) and item.get("status") == "blocked"
+            for item in todos.values()
+        )
+        return {
+            "metric": metric,
+            "reason": (
+                "not_attempted_after_required_block"
+                if required_blocked
+                else "not_disclosed"
+            ),
+            "detail": f"{todo_id} is {status}; no optional observation",
+        }
+
+    label = _blocker_label(todo, observation)
+    return {
+        "metric": metric,
+        "reason": "not_disclosed",
+        "detail": label or f"{todo_id} has no verified optional result",
+    }
+
+
+def _optional_gaps(
+    missing_optional: list[str],
+    *,
+    blocked: dict[str, dict[str, Any]],
+    verification_errors: dict[str, str],
+    plan: Any,
+) -> list[dict[str, str]]:
+    todos = _plan_todos(plan)
+    ordered = [metric for metric in CAVEAT_ORDER if metric in missing_optional]
+    ordered += [metric for metric in missing_optional if metric not in ordered]
+    return [
+        _optional_gap(
+            metric,
+            blocked=blocked,
+            verification_errors=verification_errors,
+            todos=todos,
+        )
+        for metric in ordered
+    ]
+
+
+def _optional_caveats(
+    optional_gaps: list[dict[str, str]], *, synthetic: bool
+) -> list[str]:
+    """Render one caveat per reason, so a stop is not mislabelled as absence."""
+    grouped: dict[str, list[dict[str, str]]] = {}
+    order: list[str] = []
+    for gap in optional_gaps:
+        reason = gap["reason"]
+        if reason not in grouped:
+            grouped[reason] = []
+            order.append(reason)
+        grouped[reason].append(gap)
+
+    caveats: list[str] = []
+    for reason in order:
+        group = grouped[reason]
+        metrics = [gap["metric"] for gap in group]
+        joined = " / ".join(metrics)
+        detail = "；".join(
+            dict.fromkeys(gap["detail"] for gap in group if gap["detail"])
+        )
+        if reason == "not_disclosed":
+            prefix = "资料未披露" if synthetic else "10-K 未披露"
+            caveats.append(f"{prefix} {joined}；这些可选指标未参与策略结论。")
+        elif reason == "missing_debt_schedule":
+            caveats.append(
+                f"债务明细缺失，{joined} 无法计算；这些可选指标未参与策略结论。"
+            )
+        elif reason == "missing_document":
+            caveats.append(
+                f"资料缺失，{joined} 无法计算；这些可选指标未参与策略结论。"
+            )
+        elif reason == "not_attempted_after_required_block":
+            if "rating_migration" in metrics:
+                caveats.append(
+                    f"{joined} 未尝试：必需指标阻断后停止可选项"
+                    f"（评级报告存在，但未尝试读取；{detail}）。"
+                )
+            else:
+                caveats.append(
+                    f"{joined} 未尝试：必需指标阻断后停止可选项（{detail}）。"
+                )
+        elif reason == "verification_failed":
+            caveats.append(f"{joined} 验证失败，未进入策略结论（{detail}）。")
+        else:
+            caveats.append(f"{joined} 未纳入策略结论（{reason}：{detail}）。")
+    return caveats
 
 
 def conclusion_for(
@@ -155,6 +438,7 @@ def build_memo(
     observations: list[Observation],
     *,
     chain_head: str,
+    plan: Any | None = None,
     synthetic: bool = True,
     research_only: bool = False,
     source_url: str = "",
@@ -166,7 +450,9 @@ def build_memo(
 
     ``synthetic`` defaults to true for the production credit demo. Real-data
     callers pass their own metadata (or a ``meta`` dict), so the lab no longer
-    patches the assembled memo after the fact.
+    patches the assembled memo after the fact. ``plan`` may be a ``Plan`` or the
+    durable ``plan_state`` dict; it distinguishes a metric the source did not
+    disclose from optional work the Host stopped after a required blocker.
     """
     if meta:
         synthetic = bool(meta.get("synthetic", synthetic))
@@ -261,6 +547,12 @@ def build_memo(
         )
 
     trend = _trend(world, results)
+    optional_gaps = _optional_gaps(
+        missing_optional,
+        blocked=blocked,
+        verification_errors=verification_errors,
+        plan=plan,
+    )
     caveats: list[str] = []
     if world.restatement is not None:
         original = world.restatement["original_ebitda"]
@@ -268,13 +560,7 @@ def build_memo(
         caveats.append(f"FY2024 EBITDA 从 {original:,} 重述为 {restated:,}。")
     if missing_required:
         caveats.append("部分必需指标缺失，Host 未签发，memo 未写入任何推测数值。")
-    if missing_optional:
-        ordered = [metric for metric in CAVEAT_ORDER if metric in missing_optional]
-        ordered += [metric for metric in missing_optional if metric not in ordered]
-        prefix = "资料未披露" if synthetic else "10-K 未披露"
-        caveats.append(
-            f"{prefix} {' / '.join(ordered)}；这些可选指标未参与策略结论。"
-        )
+    caveats.extend(_optional_caveats(optional_gaps, synthetic=synthetic))
 
     return {
         "memo_version": MEMO_VERSION,
@@ -295,6 +581,7 @@ def build_memo(
         "optional_metrics": list(OPTIONAL_METRICS),
         "missing_required": missing_required,
         "missing_optional": missing_optional,
+        "optional_gaps": optional_gaps,
         "optional_verified": optional_verified,
         "rule_fired": rule_fired,
         "metrics": metric_entries,
@@ -423,12 +710,24 @@ def memo_to_markdown(memo: dict[str, Any], sha256: str) -> str:
             ]
         )
     if missing_optional:
+        gaps = {
+            gap["metric"]: gap for gap in memo.get("optional_gaps") or []
+        }
+        optional_lines = []
+        for metric in missing_optional:
+            gap = gaps.get(metric)
+            if gap:
+                optional_lines.append(
+                    f"- `{metric}`（{gap['reason']}：{gap['detail']}）"
+                )
+            else:
+                optional_lines.append(f"- `{metric}`")
         lines.extend(
             [
                 "",
                 "## 缺失可选指标",
                 "",
-                *(f"- `{metric}`" for metric in missing_optional),
+                *optional_lines,
             ]
         )
     if memo["blockers"]:

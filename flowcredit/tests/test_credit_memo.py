@@ -37,6 +37,23 @@ MISSING_OPTIONAL_YUNLING = [
     "contingent_liabilities_to_equity",
     "rating_migration",
 ]
+YUNLING_OPTIONAL_GAPS = [
+    {
+        "metric": "rating_migration",
+        "reason": "not_attempted_after_required_block",
+        "detail": "c5 missing_debt_schedule blocked; c6/c14 abandoned",
+    },
+    {
+        "metric": "related_party_funding_ratio",
+        "reason": "missing_debt_schedule",
+        "detail": "doc_debt_fy2025 missing",
+    },
+    {
+        "metric": "contingent_liabilities_to_equity",
+        "reason": "missing_debt_schedule",
+        "detail": "doc_debt_fy2025 missing",
+    },
+]
 
 
 def _safe_metrics() -> dict[str, dict]:
@@ -155,9 +172,12 @@ class MemoRunTests(unittest.TestCase):
             self.assertEqual(run.memo["optional_metrics"], list(OPTIONAL_METRICS))
             self.assertEqual(run.memo["missing_required"], [])
             self.assertEqual(run.memo["missing_optional"], [])
+            self.assertEqual(run.memo["optional_gaps"], [])
+            self.assertEqual(run.memo["caveats"], [])
             self.assertTrue(run.memo["optional_verified"])
             self.assertEqual(run.missing_required, [])
             self.assertEqual(run.missing_optional, [])
+            self.assertEqual(run.optional_gaps, [])
             self.assertTrue(run.optional_verified)
             self.assertEqual(len(run.memo["metrics"]), 8)
             self.assertEqual(run.metrics["net_debt_to_ebitda"], 37714)
@@ -195,6 +215,11 @@ class MemoRunTests(unittest.TestCase):
             self.assertTrue(run.memo["verified"])
             self.assertEqual(run.memo["missing_required"], [])
             self.assertEqual(run.memo["missing_optional"], [])
+            self.assertEqual(run.memo["optional_gaps"], [])
+            self.assertEqual(
+                run.memo["caveats"],
+                ["FY2024 EBITDA 从 300,000 重述为 270,000。"],
+            )
             self.assertTrue(run.memo["optional_verified"])
             self.assertTrue(run.optional_verified)
             self.assertEqual(run.rule_fired, "rating_migration == downgrade")
@@ -248,11 +273,32 @@ class MemoRunTests(unittest.TestCase):
                 ["net_debt_to_ebitda", "ocf_to_short_term_debt"],
             )
             self.assertEqual(run.memo["missing_optional"], MISSING_OPTIONAL_YUNLING)
+            self.assertEqual(run.memo["optional_gaps"], YUNLING_OPTIONAL_GAPS)
+            self.assertEqual(run.optional_gaps, YUNLING_OPTIONAL_GAPS)
             self.assertEqual(run.missing_required, run.memo["missing_required"])
             self.assertEqual(run.missing_optional, MISSING_OPTIONAL_YUNLING)
             self.assertFalse(run.memo["optional_verified"])
             self.assertFalse(run.optional_verified)
             self.assertIn("missing_debt_schedule", run.memo["blockers"])
+
+            caveats = run.memo["caveats"]
+            rating_caveat = next(
+                caveat for caveat in caveats if "rating_migration" in caveat
+            )
+            self.assertIn("评级报告存在，但未尝试读取", rating_caveat)
+            self.assertIn("c5 missing_debt_schedule blocked; c6/c14 abandoned", rating_caveat)
+            self.assertFalse(
+                any("资料未披露 rating_migration" in caveat for caveat in caveats)
+            )
+            self.assertTrue(
+                any(
+                    "债务明细缺失" in caveat
+                    and "related_party_funding_ratio" in caveat
+                    and "contingent_liabilities_to_equity" in caveat
+                    and "无法计算" in caveat
+                    for caveat in caveats
+                )
+            )
             self.assertEqual(len(run.memo["metrics"]), 3)
             self.assertEqual(
                 run.metrics,
@@ -336,6 +382,7 @@ class MemoRunTests(unittest.TestCase):
                 self.assertIn("decision_status", case)
                 self.assertIn("missing_required", case)
                 self.assertIn("missing_optional", case)
+                self.assertIn("optional_gaps", case)
                 self.assertIn("optional_verified", case)
                 self.assertEqual(case["conclusion_authority"], "policy")
                 self.assertNotIn("conclusion", case)
@@ -350,6 +397,7 @@ class MemoRunTests(unittest.TestCase):
                 if case["issuer_key"] in ("hengxing", "yuanyang"):
                     self.assertEqual(case["missing_required"], [])
                     self.assertEqual(case["missing_optional"], [])
+                    self.assertEqual(case["optional_gaps"], [])
                     self.assertTrue(case["optional_verified"])
                     self.assertTrue(case["issued"])
                     self.assertEqual(case["decision_status"], "pending_human_review")
@@ -359,6 +407,7 @@ class MemoRunTests(unittest.TestCase):
                         ["net_debt_to_ebitda", "ocf_to_short_term_debt"],
                     )
                     self.assertEqual(case["missing_optional"], MISSING_OPTIONAL_YUNLING)
+                    self.assertEqual(case["optional_gaps"], YUNLING_OPTIONAL_GAPS)
                     self.assertFalse(case["optional_verified"])
                     self.assertFalse(case["issued"])
                     self.assertEqual(case["decision_status"], "blocked")

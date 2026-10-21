@@ -25,7 +25,11 @@ from flowagent.runtime.budget import BudgetLimits  # noqa: E402
 from flowagent.runtime.harness import Harness  # noqa: E402
 from flowagent.runtime.loop import Loop  # noqa: E402
 from flowagent.tools.base import EFFECT_READ, Observation  # noqa: E402
-from flowagent.tools.credit.memo import OPTIONAL_METRICS, REQUIRED_METRICS  # noqa: E402
+from flowagent.tools.credit.memo import (  # noqa: E402
+    OPTIONAL_METRICS,
+    REQUIRED_METRICS,
+    build_memo,
+)
 from flowagent.tools.credit.planner import BLUEPRINT, DEPENDENTS, CreditPlanner  # noqa: E402
 from flowagent.tools.credit.tools import CREDIT_TOOL_NAMES, build_credit_tools  # noqa: E402
 from flowagent.tools.credit.verifier import verify_observation  # noqa: E402
@@ -373,6 +377,24 @@ def _run_stack(world: CreditWorld, *, planner=None, specs=None):
             store.close()
 
 
+def _observations(events) -> list[Observation]:
+    observations = []
+    for event in events:
+        if event["type"] != "tool_succeeded":
+            continue
+        detail = event["payload"]["detail"]
+        observations.append(
+            Observation(
+                tool=detail["tool"],
+                arguments=dict(detail.get("arguments") or {}),
+                result=dict(detail.get("result") or {}),
+                result_hash=detail.get("result_hash", ""),
+                tool_version=detail.get("tool_version", ""),
+            )
+        )
+    return observations
+
+
 class LoopRegressionTests(unittest.TestCase):
     def test_loop_rejects_a_tampered_result(self) -> None:
         world = CreditWorld("hengxing")
@@ -427,6 +449,22 @@ class LoopRegressionTests(unittest.TestCase):
         )
         self.assertFalse(any(event["type"] == "task_failed" for event in events))
 
+    def test_optional_computed_false_has_an_explicit_gap_reason(self) -> None:
+        world = _OptionalGapWorld("hengxing")
+        task, events = _run_stack(world)
+        memo = build_memo(
+            world,
+            _observations(events),
+            chain_head="test-chain-head",
+            plan=task.plan_state,
+        )
+        gaps = {gap["metric"]: gap for gap in memo["optional_gaps"]}
+        self.assertEqual(set(gaps), set(OPTIONAL_METRICS))
+        for metric in OPTIONAL_METRICS:
+            self.assertEqual(gaps[metric]["reason"], "not_disclosed", metric)
+            self.assertTrue(gaps[metric]["detail"], metric)
+        self.assertFalse(memo["optional_verified"])
+
     def test_optional_computed_true_is_still_verified(self) -> None:
         world = CreditWorld("hengxing")
         specs = build_credit_tools(world)
@@ -447,6 +485,39 @@ class LoopRegressionTests(unittest.TestCase):
         task, _ = _run_stack(world, specs=specs)
         self.assertEqual(task.status, "failed")
         self.assertEqual(task.failure["code"], "RESULT_VERIFICATION_FAILED")
+
+    def test_optional_verification_failure_has_an_explicit_gap_reason(self) -> None:
+        world = CreditWorld("hengxing")
+        specs = build_credit_tools(world)
+
+        def tampered(arguments: dict) -> dict:
+            result = world.compute_credit_metric(arguments["metric"], arguments["period"])
+            if result.get("computed") and result.get("metric") == "related_party_funding_ratio":
+                result = dict(result)
+                result["value_bp"] += 1
+            return result
+
+        specs = [
+            replace(spec, handler=tampered)
+            if spec.name == "compute_credit_metric"
+            else spec
+            for spec in specs
+        ]
+        task, events = _run_stack(world, specs=specs)
+        self.assertEqual(task.status, "failed")
+        memo = build_memo(
+            world,
+            _observations(events),
+            chain_head="test-chain-head",
+            plan=task.plan_state,
+        )
+        gap = next(
+            gap
+            for gap in memo["optional_gaps"]
+            if gap["metric"] == "related_party_funding_ratio"
+        )
+        self.assertEqual(gap["reason"], "verification_failed")
+        self.assertIn("value_bp differs", gap["detail"])
 
     def test_required_gap_still_blocks_the_task(self) -> None:
         task, _ = _run_stack(CreditWorld("yunling"))

@@ -75,6 +75,7 @@ class CreditRun:
     verified: bool
     missing_required: list[str]
     missing_optional: list[str]
+    optional_gaps: list[dict[str, str]]
     optional_verified: bool
     trace_path: str
 
@@ -105,6 +106,7 @@ class CreditRun:
             "missing": list(self.memo.get("missing") or []),
             "missing_required": list(self.memo.get("missing_required") or []),
             "missing_optional": list(self.memo.get("missing_optional") or []),
+            "optional_gaps": [dict(gap) for gap in self.memo.get("optional_gaps") or []],
             "optional_verified": bool(self.memo.get("optional_verified")),
         }
 
@@ -214,6 +216,7 @@ def run_issuer(
             world,
             observations,
             chain_head=trace_verification["head_hash"],
+            plan=task.plan_state,
         )
         memo_path, memo_md_path, memo_sha = write_memo(memo, target)
 
@@ -246,6 +249,7 @@ def run_issuer(
             verified=bool(memo["verified"]),
             missing_required=list(memo.get("missing_required") or []),
             missing_optional=list(memo.get("missing_optional") or []),
+            optional_gaps=[dict(gap) for gap in memo.get("optional_gaps") or []],
             optional_verified=bool(memo.get("optional_verified")),
             trace_path=str(trace_path),
         )

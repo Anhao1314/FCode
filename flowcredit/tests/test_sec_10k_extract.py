@@ -211,6 +211,15 @@ class SpikeTests(unittest.TestCase):
             self.assertEqual(memo["decision_status"], "pending_human_review")
             self.assertEqual(memo["missing_required"], [])
             self.assertEqual(set(memo["missing_optional"]), set(OPTIONAL_METRICS))
+            self.assertEqual(len(memo["optional_gaps"]), 3)
+            self.assertEqual(
+                {gap["metric"] for gap in memo["optional_gaps"]},
+                set(OPTIONAL_METRICS),
+            )
+            self.assertTrue(
+                all(gap["reason"] == "not_disclosed" for gap in memo["optional_gaps"])
+            )
+            self.assertTrue(all(gap["detail"] for gap in memo["optional_gaps"]))
             self.assertFalse(memo["synthetic"])
             self.assertTrue(memo["research_only"])
             full_memo = json.loads(Path(memo["path"]).read_text(encoding="utf-8"))
@@ -218,6 +227,9 @@ class SpikeTests(unittest.TestCase):
                 "10-K 未披露 rating_migration / related_party_funding_ratio / "
                 "contingent_liabilities_to_equity；这些可选指标未参与策略结论。",
                 full_memo["caveats"],
+            )
+            self.assertFalse(
+                any("未尝试" in caveat for caveat in full_memo["caveats"])
             )
             self.assertTrue(Path(memo["path"]).exists())
             self.assertTrue(Path(memo["md_path"]).exists())
@@ -244,6 +256,10 @@ class SpikeTests(unittest.TestCase):
         self.assertEqual(memo["optional_metrics"], list(OPTIONAL_METRICS))
         self.assertEqual(memo["missing_required"], [])
         self.assertEqual(set(memo["missing_optional"]), set(OPTIONAL_METRICS))
+        self.assertEqual(len(memo["optional_gaps"]), 3)
+        self.assertTrue(
+            all(gap["reason"] == "not_disclosed" for gap in memo["optional_gaps"])
+        )
         self.assertFalse(memo["optional_verified"])
         self.assertEqual(
             [metric["metric"] for metric in memo["metrics"]],
