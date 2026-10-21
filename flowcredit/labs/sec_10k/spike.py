@@ -1,4 +1,4 @@
-"""SEC 10-K extraction spike: 21 facts -> same credit plan -> blocked memo.
+"""SEC 10-K extraction spike: 21 facts -> same credit plan -> tiered memo.
 
 Run from ``flowcredit/``::
 
@@ -53,15 +53,6 @@ EXCERPT_PATH = DATA_DIR / "excerpt.txt"
 META_PATH = DATA_DIR / "meta.json"
 GROUND_TRUTH_PATH = DATA_DIR / "ground_truth.json"
 WORK_DIR = ROOT / "work" / "sec_10k"
-
-_REAL_DISCLAIMER = (
-    "> 真实公开数据（SEC 10-K），仅用于 FCode 抽取研究；"
-    "不构成任何信贷或投资意见。"
-)
-_SYNTHETIC_DISCLAIMER = (
-    "> 合成数据，仅用于 FCode 信用尽调实验；不构成任何信贷或投资意见。"
-)
-
 
 def _ratio_bp(numerator: int, denominator: int) -> int:
     return (numerator * 10000 + denominator // 2) // denominator
@@ -201,12 +192,12 @@ def run_spike(workdir: Path | None = None) -> dict[str, Any]:
             world,
             _observations(store.events(task.id)),
             chain_head=verification["head_hash"],
+            synthetic=bool(meta.get("synthetic", False)),
+            research_only=bool(meta.get("research_only", True)),
+            source_url=str(meta.get("source_url", "")),
+            accession=str(meta.get("accession", "")),
+            cik=str(meta.get("cik", "")),
         )
-        memo["synthetic"] = False
-        memo["research_only"] = True
-        memo["source_url"] = meta.get("source_url", "")
-        memo["accession"] = meta.get("accession", "")
-        memo["cik"] = meta.get("cik", "")
         memo_sha = memo_sha256(memo)
         memo_path = target / "memo.json"
         memo_md_path = target / "memo.md"
@@ -214,9 +205,7 @@ def run_spike(workdir: Path | None = None) -> dict[str, Any]:
             json.dumps(memo, ensure_ascii=False, indent=2) + "\n",
             encoding="utf-8",
         )
-        markdown = memo_to_markdown(memo, memo_sha).replace(
-            _SYNTHETIC_DISCLAIMER, _REAL_DISCLAIMER
-        )
+        markdown = memo_to_markdown(memo, memo_sha)
         memo_md_path.write_text(markdown, encoding="utf-8")
 
         computed = {
@@ -228,11 +217,13 @@ def run_spike(workdir: Path | None = None) -> dict[str, Any]:
         expected = _expected_metrics(ground_truth)
         metrics_match = computed == expected
         memo_state_ok = (
-            memo.get("recommended_conclusion") == "insufficient_evidence"
-            and memo.get("issued") is False
+            memo.get("recommended_conclusion") == "pass"
+            and memo.get("issued") is True
             and memo.get("signed") is False
-            and memo.get("decision_status") == "blocked"
-            and "rating_migration" in (memo.get("missing") or [])
+            and memo.get("decision_status") == "pending_human_review"
+            and memo.get("missing_required") == []
+            and len(memo.get("missing_optional") or []) == 3
+            and memo.get("optional_verified") is False
         )
         ok = (
             all(item["match"] for item in facts)
@@ -255,12 +246,16 @@ def run_spike(workdir: Path | None = None) -> dict[str, Any]:
                 "md_path": str(memo_md_path),
                 "sha256": memo_sha,
                 "chain_head": verification["head_hash"],
+                "memo_version": memo.get("memo_version"),
                 "recommended_conclusion": memo.get("recommended_conclusion"),
                 "conclusion_authority": memo.get("conclusion_authority"),
                 "issued": memo.get("issued"),
                 "signed": memo.get("signed"),
                 "decision_status": memo.get("decision_status"),
                 "verified": memo.get("verified"),
+                "missing_required": list(memo.get("missing_required") or []),
+                "missing_optional": list(memo.get("missing_optional") or []),
+                "optional_verified": bool(memo.get("optional_verified")),
                 "missing": list(memo.get("missing") or []),
                 "blockers": list(memo.get("blockers") or []),
                 "synthetic": memo.get("synthetic"),
