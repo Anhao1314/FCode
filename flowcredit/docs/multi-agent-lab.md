@@ -174,9 +174,9 @@ python3.12 -m unittest discover -s tests -v
 - 其余 7 个任务，单/多 Agent 的结果和成本相同；多 Agent 只多出毫秒级编排开销。
 - 重规划任务的成本从 `500 µUSD / 1 call` 增加到 `5000 µUSD / 10 calls`，这是额外
   child run 的真实代价。
-- `unknown` 两边都停在 `recovery_required`，没有做跨 child 收据对账；产品里的
-  `run_scenario unknown` 会 reconcile，但不能把那条结果直接算到本 lab 的单一 child
-  基线上。
+- `unknown` 两边的 child 都停在 `recovery_required`；多 Agent 的编排 `status` 记为
+  `failed`。没有做跨 child 收据对账；产品里的 `run_scenario unknown` 会 reconcile，
+  但不能把那条结果直接算到本 lab 的单一 child 基线上。
 - `budget`/`full-strict`/`open-ended` 的“success=yes”是“预期失败/阻塞被正确接受”，
   不是成功率提升。
 
