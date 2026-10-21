@@ -40,9 +40,10 @@ CREDIT_DD_DOMAIN = DomainModule(
     create_world=create_world,
     build_tools=build_tools,
     make_planner=make_planner,
-    # The module-level verifier checks one observation. The spike's
-    # CreditVerifier wraps it to check both metrics in the committed chain.
+    # The loop calls this once per committed result observation, so both credit
+    # metrics are verified independently through the module contract.
     verify=verify_observation,
+    result_tools=("compute_credit_metric",),
     approval_tools=APPROVAL_TOOLS,
     report_template="credit-memo",
 )

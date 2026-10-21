@@ -36,6 +36,8 @@ class DomainModule:
     make_planner: Callable[[], Any]
     #: (world, observation) -> {"verified": True, "verification": ..., "result": ...}
     verify: Callable[[Any, Observation], dict[str, Any]]
+    #: Tools whose verified observations are the domain's answer.
+    result_tools: tuple[str, ...] = ()
     #: Tools that pause for a human under the "consequential" policy.
     approval_tools: tuple[str, ...] = ()
     #: Which report template the console should use for this module.
