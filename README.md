@@ -154,6 +154,11 @@ Host 组装的 `memo.json` / `memo.md`，以及证据不足时不签发、等待
 模型只提议读取和计算，memo 里的每个数字都由 Host 从已验证 observation 组装。
 Host 签发只表示结果已验证并由 Host 组装，不等于人工签字或信贷决定。
 
+真实公开数据的单家抽取 spike 在 [labs/sec_10k/README.md](flowcredit/labs/sec_10k/README.md)：
+Cisco FY2025 10-K、11 个事实、行级 citation、5 个可算指标；缺失的 rating 使
+memo 保持 `insufficient_evidence` / blocked。设计与边界见
+[sec-10k-extraction.md](flowcredit/docs/sec-10k-extraction.md)。
+
 ```sh
 cd flowcredit
 python3.12 credit_demo.py --all
@@ -182,6 +187,7 @@ python3.12 credit_demo.py --all
 | 双时态事实记忆（as-of / known-at 查询；修正追加不覆盖；每条事实带来源事件哈希） | 已实现（金融域抽取器） |
 | 域模块协议（模块自给世界/工具/规划器/验证器；模板按模块分组；金融研究与信用尽调） | 已实现 |
 | 信用尽调域（8 指标 / 3 家合成发行人 / Host 组装 memo / 签发与人工签字分离） | 已实现（Phase 1，合成数据） |
+| SEC 10-K 抽取 spike（Cisco FY2025 / 11 事实 / 行级 citation / 真实公开数据） | 已实现（lab，单家） |
 | 独立验证（Runtime 重算，模型不能自报完成） | 已实现 |
 | 人工审批门（关键步骤 / 逐步 / 自动、超时拒绝、本次运行免询） | 已实现 |
 | 运行时人工控制（计划跳过 / 提前、预算调高、失败续跑） | 已实现 |
@@ -207,7 +213,7 @@ python3.12 credit_demo.py --all
 
 ## 数字
 
-- **223** 项单元与场景测试，全部离线
+- **231** 项单元与场景测试，全部离线
 - **7** 个可复现场景，其中崩溃场景用真实 `SIGKILL`
 - **0** 个第三方运行时依赖（只用标准库）
 - **9** 轮完成一次完整研究，**4500 µUSD** 合成预算
@@ -227,7 +233,7 @@ flowcredit/          Python Runtime 与 Demo
     trajectory/      记录、导出、独立重算
     demo/            CLI、终端渲染、七个场景、崩溃 worker
   viewer/            实时控制台 + Trace 回放（零依赖零构建）
-  tests/             223 项 unittest
+  tests/             231 项 unittest
   docs/              架构、设计决策、框架对照、JD 映射
 archive/             v1：Node.js 研究原型（保留，不参与 CI）
 ```
@@ -241,7 +247,7 @@ v2 不再问那个问题。它把 v1 里真正有价值的部分——可恢复�
 ## 边界
 
 - 真实模型默认关闭。真实传输需要一次性授权（≤1h）、凭证提供者、主机复核的价格快照与硬预算，缺一不可。
-- 演示中的金额、公司、资料全部是合成的，不是真实财报，也不构成任何投资或信贷意见。信用尽调目前只有 3 家合成发行人，不接真实公开数据、PDF/OCR 或真实 LLM。
+- 演示中的金额、公司、资料全部是合成的，不是真实财报，也不构成任何投资或信贷意见。信用尽调产品域仍使用 3 家合成发行人；另有 `labs/sec_10k/` 的单份真实 10-K 抽取 spike，不接真实 LLM/PDF/OCR，也不构成投资或信贷意见。
 - 签名收据证明的是"这次调用发生了、内容是什么"，不证明供应商账单准确。`external_billing` 恒为 `not-verified`。
 - 哈希链保护的是本地记录的一致性。能同时改写数据库与签名密钥的攻击者不在威胁模型内。
 - 未做：RAG、MCP、FastAPI、前端工程化。这些不是遗漏，是刻意的范围边界。
