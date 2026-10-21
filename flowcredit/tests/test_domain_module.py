@@ -19,6 +19,7 @@ from flowagent.core.contracts import AgentError  # noqa: E402
 from flowagent.core.receipts import ReceiptStore  # noqa: E402
 from flowagent.core.store import TaskStore  # noqa: E402
 from flowagent.domains import get_domain, list_domains  # noqa: E402
+from flowagent.domains.credit import CREDIT_DOMAIN  # noqa: E402
 from flowagent.domains.finance import FINANCE_DOMAIN, verify_observation  # noqa: E402
 from flowagent.providers.mock import MockProvider  # noqa: E402
 from flowagent.runtime.budget import BudgetLimits  # noqa: E402
@@ -30,9 +31,13 @@ from flowagent.tools.registry import ToolRegistry  # noqa: E402
 
 
 class DomainModuleTests(unittest.TestCase):
-    def test_registry_exposes_the_finance_module(self) -> None:
+    def test_registry_exposes_finance_and_credit_modules(self) -> None:
         self.assertIs(get_domain("finance-research"), FINANCE_DOMAIN)
-        self.assertEqual([module.key for module in list_domains()], ["finance-research"])
+        self.assertIs(get_domain("credit-due-diligence"), CREDIT_DOMAIN)
+        self.assertEqual(
+            {module.key for module in list_domains()},
+            {"finance-research", "credit-due-diligence"},
+        )
         with self.assertRaises(KeyError):
             get_domain("audit")
 

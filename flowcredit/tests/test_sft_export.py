@@ -49,10 +49,10 @@ from flowagent.trajectory.exporter import export_trace  # noqa: E402
 from flowagent.trajectory.recorder import TraceRecorder  # noqa: E402
 from flowagent.domains.finance import FINANCE_DOMAIN, verify_observation as verify_finance  # noqa: E402
 
-from labs.credit_dd.module import CREDIT_DD_DOMAIN  # noqa: E402
-from labs.credit_dd.planner import CreditPlanner  # noqa: E402
-from labs.credit_dd.tools import TOOL_NAMES, build_credit_tools  # noqa: E402
-from labs.credit_dd.world import CreditWorld  # noqa: E402
+from flowagent.domains.credit import CREDIT_DOMAIN  # noqa: E402
+from flowagent.tools.credit.planner import CreditPlanner  # noqa: E402
+from flowagent.tools.credit.tools import CREDIT_TOOL_NAMES, build_credit_tools  # noqa: E402
+from flowagent.tools.credit.world import CreditWorld  # noqa: E402
 
 
 def run_episode(
@@ -107,8 +107,8 @@ class _PostResultReviewPlanner(CreditPlanner):
         return plan.revise(
             add=(
                 Todo(
-                    "c7",
-                    "复核两个指标并给出结论",
+                    "r1",
+                    "复核八个指标并给出结论",
                     "report_blocked",
                     "reported",
                     {"reason": "insufficient_evidence"},
@@ -127,8 +127,8 @@ def run_credit_episode(tmp: Path) -> list:
     provider = RecordingProvider(MockProvider(policy="research"))
     recorder = TraceRecorder(store, provider_name=provider.name, model_name=provider.model)
     limits = BudgetLimits(
-        max_calls=12,
-        max_reads=12,
+        max_calls=20,
+        max_reads=20,
         max_cost_microusd=20_000,
         max_tokens=20_000,
     )
@@ -137,11 +137,11 @@ def run_credit_episode(tmp: Path) -> list:
         registry=registry,
         provider=provider,
         world=world,
-        verifier=lambda observation: CREDIT_DD_DOMAIN.verify(world, observation),
+        verifier=lambda observation: CREDIT_DOMAIN.verify(world, observation),
         limits=limits,
         receipts=receipts,
     )
-    allowed = list(TOOL_NAMES)
+    allowed = list(CREDIT_TOOL_NAMES)
     task = harness.create(
         task_id="fidelity-credit",
         objective="credit context fidelity",
@@ -150,8 +150,8 @@ def run_credit_episode(tmp: Path) -> list:
         allowed_tools=allowed,
         grant={
             "allowed_tools": allowed,
-            "max_calls": 12,
-            "max_reads": 12,
+            "max_calls": 20,
+            "max_reads": 20,
             "max_cost_microusd": 20_000,
             "max_tokens": 20_000,
         },
@@ -159,9 +159,9 @@ def run_credit_episode(tmp: Path) -> list:
     Loop(
         harness,
         planner=_PostResultReviewPlanner(),
-        max_rounds=12,
+        max_rounds=20,
         observer=recorder,
-        result_tools=CREDIT_DD_DOMAIN.result_tools,
+        result_tools=CREDIT_DOMAIN.result_tools,
     ).run(task.id)
     store.close()
     return provider.captured
@@ -284,11 +284,20 @@ class CreditContextTests(unittest.TestCase):
             captured = run_credit_episode(Path(tmp))
 
         self.assertNotIn("metrics", captured[0]["state"])
+        expected_metrics = {
+            "net_debt_to_ebitda": 37714,
+            "interest_coverage": 41667,
+            "ocf_to_short_term_debt": 3000,
+            "receivables_to_revenue": 2296,
+            "related_party_funding_ratio": 577,
+            "contingent_liabilities_to_equity": 281,
+            "audit_opinion": "standard_unqualified",
+            "rating_migration": "stable",
+        }
         both = [
             context["state"]["metrics"]
             for context in captured
-            if context["state"].get("metrics")
-            == {"net_debt_to_ebitda": 377, "interest_coverage": 417}
+            if context["state"].get("metrics") == expected_metrics
         ]
         self.assertEqual(len(both), 1)
 
