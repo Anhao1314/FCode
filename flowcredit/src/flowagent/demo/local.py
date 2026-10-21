@@ -25,8 +25,10 @@ from ..core.store import TaskStore
 from ..domains.finance import verify_observation
 from ..memory.cases import CaseIndex
 from ..memory.facts import FactStore
+from ..providers.base import Provider
 from ..providers.local import LocalProvider
 from ..providers.prompt import PROMPT_VERSION
+from ..runtime.budget import BudgetLimits
 from ..runtime.harness import Harness
 from ..runtime.loop import Loop
 from ..tools.artifacts import ArtifactStore
@@ -58,6 +60,8 @@ def run(
     max_rounds: int | None = None,
     json_mode: bool = False,
     structured: bool = False,
+    provider: Provider | None = None,
+    limits: BudgetLimits | None = None,
 ) -> dict[str, Any]:
     scenario = get_scenario(scenario_key)
     workdir = workdir.expanduser().resolve()
@@ -80,19 +84,20 @@ def run(
         facts,
     ))
     receipts = ReceiptStore(store)
-    provider = LocalProvider(
-        base_url=endpoint,
-        model=model,
-        timeout=timeout,
-        json_mode=json_mode,
-        structured=structured,
-    )
+    if provider is None:
+        provider = LocalProvider(
+            base_url=endpoint,
+            model=model,
+            timeout=timeout,
+            json_mode=json_mode,
+            structured=structured,
+        )
     harness = Harness(
         store=store,
         registry=registry,
         provider=provider,
         world=world,
-        limits=scenario.limits,
+        limits=limits or scenario.limits,
         receipts=receipts,
         verifier=lambda observation: verify_observation(world, observation),
     )
@@ -149,6 +154,8 @@ def run(
         "trace": str(trace_path),
         "verified": verified,
         "prompt_version": PROMPT_VERSION,
+        "provider": provider.name,
+        "model": provider.model,
     }
 
 

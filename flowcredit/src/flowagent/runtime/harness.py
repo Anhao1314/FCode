@@ -162,15 +162,25 @@ class Harness:
                 {"round": context["round"]},
             )
 
+        intent = self._intent(task, context)
+        call_context = {**context, "intent": intent}
+
         # Charge before dispatch. A provider that never answers still costs.
+        # Providers may declare a context-aware upper bound; local providers
+        # fall back to the historical constants.
+        reserve = getattr(provider, "reserve", None)
+        if callable(reserve):
+            reserve_tokens, reserve_cost = reserve(call_context)
+        else:
+            reserve_tokens = int(getattr(provider, "reserve_tokens", self.RESERVED_TOKENS))
+            reserve_cost = int(getattr(provider, "reserve_cost_microusd", self.RESERVED_COST_MICROUSD))
         self.budget(task).charge_call(
-            tokens=self.RESERVED_TOKENS,
-            cost_microusd=self.RESERVED_COST_MICROUSD,
+            tokens=int(reserve_tokens),
+            cost_microusd=int(reserve_cost),
         )
 
-        intent = self._intent(task, context)
         try:
-            proposal = provider.propose({**context, "intent": intent})
+            proposal = provider.propose(call_context)
         except AgentError as error:
             return self._unknown(task, intent, error), None
 

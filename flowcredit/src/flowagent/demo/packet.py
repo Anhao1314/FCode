@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 from pathlib import Path
 from typing import Any
@@ -19,6 +20,7 @@ from ..core.store import TaskStore
 from ..domains.finance import verify_observation
 from ..memory.cases import CaseIndex
 from ..memory.facts import FactStore
+from ..providers.deepseek import DeepSeekPolicy, PriceSnapshot
 from ..providers.local_policy import LocalPolicy
 from ..providers.mock import MockProvider
 from ..runtime.harness import Harness
@@ -51,6 +53,10 @@ def run(
     model: str = "qwen3-4b-fcode",
     json_mode: bool = False,
     timeout: float = 120.0,
+    price: PriceSnapshot | None = None,
+    api_key: str = "",
+    base_url: str = "https://api.deepseek.com/v1",
+    max_tokens: int = 64,
 ) -> dict[str, Any]:
     scenario = get_scenario(scenario_key)
     workdir = workdir.expanduser().resolve()
@@ -86,6 +92,18 @@ def run(
     if policy_name == "local":
         policy = LocalPolicy(
             base_url=endpoint, model=model, timeout=timeout, json_mode=json_mode,
+        )
+    elif policy_name == "deepseek":
+        if price is None:
+            raise ValueError("deepseek policy requires a price snapshot")
+        policy = DeepSeekPolicy(
+            api_key=api_key,
+            price=price,
+            model=model,
+            base_url=base_url,
+            timeout=timeout,
+            max_tokens=max_tokens,
+            json_mode=json_mode,
         )
     else:
         policy = MockPolicy()
@@ -136,6 +154,7 @@ def run(
             verified = True
         except Exception:  # noqa: BLE001 — surfaced in the summary
             verified = False
+        final_budget = harness.budget(store.load(task.id)).snapshot()
         events = final["events"]
         types = [event["type"] for event in events]
         requested = [
@@ -167,6 +186,8 @@ def run(
         "repaired": sum(1 for item in decided if item.get("repaired")),
         "policy_tokens": sum(int(item.get("tokens") or 0) for item in decided),
         "policy_latency_ms": round(sum(latencies) / len(latencies)) if latencies else 0,
+        "cost_microusd": final_budget.get("cost_used_microusd"),
+        "tokens": final_budget.get("tokens_used"),
         "packet_bytes": packet_bytes,
         "packet_avg_bytes": packet_avg,
         "legacy_context_bytes": legacy_bytes,
@@ -182,21 +203,59 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--workdir", required=True)
     parser.add_argument("--scenario", default="full")
     parser.add_argument("--fresh", action="store_true")
-    parser.add_argument("--policy", choices=("mock", "local"), default="mock")
+    parser.add_argument("--policy", choices=("mock", "local", "deepseek"), default="mock")
     parser.add_argument("--endpoint", default="http://127.0.0.1:11434/v1")
-    parser.add_argument("--model", default="qwen3-4b-fcode")
+    parser.add_argument("--model", default=None)
     parser.add_argument("--json-mode", action="store_true")
     parser.add_argument("--timeout", type=float, default=120.0)
+    parser.add_argument("--base-url", default="https://api.deepseek.com/v1")
+    parser.add_argument("--api-key-env", default="DEEPSEEK_API_KEY")
+    parser.add_argument("--input-price-microusd-per-mtok", type=int, default=None)
+    parser.add_argument("--output-price-microusd-per-mtok", type=int, default=None)
+    parser.add_argument("--cache-hit-price-microusd-per-mtok", type=int, default=None)
+    parser.add_argument("--price-as-of", default="")
+    parser.add_argument("--price-source", default="host")
+    parser.add_argument("--max-tokens", type=int, default=64)
     args = parser.parse_args(argv)
+
+    price = None
+    api_key = ""
+    model = args.model or "qwen3-4b-fcode"
+    json_mode = args.json_mode
+    if args.policy == "deepseek":
+        if args.input_price_microusd_per_mtok is None or args.output_price_microusd_per_mtok is None:
+            parser.error("deepseek policy requires input/output price snapshots")
+        if not args.price_as_of:
+            parser.error("deepseek policy requires --price-as-of")
+        api_key = os.environ.get(args.api_key_env, "")
+        if not api_key.strip():
+            parser.error(f"{args.api_key_env} is not set")
+        try:
+            price = PriceSnapshot(
+                input_microusd_per_mtok=args.input_price_microusd_per_mtok,
+                output_microusd_per_mtok=args.output_price_microusd_per_mtok,
+                cache_hit_microusd_per_mtok=args.cache_hit_price_microusd_per_mtok,
+                as_of=args.price_as_of,
+                source=args.price_source,
+            )
+        except ValueError as error:
+            parser.error(str(error))
+        model = args.model or "deepseek-chat"
+        json_mode = True
+
     summary = run(
         workdir=Path(args.workdir),
         scenario_key=args.scenario,
         fresh=args.fresh,
         policy_name=args.policy,
         endpoint=args.endpoint,
-        model=args.model,
-        json_mode=args.json_mode,
+        model=model,
+        json_mode=json_mode,
         timeout=args.timeout,
+        price=price,
+        api_key=api_key,
+        base_url=args.base_url,
+        max_tokens=args.max_tokens,
     )
     print(json.dumps(summary, ensure_ascii=False, indent=2))
     return 0 if summary["verified"] and summary["status"] == "succeeded" else 1

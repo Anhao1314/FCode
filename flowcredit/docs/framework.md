@@ -270,3 +270,4 @@ MockPolicy 只用于演示，生产必须显式失败。
 - 运行时现状：`architecture.md`
 - EPA 契约：`executive-policy.md`
 - 语言层：`voice.md`
+- DeepSeek 外部 Provider：`deepseek.md`

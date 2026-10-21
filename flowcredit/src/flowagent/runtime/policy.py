@@ -60,6 +60,8 @@ class ActionChoice:
     tokens: int = 0
     latency_ms: int = 0
     repaired: bool = False
+    cost_microusd: int = 0
+    request_id: str = ""
 
 
 @dataclass(frozen=True)
@@ -134,6 +136,21 @@ class PacketProvider:
         self.name = policy.name
         self.model = policy.model
 
+    @property
+    def reserve_tokens(self) -> int:
+        """Conservative per-call reservation charged before dispatch."""
+        return int(getattr(self.policy, "reserve_tokens", 1_000))
+
+    @property
+    def reserve_cost_microusd(self) -> int:
+        return int(getattr(self.policy, "reserve_cost_microusd", 500))
+
+    def reserve(self, context: dict[str, Any]) -> tuple[int, int]:
+        reserve = getattr(self.policy, "reserve", None)
+        if callable(reserve):
+            return reserve(self.packet)
+        return self.reserve_tokens, self.reserve_cost_microusd
+
     def propose(self, context: dict[str, Any]) -> Proposal:
         choice = self.policy.choose(self.packet)
         candidate = self.packet.candidate(choice.candidate_id)
@@ -156,7 +173,7 @@ class PacketProvider:
             provider=self.name,
             model=self.model,
             tokens=choice.tokens or max(1, (packet_bytes + 64) // 4),
-            cost_microusd=0,
+            cost_microusd=choice.cost_microusd,
             latency_ms=choice.latency_ms,
             todo_id=candidate.todo_id or None,
             metadata={
@@ -165,6 +182,7 @@ class PacketProvider:
                 "candidate_id": candidate.id,
                 "reason": choice.reason,
                 "repaired": choice.repaired,
+                "provider_request_id": choice.request_id,
             },
         )
 
