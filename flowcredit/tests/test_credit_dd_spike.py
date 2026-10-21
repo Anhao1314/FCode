@@ -1,30 +1,45 @@
-"""Credit-DD Phase 0 spike: world, tools, planner, verifier and real Loop.
+"""Credit-DD spike: world, tools, planner, module verifier and real Loop.
 
-The happy path is driven through the real ``Harness``/``Loop``; the verifier
-recomputes both metrics from the world. The failure case removes the debt
-schedule and asserts that no computed net-debt figure ever enters the trace.
+Phase 0.5 locks three properties:
+
+* a complete plan is not enough — every result-bearing todo must be done and
+  every declared result observation must verify;
+* the loop verifies the whole result set, so the second credit metric cannot
+  hide the first;
+* working memory reads ``doc_id`` / ``fields`` without a finance-shaped ``id``
+  alias.
 """
 
 from __future__ import annotations
 
 import pathlib
 import sys
+import tempfile
 import unittest
+from dataclasses import replace
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "src"))
 
-from flowagent.core.contracts import AgentError  # noqa: E402
+from flowagent.core.receipts import ReceiptStore  # noqa: E402
+from flowagent.core.store import TaskStore  # noqa: E402
 from flowagent.domains import DOMAINS  # noqa: E402
+from flowagent.domains.finance import FINANCE_DOMAIN  # noqa: E402
+from flowagent.memory.context import WorkingMemory  # noqa: E402
+from flowagent.providers.mock import MockProvider  # noqa: E402
+from flowagent.runtime.budget import BudgetLimits  # noqa: E402
+from flowagent.runtime.harness import Harness  # noqa: E402
+from flowagent.runtime.loop import Loop  # noqa: E402
 from flowagent.tools.base import EFFECT_READ, Observation  # noqa: E402
 from flowagent.tools.registry import ToolRegistry  # noqa: E402
+from flowagent.trajectory.exporter import verify_trace  # noqa: E402
+from flowagent.trajectory.recorder import TraceRecorder  # noqa: E402
 
 from labs.credit_dd.module import CREDIT_DD_DOMAIN  # noqa: E402
 from labs.credit_dd.planner import CreditPlanner  # noqa: E402
 from labs.credit_dd.spike import EXPECTED_METRICS, run_case  # noqa: E402
 from labs.credit_dd.tools import DOCUMENT_IDS, METRICS, TOOL_NAMES, build_credit_tools  # noqa: E402
-from labs.credit_dd.verifier import verify_observation  # noqa: E402
 from labs.credit_dd.world import BLOCK_REASONS, CreditWorld  # noqa: E402
 
 
@@ -37,6 +52,106 @@ def _tool_details(case, tool: str | None = None) -> list[dict]:
     if tool is None:
         return details
     return [detail for detail in details if detail["tool"] == tool]
+
+
+def _memory_for(case) -> WorkingMemory:
+    memory = WorkingMemory(objective="credit", tool_catalog=[])
+    for event in case.events:
+        if event["type"] != "tool_succeeded":
+            continue
+        detail = event["payload"]["detail"]
+        memory.record(
+            int(detail.get("round", 0)),
+            Observation(
+                tool=detail["tool"],
+                arguments=dict(detail.get("arguments") or {}),
+                result=dict(detail.get("result") or {}),
+                result_hash=detail.get("result_hash", ""),
+                tool_version=detail.get("tool_version", ""),
+            ),
+        )
+    return memory
+
+
+class _AbandonC5Planner(CreditPlanner):
+    """Marks the first result todo abandoned, leaving only c6 to execute."""
+
+    def decompose(self, goal):
+        plan = super().decompose(goal)
+        return plan.mark("c5", "abandoned", reason="test: only one result observation")
+
+
+def _run_tampered_metric():
+    """Run the real loop with a tool that changes one digit of c5's result."""
+    with tempfile.TemporaryDirectory(prefix="fcode-credit-tamper-") as tmp:
+        store = TaskStore(pathlib.Path(tmp) / "task.sqlite")
+        try:
+            world = CreditWorld()
+            specs = build_credit_tools(world)
+
+            def tampered_compute(arguments: dict) -> dict:
+                result = world.compute_credit_metric(arguments["metric"], arguments["period"])
+                if result.get("computed") and result.get("metric") == "net_debt_to_ebitda":
+                    result = dict(result)
+                    result["value_x100"] += 1
+                return result
+
+            specs = [
+                replace(spec, handler=tampered_compute)
+                if spec.name == "compute_credit_metric"
+                else spec
+                for spec in specs
+            ]
+            registry = ToolRegistry(specs)
+            receipts = ReceiptStore(store)
+            provider = MockProvider(policy="research")
+            limits = BudgetLimits(
+                max_calls=12,
+                max_reads=12,
+                max_cost_microusd=20_000,
+                max_tokens=20_000,
+            )
+            harness = Harness(
+                store=store,
+                registry=registry,
+                provider=provider,
+                world=world,
+                limits=limits,
+                receipts=receipts,
+                verifier=lambda observation: CREDIT_DD_DOMAIN.verify(world, observation),
+            )
+            allowed = list(TOOL_NAMES)
+            task = harness.create(
+                task_id="task-credit-dd-tamper",
+                objective="tampered credit metric",
+                principal="test",
+                binding={"scenario": "tampered", "synthetic": True},
+                allowed_tools=allowed,
+                grant={
+                    "allowed_tools": allowed,
+                    "max_calls": 12,
+                    "max_reads": 12,
+                    "max_cost_microusd": 20_000,
+                    "max_tokens": 20_000,
+                },
+            )
+            recorder = TraceRecorder(
+                store,
+                provider_name=provider.name,
+                model_name=provider.model,
+            )
+            task = Loop(
+                harness,
+                planner=CreditPlanner(),
+                max_rounds=12,
+                observer=recorder,
+                result_tools=CREDIT_DD_DOMAIN.result_tools,
+            ).run(task.id)
+            trace = recorder.build(task)
+            verify_trace(trace)
+            return task, store.events(task.id), trace
+        finally:
+            store.close()
 
 
 class CreditWorldTests(unittest.TestCase):
@@ -112,9 +227,12 @@ class ToolContractTests(unittest.TestCase):
 
         listed = registry.execute("list_documents", {})
         self.assertEqual(len(listed.result["documents"]), 3)
+        self.assertNotIn("id", listed.result["documents"][0])
 
         annual = registry.execute("read_document", {"doc_id": "doc_ar_fy2025"})
         self.assertTrue(annual.result["found"])
+        self.assertEqual(annual.result["doc_id"], "doc_ar_fy2025")
+        self.assertNotIn("id", annual.result)
         self.assertEqual(annual.result["fields"]["ebitda"], 175_000)
         self.assertIn("ebitda", annual.result["line_refs"])
 
@@ -151,6 +269,16 @@ class SpikeTests(unittest.TestCase):
         self.assertTrue(all(todo.status == "done" for todo in case.plan.todos))
         self.assertEqual(case.events[-1]["type"], "task_succeeded")
 
+        self.assertTrue(case.task.result["verified"])
+        self.assertIn("results", case.task.result)
+        self.assertEqual(
+            {
+                item["metric"]: item["value_x100"]
+                for item in case.task.result["results"]
+            },
+            EXPECTED_METRICS,
+        )
+
         computed = _tool_details(case, "compute_credit_metric")
         self.assertEqual(
             [(detail["result"]["metric"], detail["result"]["value_x100"]) for detail in computed],
@@ -169,6 +297,7 @@ class SpikeTests(unittest.TestCase):
         self.assertEqual(case.task.status, "failed")
         self.assertEqual(case.summary["failure_code"], "INSUFFICIENT_EVIDENCE")
         self.assertEqual(case.summary["metrics"], {})
+        self.assertIsNone(case.task.result)
         self.assertTrue(case.summary["verified"])
         self.assertTrue(case.plan.is_blocked())
 
@@ -196,31 +325,79 @@ class SpikeTests(unittest.TestCase):
         )
         self.assertEqual(case.events[-1]["type"], "task_stopped")
 
-    def test_verifier_rejects_a_one_digit_tamper(self) -> None:
-        case = run_case("tamper-test")
+    def test_complete_plan_with_one_result_is_not_success(self) -> None:
+        case = run_case("missing-result-test", planner=_AbandonC5Planner())
+        self.assertTrue(case.plan.is_complete())
+        self.assertEqual(case.task.status, "failed")
+        self.assertEqual(case.task.failure["code"], "RESULT_INCOMPLETE")
+        self.assertIn("c5", case.task.failure["message"])
+        self.assertIsNone(case.task.result)
+        self.assertTrue(case.summary["verified"])
+        self.assertEqual(case.summary["metrics"], {})
+
+        statuses = {todo.id: todo.status for todo in case.plan.todos}
+        self.assertEqual(statuses["c5"], "abandoned")
+        self.assertEqual(statuses["c6"], "done")
         computed = _tool_details(case, "compute_credit_metric")
-        self.assertEqual(len(computed), 2)
+        self.assertEqual([detail["result"]["metric"] for detail in computed], ["interest_coverage"])
 
-        for detail in computed:
-            genuine = Observation(
-                tool=detail["tool"],
-                arguments=detail["arguments"],
-                result=detail["result"],
-            )
-            recomputed = verify_observation(case.world, genuine)
-            self.assertEqual(recomputed["value_x100"], detail["result"]["value_x100"])
+    def test_loop_rejects_a_one_digit_tamper(self) -> None:
+        task, events, trace = _run_tampered_metric()
+        self.assertEqual(task.status, "failed")
+        self.assertEqual(task.failure["code"], "RESULT_VERIFICATION_FAILED")
+        self.assertIn("value_x100", task.failure["message"])
+        self.assertIsNone(task.result)
+        self.assertTrue(verify_trace(trace)["verified"])
 
-            tampered_result = dict(detail["result"])
-            tampered_result["value_x100"] += 1
-            tampered = Observation(
-                tool=detail["tool"],
-                arguments=detail["arguments"],
-                result=tampered_result,
-            )
-            with self.assertRaises(AgentError) as caught:
-                verify_observation(case.world, tampered)
-            self.assertEqual(caught.exception.code, "RESULT_VERIFICATION_FAILED")
-            self.assertIn("value_x100", caught.exception.message)
+        tampered = [
+            event["payload"]["detail"]
+            for event in events
+            if event["type"] == "tool_succeeded"
+            and event["payload"]["detail"]["tool"] == "compute_credit_metric"
+            and event["payload"]["detail"]["result"].get("metric") == "net_debt_to_ebitda"
+        ]
+        self.assertEqual(len(tampered), 1)
+        self.assertEqual(tampered[0]["result"]["value_x100"], 378)
+
+
+class WorkingMemoryTests(unittest.TestCase):
+    def test_happy_run_context_has_both_metrics_and_document_ids(self) -> None:
+        case = run_case("memory-test")
+        memory = _memory_for(case)
+        state = memory.state()
+
+        self.assertEqual(
+            state["metrics"],
+            {"net_debt_to_ebitda": 377, "interest_coverage": 417},
+        )
+        self.assertEqual(
+            state["read_documents"],
+            ["doc_ar_fy2024", "doc_ar_fy2025", "doc_debt_fy2025"],
+        )
+        self.assertTrue(state["computed"])
+        self.assertEqual(state["blockers"], [])
+
+        compute_summary = WorkingMemory._summarise(
+            next(record for record in memory.records if record.tool == "compute_credit_metric")
+        )
+        self.assertEqual(compute_summary["metric"], "net_debt_to_ebitda")
+        self.assertEqual(compute_summary["value_x100"], 377)
+
+        read_summary = WorkingMemory._summarise(
+            next(record for record in memory.records if record.tool == "read_document")
+        )
+        self.assertEqual(read_summary["doc_id"], "doc_ar_fy2024")
+        self.assertNotIn("id", read_summary)
+        self.assertIn("revenue", read_summary["fields"])
+
+    def test_partial_run_does_not_record_the_missing_document_as_read(self) -> None:
+        case = run_case("memory-partial", partial=True)
+        state = _memory_for(case).state()
+
+        self.assertEqual(state["read_documents"], ["doc_ar_fy2024", "doc_ar_fy2025"])
+        self.assertEqual(state["metrics"], {"interest_coverage": 417})
+        self.assertIn("missing_document", state["blockers"])
+        self.assertTrue(state["computed"])
 
 
 class ModuleBoundaryTests(unittest.TestCase):
@@ -237,6 +414,17 @@ class ModuleBoundaryTests(unittest.TestCase):
             TOOL_NAMES,
         )
         self.assertIsInstance(CREDIT_DD_DOMAIN.make_planner(), CreditPlanner)
+
+    def test_result_tools_are_declared_by_modules(self) -> None:
+        self.assertEqual(FINANCE_DOMAIN.result_tools, ("calculate_margin",))
+        self.assertEqual(CREDIT_DD_DOMAIN.result_tools, ("compute_credit_metric",))
+
+    def test_runtime_contains_no_domain_tool_name(self) -> None:
+        runtime = ROOT / "src" / "flowagent" / "runtime"
+        for path in runtime.glob("*.py"):
+            text = path.read_text(encoding="utf-8")
+            self.assertNotIn("calculate_margin", text, path.name)
+            self.assertNotIn("compute_credit_metric", text, path.name)
 
 
 if __name__ == "__main__":

@@ -1,4 +1,4 @@
-# 信用尽调 lab（Phase 0 缝验证）
+# 信用尽调 lab（Phase 0 / 0.5 缝验证）
 
 > 本目录中的公司、金额、评级、审计意见和文档全部是合成数据。
 > 「恒星智造」不是真实发债主体，这些数字不构成任何投资或信贷意见。
@@ -122,49 +122,51 @@ spike 输出一个 JSON；只有两个用例都符合预期时 `ok` 才为 `true
    `blockers` 逐字段比较；
 3. 任何一项不同就抛 `AgentError("RESULT_VERIFICATION_FAILED", ...)`。
 
-`CreditVerifier` 是 `Harness.verify(observation)` 的适配器：它从任务的
-`tool_succeeded` 事件里取出**每一个** `compute_credit_metric` observation，
-逐个重算，再把两个指标合并成最终 result。这样 c5、c6 两次计算都经过同一条
-验证路径，而不是只验证最后一个。
+`CREDIT_DD_DOMAIN.verify` 就是 `verify_observation`，`Harness` 直接使用它。
+计划完成时，`Loop` 从任务的 `tool_succeeded` 事件里取出**所有**结果
+observation，先检查每个结果 todo 都是 `done`，再对每个 observation 调用
+`harness.verify`。两个指标都通过才 `succeeded`；任一缺失或校验失败，任务停在
+`RESULT_INCOMPLETE` / `RESULT_VERIFICATION_FAILED`。
 
-`module.py` 里的 `verify` 是单 observation 版本，供 `DomainModule` 协议使用；
-spike 使用 `CreditVerifier` 覆盖整条链。
+结果表示：
 
-## 内核缝改动（Phase 0 唯一的内核修改）
+- 只有一个结果 observation 时，保持既有单结果形状（金融域的
+  `margin_bp_2024` 等字段不变）；
+- 多个结果 observation 时，`task.result` 使用确定性结构
+  `{"verified": true, "verification": "runtime-recomputed", "results": [...]}`，
+  顺序与事件链一致。信用 spike 的两个指标从这里读取，`spike.py` 再把它们
+  压平成 summary 的 `metrics`。
 
-原来的 `Loop` 在 `runtime/loop.py:217` 直接写死：
+## 内核缝改动（Phase 0.5 收尾）
+
+Phase 0 曾在 `Loop.__init__` 里留下 `result_tools=("calculate_margin",)` 的
+金融域默认值。Phase 0.5 把它移回模块：
+
+- `DomainModule` 增加 `result_tools` 字段；
+- `FINANCE_DOMAIN` 声明 `("calculate_margin",)`；
+- `CREDIT_DD_DOMAIN` 声明 `("compute_credit_metric",)`；
+- `Loop` 的 `result_tools` 改为必填 keyword-only 参数，没有默认值；
+- 所有调用点显式传入模块声明；没有结果工具的调用传 `()`，不会静默成功。
+
+成功门现在做三件事，而不是只看当前 observation：
 
 ```python
-if observation.tool == "calculate_margin" and observation.result.get("computed"):
+observation.tool in self.result_tools and plan.is_complete()
+# -> 检查所有结果 todo 都是 done
+# -> 从事件链取出所有结果 observation
+# -> 对每个 observation 调用 harness.verify
 ```
 
-第二个域的 `compute_credit_metric` 永远不会触发 verifier，计划跑完后直接
-`PLAN_EXHAUSTED` → `failed`。Phase 0 因此加了一个最小、向后兼容的参数：
+这解决了两个问题：c5/c6 两个指标都会验证，第二个不会盖住第一个；
+`plan.is_complete()` 里的 `abandoned` 也不再等于“结果齐全”——一个被跳过的
+结果 todo 会让任务以 `RESULT_INCOMPLETE` 结束。
 
-```python
-Loop(..., result_tools=("compute_credit_metric",))
-```
+`memory/context.py` 也不再要求文档结果带金融域的 `id` 别名：
+`read_document` 摘要使用 `doc_id`，有 `fields` 时带结构化字段；`state()` 记录
+`metrics`、已读文档和信用 blockers。lab 的 `id` 别名已删除，`WorkingMemory`
+现在能直接读信用域结果。
 
-并把成功条件改为：
-
-```python
-observation.tool in self.result_tools
-and observation.result.get("computed")
-and plan.is_complete()
-```
-
-`plan.is_complete()` 是必需的：c5 之后 c6 还没跑，不能提前成功；partial 模式下
-c4 是 `blocked`，计划永远不算 complete，因此 c6 的 417 也不会把整个任务
-误判为成功。默认值 `("calculate_margin",)` 保持金融域行为不变（192 个既有测试
-全绿）。
-
-这是 Phase 0 的 go / no-go 发现：`DomainModule` 协议本身够用，但 `Loop` 的
-终止策略原先没有接到协议上。后续如果要把信用域产品化，应该把
-`result_tools` 提升为 `DomainModule` 的声明字段，而不是在装配层手写。
-
-另一个较小的内核耦合：`memory/context.py` 的 `_summarise` 是金融域形状，
-`list_documents` 要求每个条目有 `id`。lab 在 `list_documents` 条目里同时给出
-`doc_id` 和 `id`，不改内核；这是兼容 shim，不是信用域的真实字段需求。
+## spike 输出
 
 ## spike 输出
 
@@ -198,6 +200,24 @@ c4 是 `blocked`，计划永远不算 complete，因此 c6 的 417 也不会把�
 `plan_updated` 与终态事件），不是固定的 0。事件数与链头随运行时间戳变化；
 决策序列和指标值是确定的。
 
+信用域的 `task.result` 是多结果结构（两个 `compute_credit_metric`
+observation）：
+
+```json
+{
+  "verified": true,
+  "verification": "runtime-recomputed",
+  "results": [
+    {"metric": "net_debt_to_ebitda", "value_x100": 377, "...": "..."},
+    {"metric": "interest_coverage", "value_x100": 417, "...": "..."}
+  ],
+  "plan": {"total": 6, "done": 6}
+}
+```
+
+summary 里的 `metrics` 是从 `results` 压平出来的
+`{"net_debt_to_ebitda": 377, "interest_coverage": 417}`。
+
 ## 文件
 
 | 文件 | 作用 |
@@ -205,14 +225,14 @@ c4 是 `blocked`，计划永远不算 complete，因此 c6 的 417 也不会把�
 | `world.py` | `CreditWorld`、合成事实、文档、两条指标公式 |
 | `tools.py` | 4 个 `effect=read` 的 `ToolSpec` 与输出契约 |
 | `planner.py` | 6 步蓝图、todo 归属、blocked/abandoned 规则 |
-| `verifier.py` | 独立重算 + 链级 `CreditVerifier` |
-| `module.py` | lab 内 `DomainModule` 实例（未注册） |
+| `verifier.py` | 独立重算；`CREDIT_DD_DOMAIN.verify` 实际使用的函数 |
+| `module.py` | lab 内 `DomainModule` 实例，声明 `result_tools`（未注册） |
 | `spike.py` | 两个用例的真实 Runtime 装配与 JSON 输出 |
 
 ## 下一阶段（不在本阶段）
 
 - 扩展到 8 个指标（短期债务占比、经营现金流/债务、应收账款周转等）；
 - 接真实年报/债务明细的抽取与行级引用；
-- 把 `result_tools` 提升为 `DomainModule` 字段，并注册模块；
+- 注册模块并接入产品装配层（`DOMAINS` / viewer / 报告模板）；
 - 信用 memo 模板与 viewer 集成；
 - 在信用域上重跑崩溃恢复、unknown 对账与预算场景。
