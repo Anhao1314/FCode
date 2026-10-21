@@ -1,0 +1,342 @@
+[
+  {
+    "fact": "revenue",
+    "value": 164683000000,
+    "unit": "USD",
+    "source_unit": "USD millions",
+    "period": "FY2025",
+    "doc_id": "doc_10k_fy2025",
+    "line": 52,
+    "snippet": "Net sales | $ | 164,683 |  |  | $ | 159,514 |  |  | $ | 152,669",
+    "source_url": "https://www.sec.gov/Archives/edgar/data/354950/000162828026019436/hd-20260201.htm",
+    "accession": "0001628280-26-019436"
+  },
+  {
+    "fact": "operating_income",
+    "value": 20890000000,
+    "unit": "USD",
+    "source_unit": "USD millions",
+    "period": "FY2025",
+    "doc_id": "doc_10k_fy2025",
+    "line": 59,
+    "snippet": "Operating income | 20,890 |  |  | 21,526 |  |  | 21,689",
+    "source_url": "https://www.sec.gov/Archives/edgar/data/354950/000162828026019436/hd-20260201.htm",
+    "accession": "0001628280-26-019436"
+  },
+  {
+    "fact": "depreciation_amortization",
+    "value": 3273000000,
+    "unit": "USD",
+    "source_unit": "USD millions",
+    "period": "FY2025",
+    "doc_id": "doc_10k_fy2025",
+    "line": 57,
+    "snippet": "Depreciation and amortization | 3,273 |  |  | 3,034 |  |  | 2,673",
+    "source_url": "https://www.sec.gov/Archives/edgar/data/354950/000162828026019436/hd-20260201.htm",
+    "accession": "0001628280-26-019436"
+  },
+  {
+    "fact": "interest_expense",
+    "value": 2412000000,
+    "unit": "USD",
+    "source_unit": "USD millions",
+    "period": "FY2025",
+    "doc_id": "doc_10k_fy2025",
+    "line": 62,
+    "snippet": "Interest expense | 2,412 |  |  | 2,321 |  |  | 1,943",
+    "source_url": "https://www.sec.gov/Archives/edgar/data/354950/000162828026019436/hd-20260201.htm",
+    "accession": "0001628280-26-019436"
+  },
+  {
+    "fact": "cash_and_equivalents",
+    "value": 1389000000,
+    "unit": "USD",
+    "source_unit": "USD millions",
+    "period": "FY2025",
+    "doc_id": "doc_10k_fy2025",
+    "line": 12,
+    "snippet": "Cash and cash equivalents | $ | 1,389 |  |  | $ | 1,659",
+    "source_url": "https://www.sec.gov/Archives/edgar/data/354950/000162828026019436/hd-20260201.htm",
+    "accession": "0001628280-26-019436"
+  },
+  {
+    "fact": "total_debt",
+    "value": 55772000000,
+    "unit": "USD",
+    "source_unit": "USD millions",
+    "period": "FY2025",
+    "doc_id": "doc_10k_fy2025",
+    "line": 25,
+    "snippet": "Short-term debt | $ | 4,464 |  |  | $ | 316",
+    "source_url": "https://www.sec.gov/Archives/edgar/data/354950/000162828026019436/hd-20260201.htm",
+    "accession": "0001628280-26-019436",
+    "components": [
+      {
+        "field": "short_term_debt",
+        "label": "Short-term debt",
+        "value": 4464000000,
+        "line": 25,
+        "snippet": "Short-term debt | $ | 4,464 |  |  | $ | 316",
+        "doc_id": "doc_10k_fy2025"
+      },
+      {
+        "field": "current_installments_of_long_term_debt",
+        "label": "Current installments of long-term debt",
+        "value": 4967000000,
+        "line": 31,
+        "snippet": "Current installments of long-term debt | 4,967 |  |  | 4,582",
+        "doc_id": "doc_10k_fy2025"
+      },
+      {
+        "field": "long_term_debt",
+        "label": "Long-term debt, excluding current installments",
+        "value": 46341000000,
+        "line": 35,
+        "snippet": "Long-term debt, excluding current installments | 46,341 |  |  | 48,485",
+        "doc_id": "doc_10k_fy2025"
+      }
+    ]
+  },
+  {
+    "fact": "short_term_debt",
+    "value": 9431000000,
+    "unit": "USD",
+    "source_unit": "USD millions",
+    "period": "FY2025",
+    "doc_id": "doc_10k_fy2025",
+    "line": 25,
+    "snippet": "Short-term debt | $ | 4,464 |  |  | $ | 316",
+    "source_url": "https://www.sec.gov/Archives/edgar/data/354950/000162828026019436/hd-20260201.htm",
+    "accession": "0001628280-26-019436",
+    "components": [
+      {
+        "field": "short_term_debt",
+        "label": "Short-term debt",
+        "value": 4464000000,
+        "line": 25,
+        "snippet": "Short-term debt | $ | 4,464 |  |  | $ | 316",
+        "doc_id": "doc_10k_fy2025"
+      },
+      {
+        "field": "current_installments_of_long_term_debt",
+        "label": "Current installments of long-term debt",
+        "value": 4967000000,
+        "line": 31,
+        "snippet": "Current installments of long-term debt | 4,967 |  |  | 4,582",
+        "doc_id": "doc_10k_fy2025"
+      }
+    ]
+  },
+  {
+    "fact": "operating_cash_flow",
+    "value": 16325000000,
+    "unit": "USD",
+    "source_unit": "USD millions",
+    "period": "FY2025",
+    "doc_id": "doc_10k_fy2025",
+    "line": 85,
+    "snippet": "Net cash provided by operating activities | 16,325 |  |  | 19,810 |  |  | 21,172",
+    "source_url": "https://www.sec.gov/Archives/edgar/data/354950/000162828026019436/hd-20260201.htm",
+    "accession": "0001628280-26-019436"
+  },
+  {
+    "fact": "accounts_receivable",
+    "value": 5597000000,
+    "unit": "USD",
+    "source_unit": "USD millions",
+    "period": "FY2025",
+    "doc_id": "doc_10k_fy2025",
+    "line": 13,
+    "snippet": "Receivables, net | 5,597 |  |  | 4,903",
+    "source_url": "https://www.sec.gov/Archives/edgar/data/354950/000162828026019436/hd-20260201.htm",
+    "accession": "0001628280-26-019436"
+  },
+  {
+    "fact": "equity",
+    "value": 12813000000,
+    "unit": "USD",
+    "source_unit": "USD millions",
+    "period": "FY2025",
+    "doc_id": "doc_10k_fy2025",
+    "line": 46,
+    "snippet": "Total stockholders’ equity | 12,813 |  |  | 6,640",
+    "source_url": "https://www.sec.gov/Archives/edgar/data/354950/000162828026019436/hd-20260201.htm",
+    "accession": "0001628280-26-019436"
+  },
+  {
+    "fact": "audit_opinion",
+    "value": "standard_unqualified",
+    "unit": "code",
+    "source_unit": "code",
+    "period": "FY2025",
+    "doc_id": "doc_10k_fy2025",
+    "line": 6,
+    "snippet": "We have audited the accompanying consolidated balance sheets of The Home Depot, Inc. and its subsidiaries (the Company) as of February 1, 2026 and February 2, 2025, the related consolidated statements of earnings, comprehensive income, stockholders’ equity, and cash flows for each of the fiscal years in the three-year period ended February 1, 2026, and the related notes (collectively, the consolidated financial statements). In our opinion, the consolidated financial statements present fairly, in all material respects, the financial position of the Company as of February 1, 2026 and February 2, 2025, and the results of its operations and its cash flows for each of the fiscal years in the three-year period ended February 1, 2026, in conformity with U.S. generally accepted accounting principles.",
+    "source_url": "https://www.sec.gov/Archives/edgar/data/354950/000162828026019436/hd-20260201.htm",
+    "accession": "0001628280-26-019436"
+  },
+  {
+    "fact": "revenue_prior",
+    "value": 159514000000,
+    "unit": "USD",
+    "source_unit": "USD millions",
+    "period": "FY2024",
+    "doc_id": "doc_10k_fy2024",
+    "line": 52,
+    "snippet": "Net sales | $ | 164,683 |  |  | $ | 159,514 |  |  | $ | 152,669",
+    "source_url": "https://www.sec.gov/Archives/edgar/data/354950/000162828026019436/hd-20260201.htm",
+    "accession": "0001628280-26-019436"
+  },
+  {
+    "fact": "operating_income_prior",
+    "value": 21526000000,
+    "unit": "USD",
+    "source_unit": "USD millions",
+    "period": "FY2024",
+    "doc_id": "doc_10k_fy2024",
+    "line": 59,
+    "snippet": "Operating income | 20,890 |  |  | 21,526 |  |  | 21,689",
+    "source_url": "https://www.sec.gov/Archives/edgar/data/354950/000162828026019436/hd-20260201.htm",
+    "accession": "0001628280-26-019436"
+  },
+  {
+    "fact": "depreciation_amortization_prior",
+    "value": 3034000000,
+    "unit": "USD",
+    "source_unit": "USD millions",
+    "period": "FY2024",
+    "doc_id": "doc_10k_fy2024",
+    "line": 57,
+    "snippet": "Depreciation and amortization | 3,273 |  |  | 3,034 |  |  | 2,673",
+    "source_url": "https://www.sec.gov/Archives/edgar/data/354950/000162828026019436/hd-20260201.htm",
+    "accession": "0001628280-26-019436"
+  },
+  {
+    "fact": "interest_expense_prior",
+    "value": 2321000000,
+    "unit": "USD",
+    "source_unit": "USD millions",
+    "period": "FY2024",
+    "doc_id": "doc_10k_fy2024",
+    "line": 62,
+    "snippet": "Interest expense | 2,412 |  |  | 2,321 |  |  | 1,943",
+    "source_url": "https://www.sec.gov/Archives/edgar/data/354950/000162828026019436/hd-20260201.htm",
+    "accession": "0001628280-26-019436"
+  },
+  {
+    "fact": "cash_and_equivalents_prior",
+    "value": 1659000000,
+    "unit": "USD",
+    "source_unit": "USD millions",
+    "period": "FY2024",
+    "doc_id": "doc_10k_fy2024",
+    "line": 12,
+    "snippet": "Cash and cash equivalents | $ | 1,389 |  |  | $ | 1,659",
+    "source_url": "https://www.sec.gov/Archives/edgar/data/354950/000162828026019436/hd-20260201.htm",
+    "accession": "0001628280-26-019436"
+  },
+  {
+    "fact": "total_debt_prior",
+    "value": 53383000000,
+    "unit": "USD",
+    "source_unit": "USD millions",
+    "period": "FY2024",
+    "doc_id": "doc_10k_fy2024",
+    "line": 25,
+    "snippet": "Short-term debt | $ | 4,464 |  |  | $ | 316",
+    "source_url": "https://www.sec.gov/Archives/edgar/data/354950/000162828026019436/hd-20260201.htm",
+    "accession": "0001628280-26-019436",
+    "components": [
+      {
+        "field": "short_term_debt",
+        "label": "Short-term debt",
+        "value": 316000000,
+        "line": 25,
+        "snippet": "Short-term debt | $ | 4,464 |  |  | $ | 316",
+        "doc_id": "doc_10k_fy2024"
+      },
+      {
+        "field": "current_installments_of_long_term_debt",
+        "label": "Current installments of long-term debt",
+        "value": 4582000000,
+        "line": 31,
+        "snippet": "Current installments of long-term debt | 4,967 |  |  | 4,582",
+        "doc_id": "doc_10k_fy2024"
+      },
+      {
+        "field": "long_term_debt",
+        "label": "Long-term debt, excluding current installments",
+        "value": 48485000000,
+        "line": 35,
+        "snippet": "Long-term debt, excluding current installments | 46,341 |  |  | 48,485",
+        "doc_id": "doc_10k_fy2024"
+      }
+    ]
+  },
+  {
+    "fact": "short_term_debt_prior",
+    "value": 4898000000,
+    "unit": "USD",
+    "source_unit": "USD millions",
+    "period": "FY2024",
+    "doc_id": "doc_10k_fy2024",
+    "line": 25,
+    "snippet": "Short-term debt | $ | 4,464 |  |  | $ | 316",
+    "source_url": "https://www.sec.gov/Archives/edgar/data/354950/000162828026019436/hd-20260201.htm",
+    "accession": "0001628280-26-019436",
+    "components": [
+      {
+        "field": "short_term_debt",
+        "label": "Short-term debt",
+        "value": 316000000,
+        "line": 25,
+        "snippet": "Short-term debt | $ | 4,464 |  |  | $ | 316",
+        "doc_id": "doc_10k_fy2024"
+      },
+      {
+        "field": "current_installments_of_long_term_debt",
+        "label": "Current installments of long-term debt",
+        "value": 4582000000,
+        "line": 31,
+        "snippet": "Current installments of long-term debt | 4,967 |  |  | 4,582",
+        "doc_id": "doc_10k_fy2024"
+      }
+    ]
+  },
+  {
+    "fact": "operating_cash_flow_prior",
+    "value": 19810000000,
+    "unit": "USD",
+    "source_unit": "USD millions",
+    "period": "FY2024",
+    "doc_id": "doc_10k_fy2024",
+    "line": 85,
+    "snippet": "Net cash provided by operating activities | 16,325 |  |  | 19,810 |  |  | 21,172",
+    "source_url": "https://www.sec.gov/Archives/edgar/data/354950/000162828026019436/hd-20260201.htm",
+    "accession": "0001628280-26-019436"
+  },
+  {
+    "fact": "accounts_receivable_prior",
+    "value": 4903000000,
+    "unit": "USD",
+    "source_unit": "USD millions",
+    "period": "FY2024",
+    "doc_id": "doc_10k_fy2024",
+    "line": 13,
+    "snippet": "Receivables, net | 5,597 |  |  | 4,903",
+    "source_url": "https://www.sec.gov/Archives/edgar/data/354950/000162828026019436/hd-20260201.htm",
+    "accession": "0001628280-26-019436"
+  },
+  {
+    "fact": "equity_prior",
+    "value": 6640000000,
+    "unit": "USD",
+    "source_unit": "USD millions",
+    "period": "FY2024",
+    "doc_id": "doc_10k_fy2024",
+    "line": 46,
+    "snippet": "Total stockholders’ equity | 12,813 |  |  | 6,640",
+    "source_url": "https://www.sec.gov/Archives/edgar/data/354950/000162828026019436/hd-20260201.htm",
+    "accession": "0001628280-26-019436"
+  }
+]

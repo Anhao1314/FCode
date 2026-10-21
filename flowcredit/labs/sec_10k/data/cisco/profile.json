@@ -1,0 +1,141 @@
+{
+  "issuer_key": "cisco",
+  "company": "Cisco Systems, Inc.",
+  "ticker": "CSCO",
+  "cik": "0000858877",
+  "fiscal_year": "FY2025",
+  "prior_fiscal_year": "FY2024",
+  "source_unit": "USD millions",
+  "selection_note": "IBM primary 10-K incorporates the financial statements by reference; Cisco FY2025 primary contains them and matches the production planner's FY2025 period.",
+  "sections": {
+    "audit": "### AUDIT REPORT",
+    "balance": "### CONSOLIDATED BALANCE SHEETS",
+    "income": "### CONSOLIDATED STATEMENTS OF OPERATIONS",
+    "cash": "### CONSOLIDATED STATEMENTS OF CASH FLOWS",
+    "debt": "### MD&A TOTAL DEBT",
+    "note": "### NOTE 12 BORROWINGS"
+  },
+  "columns": {
+    "balance": {
+      "current": 0,
+      "prior": 1,
+      "header_current": "July 26, 2025",
+      "header_prior": "July 27, 2024"
+    },
+    "income": {
+      "current": 0,
+      "prior": 1,
+      "header_current": "July 26, 2025",
+      "header_prior": "July 27, 2024"
+    },
+    "cash": {
+      "current": 0,
+      "prior": 1,
+      "header_current": "July 26, 2025",
+      "header_prior": "July 27, 2024"
+    },
+    "note": {
+      "current": 0,
+      "prior": 1,
+      "header_current": "July 26, 2025",
+      "header_prior": "July 27, 2024"
+    },
+    "debt": {
+      "current": 0,
+      "prior": 1,
+      "confirmed": true
+    }
+  },
+  "facts": {
+    "revenue": {
+      "section": "income",
+      "labels": ["Total revenue"]
+    },
+    "operating_income": {
+      "section": "income",
+      "labels": ["OPERATING INCOME", "Operating income"]
+    },
+    "depreciation_amortization": {
+      "section": "cash",
+      "labels": ["Depreciation, amortization, and other"]
+    },
+    "interest_expense": {
+      "section": "income",
+      "labels": ["Interest expense"],
+      "absolute": true
+    },
+    "cash_and_equivalents": {
+      "section": "balance",
+      "labels": ["Cash and cash equivalents"]
+    },
+    "total_debt": {
+      "section": "debt",
+      "labels": ["Total debt"],
+      "document_current": "debt",
+      "document_prior": "debt"
+    },
+    "short_term_debt": {
+      "section": "note",
+      "labels": ["Total"],
+      "document_current": "debt",
+      "document_prior": "debt"
+    },
+    "operating_cash_flow": {
+      "section": "cash",
+      "labels": ["Net cash provided by operating activities"]
+    },
+    "accounts_receivable": {
+      "section": "balance",
+      "labels": ["Accounts receivable, net"]
+    },
+    "equity": {
+      "section": "balance",
+      "labels": ["Total equity"]
+    },
+    "audit_opinion": {
+      "section": "audit",
+      "special": "audit",
+      "document_current": "current"
+    }
+  },
+  "excerpt": [
+    {
+      "marker": "### AUDIT REPORT",
+      "mode": "between",
+      "start": "Report of Independent Registered Public Accounting Firm",
+      "end_prefix": "In our opinion,"
+    },
+    {
+      "marker": "### CONSOLIDATED BALANCE SHEETS",
+      "mode": "between",
+      "start": "Consolidated Balance Sheets",
+      "end_prefix": "TOTAL LIABILITIES AND EQUITY"
+    },
+    {
+      "marker": "### CONSOLIDATED STATEMENTS OF OPERATIONS",
+      "mode": "between",
+      "start": "Consolidated Statements of Operations",
+      "end_prefix": "NET INCOME"
+    },
+    {
+      "marker": "### CONSOLIDATED STATEMENTS OF CASH FLOWS",
+      "mode": "between",
+      "start": "Consolidated Statements of Cash Flows",
+      "end_prefix": "Net cash provided by operating activities"
+    },
+    {
+      "marker": "### MD&A TOTAL DEBT",
+      "mode": "around",
+      "anchor": "Total debt |",
+      "before": 5,
+      "after": 5
+    },
+    {
+      "marker": "### NOTE 12 BORROWINGS",
+      "mode": "between",
+      "start": "12.Borrowings",
+      "end_prefix": "Total |",
+      "after_anchor": "Total debt |"
+    }
+  ]
+}
