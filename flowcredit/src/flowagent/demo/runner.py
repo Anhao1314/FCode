@@ -34,7 +34,7 @@ from ..trajectory.exporter import export_trace, verify_trace
 from ..trajectory.recorder import TraceRecorder
 from .fixtures import SCENARIOS, Scenario, get_scenario
 from .render import Renderer
-from ..domains.finance import verify_observation as verify_finance
+from ..domains.finance import FINANCE_DOMAIN, verify_observation as verify_finance
 
 __all__ = ["PROJECT_ROOT", "WORK_DIR", "RunResult", "run_scenario", "run_all"]
 
@@ -226,7 +226,13 @@ def run_scenario(
     if scenario.crash_at:
         task, recovered = _run_crash(stack, scenario, task, observer, renderer)
     else:
-        task = Loop(stack.harness, planner=stack.planner, max_rounds=scenario.max_rounds, observer=observer).run(task.id)
+        task = Loop(
+            stack.harness,
+            planner=stack.planner,
+            max_rounds=scenario.max_rounds,
+            observer=observer,
+            result_tools=FINANCE_DOMAIN.result_tools,
+        ).run(task.id)
 
         if scenario.reconcile and task.status == "recovery_required":
             renderer.event("UNKNOWN", "模型结果未知：不重发、不退费，等待显式对账", colour=Renderer.YELLOW)
@@ -238,7 +244,13 @@ def run_scenario(
             task = stack.harness.reconcile(task, ref)
             reconciled = True
             renderer.event("RECONCILED", f"签名收据匹配 round {task.model.attempts}，继续执行", colour=Renderer.GREEN)
-            task = Loop(stack.harness, planner=stack.planner, max_rounds=scenario.max_rounds, observer=observer).run(task.id)
+            task = Loop(
+            stack.harness,
+            planner=stack.planner,
+            max_rounds=scenario.max_rounds,
+            observer=observer,
+            result_tools=FINANCE_DOMAIN.result_tools,
+        ).run(task.id)
 
     path, verified = _finish(stack, scenario, task, recorder, renderer, trace_out=trace_out)
     budget = stack.harness.budget(task).snapshot()
@@ -297,7 +309,11 @@ def _run_crash(
         renderer.event("WARNING", f"worker 未按预期崩溃：{completed.stderr.strip()[:120]}", colour=Renderer.YELLOW)
 
     resumed = stack.store.load(task.id)
-    memory = Loop(stack.harness, planner=stack.planner).restore(resumed)
+    memory = Loop(
+        stack.harness,
+        planner=stack.planner,
+        result_tools=FINANCE_DOMAIN.result_tools,
+    ).restore(resumed)
     stack.world.apply_state(memory.state())
     renderer.event(
         "RECOVERED",
@@ -306,7 +322,13 @@ def _run_crash(
         colour=Renderer.GREEN,
     )
 
-    task = Loop(stack.harness, planner=stack.planner, max_rounds=scenario.max_rounds, observer=observer).run(resumed.id)
+    task = Loop(
+        stack.harness,
+        planner=stack.planner,
+        max_rounds=scenario.max_rounds,
+        observer=observer,
+        result_tools=FINANCE_DOMAIN.result_tools,
+    ).run(resumed.id)
 
     # The property that matters is not "the counter went up by the right amount"
     # but "no round was proposed twice". Duplicates would mean a paid call was

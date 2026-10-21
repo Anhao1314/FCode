@@ -192,7 +192,7 @@ open desktop/dist/FCode.app
 
 ## 数字
 
-- **171** 项单元与场景测试，全部离线
+- **208** 项单元与场景测试，全部离线
 - **7** 个可复现场景，其中崩溃场景用真实 `SIGKILL`
 - **0** 个第三方运行时依赖（只用标准库）
 - **9** 轮完成一次完整研究，**4500 µUSD** 合成预算
@@ -212,7 +212,7 @@ flowcredit/          Python Runtime 与 Demo
     trajectory/      记录、导出、独立重算
     demo/            CLI、终端渲染、七个场景、崩溃 worker
   viewer/            实时控制台 + Trace 回放（零依赖零构建）
-  tests/             171 项 unittest
+  tests/             208 项 unittest
   docs/              架构、设计决策、框架对照、JD 映射
 archive/             v1：Node.js 研究原型（保留，不参与 CI）
 ```
@@ -229,7 +229,8 @@ v2 不再问那个问题。它把 v1 里真正有价值的部分——可恢复�
 - 演示中的金额、公司、资料全部是合成的，不是真实财报，也不构成任何投资或信贷意见。
 - 签名收据证明的是"这次调用发生了、内容是什么"，不证明供应商账单准确。`external_billing` 恒为 `not-verified`。
 - 哈希链保护的是本地记录的一致性。能同时改写数据库与签名密钥的攻击者不在威胁模型内。
-- 未做：RAG、多智能体、MCP、FastAPI、前端工程化。这些不是遗漏，是刻意的范围边界。
+- 未做：RAG、MCP、FastAPI、前端工程化。这些不是遗漏，是刻意的范围边界。
+- 多智能体目前只有一个确定性角色编排 lab（`flowcredit/labs/multi_agent/`），不是产品能力；设计与边界见 [multi-agent-lab.md](flowcredit/docs/multi-agent-lab.md)。
 
 ## 许可
 

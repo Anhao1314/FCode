@@ -20,7 +20,7 @@ from flowagent.core.contracts import Task  # noqa: E402
 from flowagent.core.receipts import ReceiptStore  # noqa: E402
 from flowagent.core.store import TaskStore  # noqa: E402
 from flowagent.demo.fixtures import get_scenario  # noqa: E402
-from flowagent.domains.finance import verify_observation  # noqa: E402
+from flowagent.domains.finance import FINANCE_DOMAIN, verify_observation  # noqa: E402
 from flowagent.memory.cases import project_case  # noqa: E402
 from flowagent.providers.mock import MockProvider  # noqa: E402
 from flowagent.review import record_review  # noqa: E402
@@ -60,7 +60,13 @@ def run_full(tmp: pathlib.Path) -> tuple[TaskStore, Task, dict]:
         allowed_tools=list(scenario.allowed_tools),
         grant=dict(scenario.grant),
     )
-    Loop(harness, planner=FinancePlanner(), max_rounds=scenario.max_rounds, observer=recorder).run(task.id)
+    Loop(
+        harness,
+        planner=FinancePlanner(),
+        max_rounds=scenario.max_rounds,
+        observer=recorder,
+        result_tools=FINANCE_DOMAIN.result_tools,
+    ).run(task.id)
     task = store.load(task.id)
     return store, task, recorder.build(task)
 

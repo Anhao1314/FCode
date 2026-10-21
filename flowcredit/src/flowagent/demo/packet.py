@@ -17,7 +17,7 @@ from typing import Any
 from ..core.hashing import canonical_json
 from ..core.receipts import ReceiptStore
 from ..core.store import TaskStore
-from ..domains.finance import verify_observation
+from ..domains.finance import FINANCE_DOMAIN, verify_observation
 from ..memory.cases import CaseIndex
 from ..memory.facts import FactStore
 from ..providers.deepseek import DeepSeekPolicy, PriceSnapshot
@@ -126,6 +126,7 @@ def run(
         max_rounds=scenario.max_rounds,
         observer=recorder,
         policy=policy,
+        result_tools=FINANCE_DOMAIN.result_tools,
     )
     memory = loop.restore(task)
     plan = loop.rebuild_plan(task, memory)

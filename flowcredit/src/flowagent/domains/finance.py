@@ -73,6 +73,7 @@ FINANCE_DOMAIN = DomainModule(
     build_tools=build_tools,
     make_planner=make_planner,
     verify=verify_observation,
+    result_tools=("calculate_margin",),
     approval_tools=APPROVAL_TOOLS,
     report_template="research-note",
 )

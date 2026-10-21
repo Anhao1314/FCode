@@ -31,7 +31,7 @@ from flowagent.tools.finance.fixtures import FinanceWorld  # noqa: E402
 from flowagent.tools.finance.planner import FinancePlanner  # noqa: E402
 from flowagent.tools.finance.tools import build_finance_tools  # noqa: E402
 from flowagent.tools.registry import ToolRegistry  # noqa: E402
-from flowagent.domains.finance import verify_observation as verify_finance
+from flowagent.domains.finance import FINANCE_DOMAIN, verify_observation as verify_finance
 
 
 class Stack:
@@ -70,6 +70,7 @@ class Stack:
             planner=self.planner,
             max_rounds=self.scenario.max_rounds,
             control=control,
+            result_tools=FINANCE_DOMAIN.result_tools,
         )
 
     def events(self) -> list[dict]:

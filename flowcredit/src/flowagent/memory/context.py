@@ -78,13 +78,18 @@ class WorkingMemory:
         computed = False
         blockers: list[str] = []
         margins: dict[str, Any] = {}
+        metrics: dict[str, int] = {}
 
         for record in self.records:
             tool, result = record.tool, record.result
             if tool == "list_documents":
                 listed = True
-            elif tool == "read_document" and "id" in result:
-                read_documents.append(result["id"])
+            elif tool == "read_document":
+                doc_id = result.get("id") or result.get("doc_id")
+                if doc_id and result.get("found", True):
+                    read_documents.append(doc_id)
+                elif result.get("found") is False:
+                    blockers.append(result.get("reason") or "document missing")
             elif tool == "normalize_units" and "id" in result:
                 normalised.append(result["id"])
             elif tool == "reconcile_basis" and "period" in result:
@@ -95,6 +100,17 @@ class WorkingMemory:
             elif tool == "check_restatement":
                 restatement_checked = True
                 restatement_applied = bool(result.get("restated"))
+            elif tool == "compute_credit_metric":
+                value = result.get("value_x100")
+                if (
+                    result.get("computed")
+                    and result.get("metric")
+                    and isinstance(value, int)
+                    and not isinstance(value, bool)
+                ):
+                    metrics[result["metric"]] = value
+                else:
+                    blockers.extend(result.get("blockers") or [])
             elif tool == "calculate_margin":
                 computed = bool(result.get("computed"))
                 blockers = list(result.get("blockers") or [])
@@ -111,7 +127,7 @@ class WorkingMemory:
         for period in sorted(set(reconciled_periods)):
             reconciled_documents.extend(self._documents_for_period(period))
 
-        return {
+        state = {
             "listed_documents": listed,
             "read_documents": sorted(set(read_documents)),
             "normalised_documents": sorted(set(normalised)),
@@ -119,10 +135,15 @@ class WorkingMemory:
             "reconciled_documents": sorted(set(reconciled_documents)),
             "restatement_checked": restatement_checked,
             "restatement_applied": restatement_applied,
-            "computed": computed,
+            "computed": computed or bool(metrics),
             "blockers": blockers,
             "margins": margins,
         }
+        # Finance's state key set must stay exactly v10: an empty ``metrics``
+        # key would change the prompt hash on every round.
+        if metrics:
+            state["metrics"] = metrics
+        return state
 
     def _documents_for_period(self, period: str) -> list[str]:
         """Map a reconciled period back to the document that owns it."""
@@ -195,8 +216,24 @@ class WorkingMemory:
         """Compress one observation to the fields a decision needs."""
         result = record.result
         if record.tool == "list_documents":
-            return {"documents": [item["id"] for item in result.get("documents", [])]}
+            return {
+                "documents": [
+                    item.get("id") or item.get("doc_id")
+                    for item in result.get("documents", [])
+                ]
+            }
         if record.tool == "read_document":
+            # The credit tool returns ``doc_id`` / ``fields``; finance returns
+            # ``id`` / ``basis`` / the two margin inputs. Branch on the result
+            # shape so finance keeps its v10 key set byte for byte.
+            if "fields" in result or "doc_id" in result:
+                return {
+                    "found": result.get("found", True),
+                    "doc_id": result.get("doc_id"),
+                    "period": result.get("period"),
+                    "unit": result.get("unit"),
+                    "fields": dict(result.get("fields") or {}),
+                }
             return {
                 "id": result.get("id"),
                 "period": result.get("period"),
@@ -204,6 +241,14 @@ class WorkingMemory:
                 "basis": result.get("basis"),
                 "revenue": result.get("revenue"),
                 "gross_profit": result.get("gross_profit"),
+            }
+        if record.tool == "compute_credit_metric":
+            return {
+                "metric": result.get("metric"),
+                "period": result.get("period"),
+                "value_x100": result.get("value_x100"),
+                "computed": result.get("computed"),
+                "blockers": result.get("blockers", []),
             }
         if record.tool == "normalize_units":
             return {

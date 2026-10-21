@@ -30,7 +30,7 @@ from flowagent.tools.finance.fixtures import FinanceWorld  # noqa: E402
 from flowagent.tools.finance.planner import BLUEPRINT, FinancePlanner  # noqa: E402
 from flowagent.tools.finance.tools import build_finance_tools  # noqa: E402
 from flowagent.tools.registry import ToolRegistry  # noqa: E402
-from flowagent.domains.finance import verify_observation as verify_finance
+from flowagent.domains.finance import FINANCE_DOMAIN, verify_observation as verify_finance
 
 
 def observation(tool: str, result: dict, arguments: dict | None = None, *, digest: str = "h") -> Observation:
@@ -165,9 +165,17 @@ class ReplayTest(unittest.TestCase):
             allowed_tools=list(self.harness.registry.names),
             grant={"allowed_tools": list(self.harness.registry.names)},
         )
-        loop = Loop(self.harness, planner=self.planner, max_rounds=12)
+        loop = Loop(
+            self.harness,
+            planner=self.planner,
+            max_rounds=12,
+            result_tools=FINANCE_DOMAIN.result_tools,
+        )
         done = loop.run(task.id)
         self.assertEqual(done.status, "succeeded")
+        # One result observation keeps the historical single-result shape.
+        self.assertNotIn("results", done.result)
+        self.assertEqual(done.result["verification"], "runtime-recomputed")
 
         stored = Plan.from_dict(done.plan_state)
         memory = loop.restore(done)
@@ -189,7 +197,12 @@ class ReplayTest(unittest.TestCase):
             allowed_tools=list(self.harness.registry.names),
             grant={"allowed_tools": list(self.harness.registry.names)},
         )
-        Loop(self.harness, planner=self.planner, max_rounds=12).run(task.id)
+        Loop(
+            self.harness,
+            planner=self.planner,
+            max_rounds=12,
+            result_tools=FINANCE_DOMAIN.result_tools,
+        ).run(task.id)
         events = self.store.events(task.id)
         updates = [event for event in events if event["type"] == "plan_updated"]
         self.assertGreaterEqual(len(updates), 9)

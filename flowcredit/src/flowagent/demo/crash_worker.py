@@ -26,7 +26,7 @@ from ..tools.finance.fixtures import FinanceWorld
 from ..tools.finance.planner import FinancePlanner
 from ..tools.finance.tools import build_finance_tools
 from ..tools.registry import ToolRegistry
-from ..domains.finance import verify_observation as verify_finance
+from ..domains.finance import FINANCE_DOMAIN, verify_observation as verify_finance
 
 
 def main() -> int:
@@ -69,7 +69,12 @@ def main() -> int:
         receipts=receipts,
         verifier=lambda observation: verify_finance(world, observation),
     )
-    Loop(harness, planner=FinancePlanner(), max_rounds=max_rounds).run(task_id)
+    Loop(
+        harness,
+        planner=FinancePlanner(),
+        max_rounds=max_rounds,
+        result_tools=FINANCE_DOMAIN.result_tools,
+    ).run(task_id)
     return 0
 
 

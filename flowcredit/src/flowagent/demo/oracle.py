@@ -25,7 +25,7 @@ from typing import Any
 
 from ..core.receipts import ReceiptStore
 from ..core.store import TaskStore
-from ..domains.finance import verify_observation
+from ..domains.finance import FINANCE_DOMAIN, verify_observation
 from ..memory.cases import CaseIndex
 from ..memory.facts import FactStore
 from ..providers.oracle import OracleFileProvider
@@ -150,6 +150,7 @@ def run(
             planner=FinancePlanner(),
             max_rounds=max_rounds or scenario.max_rounds,
             observer=observer,
+            result_tools=FINANCE_DOMAIN.result_tools,
         ).run(task.id)
         final = recorder.build(store.load(task.id))
         run_id = f"lab-{scenario.key}"

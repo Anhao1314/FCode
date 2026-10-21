@@ -21,7 +21,7 @@ from flowagent.core.contracts import AgentError  # noqa: E402
 from flowagent.core.receipts import ReceiptStore  # noqa: E402
 from flowagent.core.store import TaskStore  # noqa: E402
 from flowagent.demo.fixtures import get_scenario  # noqa: E402
-from flowagent.domains.finance import verify_observation  # noqa: E402
+from flowagent.domains.finance import FINANCE_DOMAIN, verify_observation  # noqa: E402
 from flowagent.memory.cases import CaseIndex, project_case  # noqa: E402
 from flowagent.providers.mock import MockProvider  # noqa: E402
 from flowagent.runtime.harness import Harness  # noqa: E402
@@ -62,7 +62,13 @@ def run_trace(tmp: pathlib.Path) -> dict:
         allowed_tools=list(scenario.allowed_tools),
         grant=dict(scenario.grant),
     )
-    Loop(harness, planner=FinancePlanner(), max_rounds=scenario.max_rounds, observer=recorder).run(task.id)
+    Loop(
+        harness,
+        planner=FinancePlanner(),
+        max_rounds=scenario.max_rounds,
+        observer=recorder,
+        result_tools=FINANCE_DOMAIN.result_tools,
+    ).run(task.id)
     trace = recorder.build(store.load(task.id))
     store.close()
     return trace
@@ -283,7 +289,11 @@ class MemoryRecallTests(unittest.TestCase):
         self.assertEqual(detail["query"], task.objective)
         self.store.verify_chain(task.id)
 
-        memory = Loop(self.harness, planner=FinancePlanner()).restore(self.store.load(task.id))
+        memory = Loop(
+            self.harness,
+            planner=FinancePlanner(),
+            result_tools=FINANCE_DOMAIN.result_tools,
+        ).restore(self.store.load(task.id))
         context = memory.build(1, {}, None)
         self.assertEqual(len(context["prior_cases"]), 3)
         self.assertEqual(context["prior_cases"][0]["run_id"], "run-0")
