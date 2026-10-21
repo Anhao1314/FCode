@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Merge the LoRA adapter into fp16 weights and export a Q4_K_M GGUF for Ollama.
+# Merge the QLoRA adapter into its 4-bit base (matching training numerics),
+# then export a Q4_K_M GGUF for Ollama.
 # ~10-20 min on T4. Output: /root/fcode-sft/out/fcode-qwen3-4b-Q4_K_M.gguf (~2.5 GB)
 set -euo pipefail
 ROOT=/root/fcode-sft
@@ -7,23 +8,27 @@ ROOT=/root/fcode-sft
 source "$ROOT/.venv/bin/activate"
 mkdir -p "$ROOT/out" "$ROOT/llama.cpp"
 
-cat > "$ROOT/cloud/merge_lora.yaml" <<'YAML'
-model_name_or_path: /root/fcode-sft/models/Qwen3-4B-Instruct-2507
-adapter_name_or_path: /root/fcode-sft/saves/full
-template: qwen3
-finetuning_type: lora
-export_dir: /root/fcode-sft/out/merged
-export_size: 4
-export_device: cpu
-export_legacy_format: false
-YAML
-
-echo "==> [1/3] merge LoRA -> fp16"
-llamafactory-cli export "$ROOT/cloud/merge_lora.yaml"
+echo "==> [1/3] merge LoRA -> fp16 (from the 4-bit training base)"
+if [ -f "$ROOT/out/merged/config.json" ] && [ -f "$ROOT/out/merged/model.safetensors.index.json" ]; then
+  echo "    merged checkpoint exists, skipping"
+else
+  python "$ROOT/cloud/merge_4bit.py" \
+    --base "$ROOT/models/Qwen3-4B-Instruct-2507" \
+    --adapter "$ROOT/saves/full" \
+    --out "$ROOT/out/merged"
+fi
 
 echo "==> [2/3] fetch llama.cpp converter"
 if [ ! -f "$ROOT/llama.cpp/convert_hf_to_gguf.py" ]; then
-  git clone --depth 1 https://github.com/ggml-org/llama.cpp "$ROOT/llama.cpp"
+  # github.com is unreliable from this network; use a GitHub mirror with a
+  # second mirror as fallback.
+  rm -rf "$ROOT/llama.cpp"
+  mkdir -p "$ROOT/llama.cpp"
+  URL="https://gh-proxy.com/https://github.com/ggml-org/llama.cpp/archive/refs/heads/master.tar.gz"
+  curl -L --fail --retry 3 --retry-delay 2 -o "$ROOT/llama.cpp.tar.gz" "$URL" \
+    || curl -L --fail --retry 3 --retry-delay 2 -o "$ROOT/llama.cpp.tar.gz" \
+      "https://ghproxy.net/https://github.com/ggml-org/llama.cpp/archive/refs/heads/master.tar.gz"
+  tar xzf "$ROOT/llama.cpp.tar.gz" -C "$ROOT/llama.cpp" --strip-components=1
 fi
 pip install -q -i https://mirrors.aliyun.com/pypi/simple/ -r "$ROOT/llama.cpp/requirements/requirements-convert_hf_to_gguf.txt"
 
@@ -42,7 +47,6 @@ cat > "$ROOT/out/Modelfile" <<'EOF'
 FROM ./fcode-qwen3-4b-Q4_K_M.gguf
 PARAMETER temperature 0
 PARAMETER num_ctx 4096
-SYSTEM "你是 FCode 运行时内的模型。你只能提议动作，永远不能执行。每次回复输出恰好一个 JSON 对象。"
 EOF
 
 echo

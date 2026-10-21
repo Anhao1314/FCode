@@ -32,6 +32,32 @@ from .prompt import PROMPT_VERSION, parse_proposal_text, render_prompt
 
 __all__ = ["LocalProvider"]
 
+# Wire-format schema for one proposal. Passing this to an endpoint that
+# supports structured outputs prevents a missing quote from turning into a
+# syntactically valid but semantically wrong argument.
+PLAN_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "version": {"enum": ["flowagent.plan/v1"]},
+        "steps": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 1,
+            "items": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string"},
+                    "tool": {"type": "string"},
+                    "arguments": {"type": "object"},
+                },
+                "required": ["id", "tool", "arguments"],
+            },
+        },
+        "todo_id": {"type": "string"},
+    },
+    "required": ["version", "steps"],
+}
+
 
 class LocalProvider:
     """Proposal source backed by a local OpenAI-compatible chat endpoint."""
@@ -47,6 +73,8 @@ class LocalProvider:
         temperature: float = 0.0,
         max_tokens: int = 512,
         timeout: float = 120.0,
+        json_mode: bool = False,
+        structured: bool = False,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self.model = model
@@ -54,11 +82,13 @@ class LocalProvider:
         self.temperature = temperature
         self.max_tokens = max_tokens
         self.timeout = timeout
+        self.json_mode = json_mode
+        self.structured = structured
 
     # ------------------------------------------------------------------ call
 
     def _chat(self, system: str, user: str) -> dict[str, Any]:
-        body = json.dumps({
+        body: dict[str, Any] = {
             "model": self.model,
             "messages": [
                 {"role": "system", "content": system},
@@ -67,10 +97,17 @@ class LocalProvider:
             "temperature": self.temperature,
             "max_tokens": self.max_tokens,
             "stream": False,
-        }).encode("utf-8")
+        }
+        if self.structured:
+            body["response_format"] = {
+                "type": "json_schema",
+                "json_schema": {"name": "flowagent_plan", "schema": PLAN_SCHEMA},
+            }
+        elif self.json_mode:
+            body["response_format"] = {"type": "json_object"}
         request = urllib.request.Request(
             self.base_url + "/chat/completions",
-            data=body,
+            data=json.dumps(body).encode("utf-8"),
             method="POST",
             headers={
                 "Content-Type": "application/json",

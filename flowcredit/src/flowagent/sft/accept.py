@@ -32,9 +32,13 @@ def _models(endpoint: str, model: str, timeout: float = 5.0) -> dict[str, Any]:
         for item in payload.get("data") or payload.get("models") or []
         if isinstance(item, dict)
     ]
+
+    def canonical(name: str) -> str:
+        return name[:-7] if name.endswith(":latest") else name
+
     return {
         "available": True,
-        "model_found": model in names,
+        "model_found": any(canonical(name) == canonical(model) for name in names),
         "models": names,
         "error": "",
     }
