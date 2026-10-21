@@ -9,11 +9,13 @@
 第一个可运行的信用产品面是**上市公司 / 发债主体的信用核查备忘录**：
 
 - 输入：合成年报、债务明细、评级报告、重述说明；
-- 输出：8 个指标、一份由 Host 组装的 `memo.json` + `memo.md`、可验证的
-  trace 哈希链；
-- 证据不足时：memo `issued: false`、`signed: false`、
-  `decision_status: blocked`，列出 `missing`，不写任何编造数值，终态
-  `failed / INSUFFICIENT_EVIDENCE`。
+- 输出：5 个**必需**指标 + 3 个**可选**观察、一份由 Host 组装的
+  `memo.json` + `memo.md`、可验证的 trace 哈希链；
+- 必需指标缺失时：memo `issued: false`、`signed: false`、
+  `decision_status: blocked`，列出 `missing_required`，不写任何编造数值，终态
+  `failed / INSUFFICIENT_EVIDENCE`；
+- 只有可选指标缺失时：memo 仍可签发，写入 `missing_optional` 与 caveat；
+  可选指标存在时参与 reject/watch 阈值。
 
 模型只提议读哪一个文档、算哪一个指标；它不能传数值，也不能写 memo。Host 可以
 验证数字、组装 memo、给出策略建议，但它不替人签字，也不把策略输出包装成信贷
@@ -25,7 +27,7 @@
 | --- | --- |
 | `flowagent/tools/credit/world.py` | 3 家合成发行人、文档、8 个指标公式 |
 | `flowagent/tools/credit/tools.py` | 5 个 `effect=read` 工具 |
-| `flowagent/tools/credit/planner.py` | 14 个普通 todo 的蓝图与依赖 |
+| `flowagent/tools/credit/planner.py` | 14 个 todo（4 个 optional）的蓝图与依赖 |
 | `flowagent/tools/credit/verifier.py` | 独立重算，逐字段比较 |
 | `flowagent/tools/credit/memo.py` | Host 组装 memo + 冻结策略建议 |
 | `flowagent/domains/credit.py` | `CREDIT_DOMAIN`（`credit-due-diligence`） |
@@ -45,6 +47,13 @@
 | 恒星智造 | `hengxing` | 两期 standard audit，AA- 稳定，杠杆偏高 | `watch` |
 | 远洋材料 | `yuanyang` | FY2024 EBITDA 300,000 → 270,000 重述，qualified audit，A → BBB downgrade | `reject` |
 | 云岭设备 | `yunling` | 债务明细缺失，BBB 稳定 | `insufficient_evidence` |
+
+指标分级（memo v2）：
+
+- **必需 5**：`net_debt_to_ebitda`、`interest_coverage`、
+  `ocf_to_short_term_debt`、`receivables_to_revenue`、`audit_opinion`。
+- **可选 3**：`related_party_funding_ratio`、`contingent_liabilities_to_equity`、
+  `rating_migration`。
 
 ### FY2025 指标
 
@@ -91,31 +100,39 @@ c2  read_document(doc_ar_fy2024)
 c3  check_restatement(doc_ar_fy2024)
 c4  read_document(doc_ar_fy2025)
 c5  read_document(doc_debt_fy2025)
-c6  read_document(doc_rating_fy2025)
+c6  read_document(doc_rating_fy2025)          optional
 c7  compute net_debt_to_ebitda FY2025
 c8  compute interest_coverage FY2025
 c9  compute ocf_to_short_term_debt FY2025
 c10 compute receivables_to_revenue FY2025
-c11 compute related_party_funding_ratio FY2025
-c12 compute contingent_liabilities_to_equity FY2025
+c11 compute related_party_funding_ratio FY2025       optional
+c12 compute contingent_liabilities_to_equity FY2025  optional
 c13 compute audit_opinion FY2025
-c14 compute rating_migration FY2025
+c14 compute rating_migration FY2025                  optional
 ```
 
-依赖：c5 → c7 / c9 / c11 / c12；c6 → c14。c5 缺失时标 `blocked`，四个依赖项
-标 `abandoned`；c8 / c10 / c13 仍执行。计划最终 `is_blocked()`，Loop 以
-`INSUFFICIENT_EVIDENCE` 停止。
+`Todo.required` 默认 `True`；c6 / c11 / c12 / c14 显式 `required=False`。依赖：
+c5 → c7 / c9 / c11 / c12；c6 → c14。c5 缺失时标 `blocked`，四个依赖项
+标 `abandoned`；仍 pending 的 optional（c6 / c14）也标 `abandoned`，因为
+required 已阻断、optional 不可能改变策略结论；c8 / c10 / c13 仍执行。计划最终
+`is_blocked()`，Loop 以 `INSUFFICIENT_EVIDENCE` 停止。
 
-成功门验证**所有** `compute_credit_metric` observation：结果 todo 必须都是
-`done`，每个声明的结果工具至少有一个 observation，每一个都从 world 重算通过。
-一个结果 observation 时保留金融域的单结果形状；多个结果 observation 时
-`task.result` 使用 `{"verified": true, "results": [...]}`，顺序与事件链一致。
+成功门区分 required / optional result todo：
+
+- required result todo 必须 `done`，其 observation 必须 `computed: true` 并从
+  world 独立重算通过；required 的 abandoned / blocked / 未计算仍失败；
+- optional result todo 允许 `done` / `abandoned` / `blocked`；`computed: false`
+  的 optional observation 跳过，不作为验证失败；`computed: true` 的 optional
+  observation 仍然必须重算通过。
+- 一个结果 observation 时保留金融域的单结果形状；多个结果 observation 时
+  `task.result` 使用 `{"verified": true, "results": [...]}`，顺序与事件链一致。
 
 ## 策略建议（冻结，不是信贷决定）
 
 顺序：`insufficient_evidence` → `reject` → `watch` → `pass`。
 
-- `insufficient_evidence`：任一必需指标没有 `computed: true`。
+- `insufficient_evidence`：任一**必需**指标没有 `computed: true`；此规则优先于
+  所有阈值。
 - `reject`：audit ∈ {disclaimer, adverse}；或 rating downgrade；或
   `net_debt_to_ebitda > 50000`；或 `interest_coverage < 20000`。
 - `watch`：audit qualified；或 `net_debt_to_ebitda > 35000`；或
@@ -124,10 +141,13 @@ c14 compute rating_migration FY2025
   `contingent_liabilities_to_equity > 1000`。
 - `pass`：其余。
 
+可选指标**存在时**才参与 reject/watch；缺失时不触发阈值，也不阻断。例如
+rating 缺失不会 reject，rating=downgrade 仍然 reject；related/contingent
+缺失不会 watch，超阈值仍然 watch。
+
 `memo.rule_fired` 记录第一条触发的规则，例如
 `net_debt_to_ebitda > 3.5x`、`rating_migration == downgrade`。
-
-这是产品策略，不是信贷建议；阈值冻结在 `memo.py::recommendation_for`。
+这是产品策略，不是信贷建议；阈值冻结在 `memo.py::conclusion_for`。
 
 ## Memo
 
@@ -136,37 +156,42 @@ c14 compute rating_migration FY2025
 ### Host 签发 ≠ 人工签字
 
 - **Host 签发（`issued`）**：所有必需指标已验证、citation 可回读、memo 由
-  Host 组装完成。它不是信贷决定，也不是人的签字。
+  Host 组装完成。它不是信贷决定，也不是人的签字。可选指标缺失不阻止签发。
 - **策略建议（`recommended_conclusion`）**：`watch` / `reject` / `pass` /
   `insufficient_evidence` 是冻结策略的输出，`conclusion_authority` 恒为
   `"policy"`。
 - **人工签字（`signed`）**：只有 `reviewer.decision` 属于
-  `accept / needs_evidence / qualified / redo` 时才为 true。Phase 1 没有接
+  `accept / needs_evidence / qualified / redo` 时才为 true。Phase 2b 没有接
   人工复核流程，因此 A/B/C 的 `signed` 都为 false。
-- **复核状态（`decision_status`）**：A/B 为 `pending_human_review`，C 为
+- **复核状态（`decision_status`）**：签发时为 `pending_human_review`，否则为
   `blocked`。
 
-字段与规则：
+字段与规则（`credit-memo/v2`）：
 
-- `memo_version: "credit-memo/v1"`、`issuer`、`issuer_key`、`as_of`、
-  `synthetic: true`；
+- `memo_version`、`issuer`、`issuer_key`、`as_of`、`synthetic`、
+  `research_only`、`source_url`、`accession`、`cik`；
 - `recommended_conclusion`、`conclusion_authority: "policy"`、
   `decision_status`、`issued`、`signed`、`rule_fired`、`metrics`、`trend`、
-  `caveats`、`reviewer`、`missing`、`blockers`、`chain_head`、`verified`；
+  `caveats`、`reviewer`、`blockers`、`chain_head`、`verified`；
+- 分级字段：`required_metrics`、`optional_metrics`、`missing_required`、
+  `missing_optional`、`optional_verified`；`missing` 保留为两者之和；
+- `verified` 表示**必需**结果集完整且全部重算通过；`optional_verified` 表示
+  三个可选指标都存在且通过重算；
+- `issued = verified and recommended_conclusion != "insufficient_evidence"`；
+- `signed` 只由 `reviewer.decision` 决定；Phase 2b `reviewer.decision` 为 null，
+  所以 `signed: false`；
 - 每个 metric 至少 1 条 citation；memo 会回读 `doc_id` / `line` / `field`，
   不合法则抛 `MEMO_CITATION_INVALID`；
-- `issued = verified and recommended_conclusion != "insufficient_evidence"`；
-- `signed` 只由 `reviewer.decision` 决定；Phase 1 `reviewer.decision` 为 null，
-  所以 `signed: false`；
-- 拒绝 memo 用 `issued: false`、`signed: false`、`missing`、`blockers`，
-  不写编造数值；
-- `reviewer` 包含 `decision`、`reason`、`signed_at`。
+- 缺失可选指标写入 `missing_optional`，并生成 caveat，例如
+  `10-K 未披露 rating_migration / related_party_funding_ratio / contingent_liabilities_to_equity；这些可选指标未参与策略结论。`
+- 缺失必需指标写入 `missing_required` 与 `blockers`，memo `issued: false`、
+  `decision_status: blocked`，不写编造数值。
 
 恒星智造示例（truncated）：
 
 ```json
 {
-  "memo_version": "credit-memo/v1",
+  "memo_version": "credit-memo/v2",
   "issuer": "恒星智造（合成数据）",
   "issuer_key": "hengxing",
   "as_of": "FY2025",
@@ -176,6 +201,11 @@ c14 compute rating_migration FY2025
   "decision_status": "pending_human_review",
   "issued": true,
   "signed": false,
+  "required_metrics": ["net_debt_to_ebitda", "interest_coverage", "ocf_to_short_term_debt", "receivables_to_revenue", "audit_opinion"],
+  "optional_metrics": ["related_party_funding_ratio", "contingent_liabilities_to_equity", "rating_migration"],
+  "missing_required": [],
+  "missing_optional": [],
+  "optional_verified": true,
   "rule_fired": "net_debt_to_ebitda > 3.5x",
   "metrics": [
     {
@@ -199,10 +229,12 @@ c14 compute rating_migration FY2025
 caveat 明确写出 `FY2024 EBITDA 从 300,000 重述为 270,000。`
 
 云岭设备的 memo `issued: false`、`signed: false`、`decision_status: blocked`，
-`missing` 列出 `net_debt_to_ebitda` / `ocf_to_short_term_debt` /
-`related_party_funding_ratio` / `contingent_liabilities_to_equity`，只包含
-可计算的 4 个指标，不写编造数值。它的 `verified: false` 表示必需结果集不完整；
-trace 链仍然可以独立验证。
+`missing_required` 为 `net_debt_to_ebitda` / `ocf_to_short_term_debt`；
+`missing_optional` 为 `related_party_funding_ratio` /
+`contingent_liabilities_to_equity` / `rating_migration`。虽然合成 world 仍有
+rating 报告，c5 required 阻断后 planner 放弃了仍 pending 的 c6 / c14，rating
+没有进入 memo；memo 只包含可计算的 3 个指标，不写编造数值。它的
+`verified: false` 表示必需结果集不完整；trace 链仍然可以独立验证。
 
 `memo.json` 与 `memo.md` 写入 run 目录；`memo.md` 的数字全部来自 JSON。
 `memo_sha256` 是对 memo 的 canonical JSON 计算的 SHA-256；CLI 同时输出
@@ -222,8 +254,8 @@ python credit_demo.py --all
 `issuer`、`status`、`failure_code`、`recommended_conclusion`、
 `conclusion_authority`、`decision_status`、`issued`、`signed`、`rule_fired`、
 `metrics`、`memo_path`、`memo_sha256`、`chain_head`、`verified`，以及
-`chain_verified`、`missing`、`memo_md_path`。不使用裸 `conclusion` 字段表示
-决定。
+`chain_verified`、`missing`、`missing_required`、`missing_optional`、
+`optional_verified`、`memo_md_path`。不使用裸 `conclusion` 字段表示决定。
 
 默认 run 目录是 `flowcredit/work/credit/<issuer_key>/`（`work/` 已在
 `.gitignore` 中）：
@@ -237,19 +269,24 @@ memo.md
 
 ## 测试
 
-- `test_credit_domain.py`：三家发行人的 8 个指标精确值、14 步蓝图、
-  5 个只读工具、restatement、verifier 篡改拒绝、domain 注册；
+- `test_plan.py`：`Todo.required` 序列化 / 旧 plan 默认 True、optional blocked
+  完成而 required blocked 失败的 Plan 语义；
+- `test_credit_domain.py`：三家发行人的 8 个指标精确值、14 步蓝图与 optional
+  标记、5 个只读工具、restatement、verifier 篡改拒绝、optional computed:false
+  被跳过、required 缺失仍阻断；
 - `test_credit_memo.py`：memo citation 可回读、issued/signed/decision_status
-  规则、A/B/C 策略建议、B 的 restated trend 与 caveat、C 的 missing、pass 纯
-  策略单测、`credit_demo.py --all`；
+  规则、A/B/C 策略建议、B 的 restated trend 与 caveat、C 的 missing_required /
+  missing_optional、可选指标阈值、`credit_demo.py --all`；
+- `test_sec_10k_extract.py`：Cisco memo v2 pass/issued/pending、missing_optional
+  三个、caveat 与 citation 回读；
 - `test_credit_dd_spike.py`：lab 薄封装与 Phase 0 seam；
 - `test_sft_export.py`：金融 v10 golden hash 与信用 context fields/metrics。
 
 ## 边界与下一步
 
-**已实现**：合成数据、8 指标、3 家发行人、Host memo、拒绝签字、CLI、
-trace/chain、指标级 citation、金融 v10 不回归。
+**已实现**：合成数据、5 个必需 + 3 个可选指标、3 家发行人、分级 memo v2、
+Host 签发与人工签字分离、CLI、trace/chain、指标级 citation、金融 v10 不回归。
 
-**未实现**：真实公开数据、PDF/OCR/表格抽取、真实 LLM、viewer 集成、
-10 家以上评测集、真实评级机构数据。Phase 2 的目标是真实公开数据 + 10 家
-发行人评测；在此之前，本域只证明“可审计的信用核查编排与拒绝语义”。
+**未实现**：PDF/OCR/表格抽取、真实 LLM、viewer 集成、10 家以上评测集、真实
+评级机构数据。Phase 2b 已用 Cisco FY2025 10-K 验证真实公开数据的单家抽取；
+下一步是第二份 10-K（Phase 2c），通过后再做 10 家发行人评测。

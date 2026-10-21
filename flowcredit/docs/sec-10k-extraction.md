@@ -1,11 +1,12 @@
-# SEC 10-K 抽取 spike（Phase 2a）
+# SEC 10-K 抽取 spike（Phase 2a / 2b）
 
 > 真实公开数据，仅用于抽取研究；不构成任何信贷、投资或评级意见。
 > 本阶段只验证单份 10-K 的确定性抽取，不做 10 家评测，不接真实 LLM。
 
 ## 问题
 
-Phase 1 的信用域能在合成数据上跑通 8 个指标和 Host memo。Phase 2a 只回答：
+Phase 1 的信用域能在合成数据上跑通 8 个指标和 Host memo；Phase 2b 把它们
+分成 5 个必需 + 3 个可选。Phase 2a 只回答：
 
 > 一份真实的 SEC 10-K，能不能在不改 Runtime、不引入第三方运行时依赖、
 > 不用 LLM 抽数的前提下，被确定性地转成同一套事实、指标和行级 citation？
@@ -222,24 +223,37 @@ EBITDA 代理 = `operating_income + depreciation_amortization` =
   “contingent liabilities” 总额；
 - `rating_migration`：10-K 没有评级报告。
 
-这些指标返回 `computed: false` + `blockers`，不写 0，不猜。**这是产品语义，
-不是抽取 bug**：10-K 本身没有这些披露，memo 因此 `issued: false`、
-`decision_status: blocked`，等待人工复核；不要为了凑 8 个指标去补值。
+这些是 **可选** 指标，返回 `computed: false` + `blockers`，不写 0、不猜。
+**这是产品语义，不是抽取 bug**：10-K 本身没有这些披露。Phase 2b 的分级策略
+下，可选缺失只进入 `missing_optional` 与 caveat，不阻断签发；5 个必需指标
+完整时 memo 仍可 `issued: true`。不要为了凑 8 个指标去补值。
 
-### Memo
+### Memo v2
 
-生产 memo 被复用，lab 只覆盖真实数据元信息：
+生产 memo 被复用；真实数据元信息由 `build_memo` 的参数传入，lab 不再事后打
+补丁：
 
 ```text
-recommended_conclusion = insufficient_evidence
+memo_version           = credit-memo/v2
+recommended_conclusion = pass
+rule_fired             = no threshold fired
 conclusion_authority   = policy
-decision_status        = blocked
-issued                 = false
+decision_status        = pending_human_review
+issued                 = true
 signed                 = false
-verified               = false
-missing                = [related_party_funding_ratio,
+verified               = true
+optional_verified      = false
+required_metrics       = [net_debt_to_ebitda, interest_coverage,
+                          ocf_to_short_term_debt, receivables_to_revenue,
+                          audit_opinion]
+missing_required       = []
+missing_optional       = [related_party_funding_ratio,
                           contingent_liabilities_to_equity,
                           rating_migration]
+caveats                = [10-K 未披露 rating_migration /
+                          related_party_funding_ratio /
+                          contingent_liabilities_to_equity；
+                          这些可选指标未参与策略结论。]
 synthetic              = false
 research_only          = true
 source_url             = <SEC URL>
@@ -258,27 +272,28 @@ python3.12 -m unittest discover -s tests
 python3.12 demo.py all
 python3.12 -m unittest tests.test_multi_agent_lab
 PYTHONPATH=src python3.12 labs/credit_dd/spike.py
+python3.12 credit_demo.py --all
 PYTHONPATH=src python3.12 labs/sec_10k/spike.py
 ```
 
-Phase 2a.1 的结果：
+Phase 2b 的结果：
 
 - 21/21 事实的 `value`、`unit`、`source_unit`、`period`、`doc_id`、`line`、
   `snippet` 与 ground truth 精确匹配（11 当前期 + 10 比较期）；
-- 5 个可算指标与 ground truth 一致；3 个缺失指标没有编造值；
+- 5 个必需指标与 ground truth 一致；3 个可选指标缺失，没有编造值；
 - 四类审计意见（standard / qualified / adverse / disclaimer）分类正确，模糊
   文本返回 `None`；
 - 每条 citation 都能在 `excerpt.txt` 回读；
-- memo `recommended_conclusion=insufficient_evidence`、`issued=false`、
-  `decision_status=blocked`，`missing` 包含 `rating_migration`；
-- 231 个既有测试 + 4 个新增测试、金融 v10 golden、`demo.py all`、multi-agent、
-  credit spike 全部不回归。
+- memo v2 `recommended_conclusion=pass`、`issued=true`、`signed=false`、
+  `decision_status=pending_human_review`、`missing_required=[]`、
+  `missing_optional` 3 个、`optional_verified=false`；
+- 金融 v10 golden、`demo.py all`、multi-agent、credit spike 全部不回归。
 
 ## Go / No-Go
 
-**Go（建议进入 Phase 2b）**：21/21 事实精确匹配，5/5 可算指标一致，抽取路径
-完全确定性、零第三方、零 LLM。下一阶段先扩到第二份 10-K，而不是直接做 10 家
-评测。
+**Go（建议进入 Phase 2c）**：21/21 事实精确匹配，5/5 必需指标一致，Cisco
+memo v2 已可签发（pass / issued / pending_human_review）。下一阶段先扩到
+第二份 10-K，而不是直接做 10 家评测。
 
 但需要带着以下边界进入：
 
@@ -287,5 +302,5 @@ Phase 2a.1 的结果：
 - 没有 XBRL 双源校验；真实评测前应至少为每个 fact 增加一个“HTML citation
   回读”断言（本 spike 已有）；
 - rating / related-party / contingent 在 10-K 中缺失是产品语义，不是抽取
-  bug；不要为了凑 8 个指标去猜；
+  bug；它们是可选指标，不要为了凑 8 个指标去猜；
 - 真实 LLM 仍未接入；当前验证的是抽取与世界适配，不是模型质量。

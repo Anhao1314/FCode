@@ -1,4 +1,4 @@
-# SEC 10-K 抽取 lab（Phase 2a）
+# SEC 10-K 抽取 lab（Phase 2a / 2b）
 
 > 真实公开数据；仅用于 FCode 抽取研究，不构成任何信贷或投资意见。
 > 这里不做投资结论，只验证“一份 10-K 能否确定性转成同一套事实、指标和 citation”。
@@ -194,29 +194,39 @@ EBITDA proxy = `operating_income + depreciation_amortization` = 11,760 + 2,811 =
 Missing metrics: `related_party_funding_ratio`,
 `contingent_liabilities_to_equity`, `rating_migration`. The 10-K does not
 disclose a related-party loan total, a single contingent-liability total, or a
-rating migration; these are returned as blocked, never zero. This is product
-semantics, not an extraction bug — the memo is `issued: false` and
-`decision_status: blocked` because the evidence is incomplete, not because the
-extractor failed.
+rating migration; these are returned as blocked, never zero. They are
+**optional** in memo v2, so they do not block issuance: the memo is
+`issued: true`, records them in `missing_optional`, and adds a caveat. This is
+product semantics, not an extraction bug.
 
-The memo is therefore:
+The memo state is therefore:
 
 ```text
-recommended_conclusion = insufficient_evidence
-conclusion_authority  = policy
-decision_status       = blocked
-issued                = false
-signed                = false
-verified              = false
-missing               = [related_party_funding_ratio,
-                         contingent_liabilities_to_equity,
-                         rating_migration]
+memo_version            = credit-memo/v2
+recommended_conclusion  = pass
+rule_fired              = no threshold fired
+conclusion_authority    = policy
+decision_status         = pending_human_review
+issued                  = true
+signed                  = false
+verified                = true
+optional_verified       = false
+required_metrics        = 5
+missing_required        = []
+missing_optional        = [related_party_funding_ratio,
+                           contingent_liabilities_to_equity,
+                           rating_migration]
+caveats                 = [10-K 未披露 rating_migration /
+                           related_party_funding_ratio /
+                           contingent_liabilities_to_equity；
+                           这些可选指标未参与策略结论。]
 ```
 
 The memo JSON/Markdown are written under `work/sec_10k/` (gitignored). The memo
 markdown is marked **真实公开数据（SEC 10-K），仅用于 FCode 抽取研究；不构成任何
 信贷或投资意见**, and the JSON has `synthetic: false`, `research_only: true`,
-`source_url`, `accession` and `cik`.
+`source_url`, `accession` and `cik`. `build_memo` receives those fields as
+arguments; the lab no longer patches the assembled memo.
 
 ## Tests
 
@@ -230,8 +240,10 @@ markdown is marked **真实公开数据（SEC 10-K），仅用于 FCode 抽取�
   ambiguous text returns `None`; an `except for` outside the opinion paragraph
   does not qualify a standard opinion;
 - a missing fact returns missing and no value;
-- missing rating/related/contingent metrics stay blocked;
-- the spike `ok` and the blocked memo state;
+- missing rating/related/contingent metrics stay blocked and are reported as
+  `missing_optional`, not as a failed memo;
+- the spike `ok`, Cisco memo v2 `pass` / `issued: true` /
+  `pending_human_review`, and the three optional gaps;
 - real-data memo metadata (`synthetic: false`, `research_only: true`).
 
 ## Limits

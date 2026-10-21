@@ -149,14 +149,16 @@ open desktop/dist/FCode.app
 
 ## 信用尽调
 
-`flowcredit/tools/credit/` 是第二个生产域：3 家合成发行人、8 个指标、14 步蓝图、
-Host 组装的 `memo.json` / `memo.md`，以及证据不足时不签发、等待人工复核。
-模型只提议读取和计算，memo 里的每个数字都由 Host 从已验证 observation 组装。
-Host 签发只表示结果已验证并由 Host 组装，不等于人工签字或信贷决定。
+`flowcredit/tools/credit/` 是第二个生产域：3 家合成发行人、5 个必需指标 +
+3 个可选观察、14 步蓝图、Host 组装的 `memo.json` / `memo.md`（memo v2）。
+可选指标缺失只写 caveat，不阻止签发；必需指标缺失才 `insufficient_evidence` /
+blocked。模型只提议读取和计算，memo 里的每个数字都由 Host 从已验证 observation
+组装。Host 签发只表示结果已验证并由 Host 组装，不等于人工签字或信贷决定。
 
 真实公开数据的单家抽取 spike 在 [labs/sec_10k/README.md](flowcredit/labs/sec_10k/README.md)：
-Cisco FY2025 10-K、21 个事实（11 当前期 + 10 比较期）、行级 citation、5 个可算指标；缺失的 rating 使
-memo 保持 `insufficient_evidence` / blocked。设计与边界见
+Cisco FY2025 10-K、21 个事实（11 当前期 + 10 比较期）、行级 citation；5 个必需
+指标完整，rating / related-party / contingent 三个可选指标缺失，memo v2 给出
+`pass` / `issued: true` / `pending_human_review` 并把缺口写入 caveat。设计与边界见
 [sec-10k-extraction.md](flowcredit/docs/sec-10k-extraction.md)。
 
 ```sh
@@ -186,7 +188,7 @@ python3.12 credit_demo.py --all
 | 长期案例记忆（终态轨迹 → 确定性案例簿；召回事件入链；首轮上下文注入 top-3；删除只墓碑） | 已实现 |
 | 双时态事实记忆（as-of / known-at 查询；修正追加不覆盖；每条事实带来源事件哈希） | 已实现（金融域抽取器） |
 | 域模块协议（模块自给世界/工具/规划器/验证器；模板按模块分组；金融研究与信用尽调） | 已实现 |
-| 信用尽调域（8 指标 / 3 家合成发行人 / Host 组装 memo / 签发与人工签字分离） | 已实现（Phase 1，合成数据） |
+| 信用尽调域（5 必需 + 3 可选指标 / 3 家合成发行人 / memo v2 / 签发与人工签字分离） | 已实现（Phase 2b，合成数据） |
 | SEC 10-K 抽取 spike（Cisco FY2025 / 21 事实 / 行级 citation / 真实公开数据） | 已实现（lab，单家） |
 | 独立验证（Runtime 重算，模型不能自报完成） | 已实现 |
 | 人工审批门（关键步骤 / 逐步 / 自动、超时拒绝、本次运行免询） | 已实现 |
@@ -213,7 +215,7 @@ python3.12 credit_demo.py --all
 
 ## 数字
 
-- **235** 项单元与场景测试，全部离线
+- **244** 项单元与场景测试，全部离线
 - **7** 个可复现场景，其中崩溃场景用真实 `SIGKILL`
 - **0** 个第三方运行时依赖（只用标准库）
 - **9** 轮完成一次完整研究，**4500 µUSD** 合成预算
@@ -233,7 +235,7 @@ flowcredit/          Python Runtime 与 Demo
     trajectory/      记录、导出、独立重算
     demo/            CLI、终端渲染、七个场景、崩溃 worker
   viewer/            实时控制台 + Trace 回放（零依赖零构建）
-  tests/             235 项 unittest
+  tests/             244 项 unittest
   docs/              架构、设计决策、框架对照、JD 映射
 archive/             v1：Node.js 研究原型（保留，不参与 CI）
 ```
