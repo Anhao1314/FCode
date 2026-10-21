@@ -85,10 +85,10 @@ class WorkingMemory:
             if tool == "list_documents":
                 listed = True
             elif tool == "read_document":
-                doc_id = result.get("doc_id") or result.get("id")
+                doc_id = result.get("id") or result.get("doc_id")
                 if doc_id and result.get("found", True):
                     read_documents.append(doc_id)
-                elif not result.get("found", True):
+                elif result.get("found") is False:
                     blockers.append(result.get("reason") or "document missing")
             elif tool == "normalize_units" and "id" in result:
                 normalised.append(result["id"])
@@ -127,7 +127,7 @@ class WorkingMemory:
         for period in sorted(set(reconciled_periods)):
             reconciled_documents.extend(self._documents_for_period(period))
 
-        return {
+        state = {
             "listed_documents": listed,
             "read_documents": sorted(set(read_documents)),
             "normalised_documents": sorted(set(normalised)),
@@ -138,8 +138,12 @@ class WorkingMemory:
             "computed": computed or bool(metrics),
             "blockers": blockers,
             "margins": margins,
-            "metrics": metrics,
         }
+        # Finance's state key set must stay exactly v10: an empty ``metrics``
+        # key would change the prompt hash on every round.
+        if metrics:
+            state["metrics"] = metrics
+        return state
 
     def _documents_for_period(self, period: str) -> list[str]:
         """Map a reconciled period back to the document that owns it."""
@@ -214,23 +218,30 @@ class WorkingMemory:
         if record.tool == "list_documents":
             return {
                 "documents": [
-                    item.get("doc_id") or item.get("id")
+                    item.get("id") or item.get("doc_id")
                     for item in result.get("documents", [])
                 ]
             }
         if record.tool == "read_document":
-            summary = {
-                "found": result.get("found", True),
-                "doc_id": result.get("doc_id") or result.get("id"),
+            # The credit tool returns ``doc_id`` / ``fields``; finance returns
+            # ``id`` / ``basis`` / the two margin inputs. Branch on the result
+            # shape so finance keeps its v10 key set byte for byte.
+            if "fields" in result or "doc_id" in result:
+                return {
+                    "found": result.get("found", True),
+                    "doc_id": result.get("doc_id"),
+                    "period": result.get("period"),
+                    "unit": result.get("unit"),
+                    "fields": dict(result.get("fields") or {}),
+                }
+            return {
+                "id": result.get("id"),
                 "period": result.get("period"),
                 "unit": result.get("unit"),
+                "basis": result.get("basis"),
+                "revenue": result.get("revenue"),
+                "gross_profit": result.get("gross_profit"),
             }
-            if "fields" in result:
-                summary["fields"] = dict(result.get("fields") or {})
-            else:
-                summary["revenue"] = result.get("revenue")
-                summary["gross_profit"] = result.get("gross_profit")
-            return summary
         if record.tool == "compute_credit_metric":
             return {
                 "metric": result.get("metric"),

@@ -10,6 +10,7 @@ rendered prompt strings, not on Python dicts.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import pathlib
 import sys
@@ -18,8 +19,10 @@ import unittest
 from pathlib import Path
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "src"))
 
+from flowagent.core.plan import Todo  # noqa: E402
 from flowagent.core.receipts import ReceiptStore  # noqa: E402
 from flowagent.core.store import TaskStore  # noqa: E402
 from flowagent.demo.fixtures import get_scenario  # noqa: E402
@@ -30,6 +33,7 @@ from flowagent.providers.prompt import (  # noqa: E402
     parse_proposal_text,
     render_prompt,
 )
+from flowagent.runtime.budget import BudgetLimits  # noqa: E402
 from flowagent.runtime.harness import Harness  # noqa: E402
 from flowagent.runtime.loop import Loop  # noqa: E402
 from flowagent.sft.export import (  # noqa: E402
@@ -43,7 +47,12 @@ from flowagent.tools.finance.tools import build_finance_tools  # noqa: E402
 from flowagent.tools.registry import ToolRegistry  # noqa: E402
 from flowagent.trajectory.exporter import export_trace  # noqa: E402
 from flowagent.trajectory.recorder import TraceRecorder  # noqa: E402
-from flowagent.domains.finance import FINANCE_DOMAIN, verify_observation as verify_finance
+from flowagent.domains.finance import FINANCE_DOMAIN, verify_observation as verify_finance  # noqa: E402
+
+from labs.credit_dd.module import CREDIT_DD_DOMAIN  # noqa: E402
+from labs.credit_dd.planner import CreditPlanner  # noqa: E402
+from labs.credit_dd.tools import TOOL_NAMES, build_credit_tools  # noqa: E402
+from labs.credit_dd.world import CreditWorld  # noqa: E402
 
 
 def run_episode(
@@ -90,7 +99,89 @@ def run_episode(
     return trace, provider.captured, provider.proposals
 
 
+class _PostResultReviewPlanner(CreditPlanner):
+    """Adds one review todo so the model is asked after both metrics exist."""
+
+    def decompose(self, goal):
+        plan = super().decompose(goal)
+        return plan.revise(
+            add=(
+                Todo(
+                    "c7",
+                    "复核两个指标并给出结论",
+                    "report_blocked",
+                    "reported",
+                    {"reason": "insufficient_evidence"},
+                ),
+            ),
+            reason="test: capture the context after both results",
+        )
+
+
+def run_credit_episode(tmp: Path) -> list:
+    """Run the real credit stack with a recording provider; return contexts."""
+    world = CreditWorld()
+    store = TaskStore(tmp / "credit-task.sqlite")
+    registry = ToolRegistry(build_credit_tools(world))
+    receipts = ReceiptStore(store)
+    provider = RecordingProvider(MockProvider(policy="research"))
+    recorder = TraceRecorder(store, provider_name=provider.name, model_name=provider.model)
+    limits = BudgetLimits(
+        max_calls=12,
+        max_reads=12,
+        max_cost_microusd=20_000,
+        max_tokens=20_000,
+    )
+    harness = Harness(
+        store=store,
+        registry=registry,
+        provider=provider,
+        world=world,
+        verifier=lambda observation: CREDIT_DD_DOMAIN.verify(world, observation),
+        limits=limits,
+        receipts=receipts,
+    )
+    allowed = list(TOOL_NAMES)
+    task = harness.create(
+        task_id="fidelity-credit",
+        objective="credit context fidelity",
+        principal="test",
+        binding={"scenario": "credit", "synthetic": True},
+        allowed_tools=allowed,
+        grant={
+            "allowed_tools": allowed,
+            "max_calls": 12,
+            "max_reads": 12,
+            "max_cost_microusd": 20_000,
+            "max_tokens": 20_000,
+        },
+    )
+    Loop(
+        harness,
+        planner=_PostResultReviewPlanner(),
+        max_rounds=12,
+        observer=recorder,
+        result_tools=CREDIT_DD_DOMAIN.result_tools,
+    ).run(task.id)
+    store.close()
+    return provider.captured
+
+
 class FidelityTests(unittest.TestCase):
+    def test_finance_prompt_v10_is_byte_identical(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            _, captured, _ = run_episode("full", Path(tmp))
+            canonical = json.dumps(
+                captured,
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+            self.assertEqual(
+                hashlib.sha256(canonical.encode("utf-8")).hexdigest(),
+                "f2b00e0d56e2bf080eacad6ea06879847c95e21e6c3d5354c8d4ebd5884db3e1",
+            )
+
     def test_reconstructed_prompts_match_live_contexts_byte_for_byte(self) -> None:
         for scenario_key in ("full", "budget", "unknown", "open-ended", "budget-resume"):
             with self.subTest(scenario=scenario_key), tempfile.TemporaryDirectory() as tmp:
@@ -185,6 +276,41 @@ class FidelityTests(unittest.TestCase):
         ):
             parsed = parse_proposal_text(wrapper(good))
             self.assertEqual(parsed["todo_id"], "t1")
+
+
+class CreditContextTests(unittest.TestCase):
+    def test_credit_context_carries_fields_and_both_metrics(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            captured = run_credit_episode(Path(tmp))
+
+        self.assertNotIn("metrics", captured[0]["state"])
+        both = [
+            context["state"]["metrics"]
+            for context in captured
+            if context["state"].get("metrics")
+            == {"net_debt_to_ebitda": 377, "interest_coverage": 417}
+        ]
+        self.assertEqual(len(both), 1)
+
+        read_summaries = [
+            observation["summary"]
+            for context in captured
+            for observation in context.get("observations", [])
+            if observation["tool"] == "read_document"
+        ]
+        self.assertTrue(read_summaries)
+        self.assertTrue(all("fields" in summary for summary in read_summaries))
+        for summary in read_summaries:
+            self.assertIn("found", summary)
+            self.assertIn("doc_id", summary)
+            self.assertNotIn("basis", summary)
+            self.assertNotIn("revenue", summary)
+
+        annual = next(
+            summary for summary in read_summaries
+            if summary["doc_id"] == "doc_ar_fy2025"
+        )
+        self.assertEqual(annual["fields"]["ebitda"], 175_000)
 
 
 if __name__ == "__main__":

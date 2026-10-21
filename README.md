@@ -192,7 +192,7 @@ open desktop/dist/FCode.app
 
 ## 数字
 
-- **206** 项单元与场景测试，全部离线
+- **208** 项单元与场景测试，全部离线
 - **7** 个可复现场景，其中崩溃场景用真实 `SIGKILL`
 - **0** 个第三方运行时依赖（只用标准库）
 - **9** 轮完成一次完整研究，**4500 µUSD** 合成预算
@@ -212,7 +212,7 @@ flowcredit/          Python Runtime 与 Demo
     trajectory/      记录、导出、独立重算
     demo/            CLI、终端渲染、七个场景、崩溃 worker
   viewer/            实时控制台 + Trace 回放（零依赖零构建）
-  tests/             206 项 unittest
+  tests/             208 项 unittest
   docs/              架构、设计决策、框架对照、JD 映射
 archive/             v1：Node.js 研究原型（保留，不参与 CI）
 ```
