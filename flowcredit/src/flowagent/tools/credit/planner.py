@@ -3,8 +3,9 @@
 The blueprint is deliberately boring: read the evidence, check the FY2024
 restatement, read the FY2025 annual report, debt schedule and rating report,
 then compute the eight metrics. A missing debt schedule blocks c5 and abandons
-the four debt-dependent metric todos; the remaining metrics still run so the
-memo can state exactly what was and was not provable.
+the four debt-dependent metric todos; required metrics still run so the memo can
+state exactly what was not provable. Once a required todo is blocked, optional
+todos still queued are abandoned: they cannot change the policy conclusion.
 
 There is no retry and no appended step. ``report_blocked`` is not a todo: the
 loop turns a blocked plan into ``INSUFFICIENT_EVIDENCE`` on its own.
@@ -53,10 +54,11 @@ BLUEPRINT: tuple[Todo, ...] = (
     ),
     Todo(
         "c6",
-        "读取 FY2025 评级报告",
+        "读取 FY2025 评级报告（可选）",
         "read_document",
         "read:doc_rating_fy2025",
         {"doc_id": "doc_rating_fy2025"},
+        required=False,
     ),
     Todo(
         "c7",
@@ -88,17 +90,19 @@ BLUEPRINT: tuple[Todo, ...] = (
     ),
     Todo(
         "c11",
-        "计算 FY2025 关联方融资占比",
+        "计算 FY2025 关联方融资占比（可选）",
         "compute_credit_metric",
         "computed:related_party_funding_ratio:FY2025",
         {"metric": "related_party_funding_ratio", "period": "FY2025"},
+        required=False,
     ),
     Todo(
         "c12",
-        "计算 FY2025 或有负债 / 所有者权益",
+        "计算 FY2025 或有负债 / 所有者权益（可选）",
         "compute_credit_metric",
         "computed:contingent_liabilities_to_equity:FY2025",
         {"metric": "contingent_liabilities_to_equity", "period": "FY2025"},
+        required=False,
     ),
     Todo(
         "c13",
@@ -109,10 +113,11 @@ BLUEPRINT: tuple[Todo, ...] = (
     ),
     Todo(
         "c14",
-        "判断 FY2025 评级迁移",
+        "判断 FY2025 评级迁移（可选）",
         "compute_credit_metric",
         "computed:rating_migration:FY2025",
         {"metric": "rating_migration", "period": "FY2025"},
+        required=False,
     ),
 )
 
@@ -159,7 +164,10 @@ class CreditPlanner:
             return plan.mark(todo_id, "done", evidence=(observation.result_hash,))
 
         plan = plan.mark(todo_id, "blocked", reason=self._reason(observation))
-        return self._abandon_dependents(plan, todo_id)
+        plan = self._abandon_dependents(plan, todo_id)
+        if todo.required:
+            plan = self._abandon_optional(plan, todo_id)
+        return plan
 
     # ------------------------------------------------------------------ rules
 
@@ -210,6 +218,24 @@ class CreditPlanner:
             )
         return plan
 
+    @staticmethod
+    def _abandon_optional(plan: Plan, todo_id: str) -> Plan:
+        """A required block prevents issuance; stop optional work still queued.
+
+        The memo's policy checks required gaps first, so an optional metric
+        cannot change the conclusion once a required todo is blocked. Abandoning
+        the remaining optional todos saves budget and keeps them out of the
+        memo's ``metrics`` list; they are reported as ``missing_optional``.
+        """
+        for current in list(plan.todos):
+            if not current.required and current.status in ("pending", "active"):
+                plan = plan.mark(
+                    current.id,
+                    "abandoned",
+                    reason=f"required {todo_id} is blocked",
+                )
+        return plan
+
 
 def _copy(todo: Todo) -> Todo:
     """Return a fresh Todo so a plan revision cannot mutate the blueprint."""
@@ -222,4 +248,5 @@ def _copy(todo: Todo) -> Todo:
         status=todo.status,
         evidence=todo.evidence,
         reason=todo.reason,
+        required=todo.required,
     )

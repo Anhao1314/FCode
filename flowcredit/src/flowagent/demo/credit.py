@@ -73,6 +73,9 @@ class CreditRun:
     chain_head: str
     chain_verified: bool
     verified: bool
+    missing_required: list[str]
+    missing_optional: list[str]
+    optional_verified: bool
     trace_path: str
 
     @property
@@ -100,6 +103,9 @@ class CreditRun:
             "chain_verified": self.chain_verified,
             "verified": self.verified,
             "missing": list(self.memo.get("missing") or []),
+            "missing_required": list(self.memo.get("missing_required") or []),
+            "missing_optional": list(self.memo.get("missing_optional") or []),
+            "optional_verified": bool(self.memo.get("optional_verified")),
         }
 
 
@@ -238,6 +244,9 @@ def run_issuer(
             chain_head=trace_verification["head_hash"],
             chain_verified=bool(trace_verification["verified"]),
             verified=bool(memo["verified"]),
+            missing_required=list(memo.get("missing_required") or []),
+            missing_optional=list(memo.get("missing_optional") or []),
+            optional_verified=bool(memo.get("optional_verified")),
             trace_path=str(trace_path),
         )
     finally:

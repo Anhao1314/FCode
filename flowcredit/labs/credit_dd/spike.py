@@ -10,8 +10,8 @@ blueprint through the real ``TaskStore`` / ``Harness`` / ``Loop`` /
 ``MockProvider`` / ``TraceRecorder``. The two cases are:
 
 * ``happy-path``: all eight metrics verified, status ``succeeded``;
-* ``partial-world``: the debt schedule is removed, c5 is blocked, c7/c9/c11/c12
-  are abandoned, c8/c10/c13/c14 still run, and the task ends
+* ``partial-world``: the debt schedule is removed, c5 is blocked, c6/c7/c9/c11/
+  c12/c14 are abandoned, c8/c10/c13 still run, and the task ends
   ``INSUFFICIENT_EVIDENCE`` without a computed net-debt/EBITDA figure.
 """
 
@@ -116,9 +116,12 @@ class CaseRun:
         statuses = {todo.id: todo.status for todo in self.plan.todos}
         if statuses.get("c5") != "blocked":
             return False
-        if any(statuses.get(todo) != "abandoned" for todo in ("c7", "c9", "c11", "c12")):
+        if any(
+            statuses.get(todo) != "abandoned"
+            for todo in ("c6", "c7", "c9", "c11", "c12", "c14")
+        ):
             return False
-        if any(statuses.get(todo) != "done" for todo in ("c8", "c10", "c13", "c14")):
+        if any(statuses.get(todo) != "done" for todo in ("c8", "c10", "c13")):
             return False
         return not self.has_computed_net_debt()
 
