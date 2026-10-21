@@ -30,6 +30,13 @@ python3.12 -m labs.multi_agent.cli --ablate \
   --out labs/multi_agent/.runs/ablation.json
 ```
 
+seam spike（只验证 `plan_steered` 注入是否可靠，不跑后续模块）：
+
+```bash
+cd flowcredit
+PYTHONPATH=src python3.12 labs/multi_agent/seam_spike.py
+```
+
 输出目录 `.runs/` 已被忽略；每个 run 有 `manifest.jsonl`、`state.json`、
 `children/<task>/trace.json`。所有数字都能从这些文件和命令输出复核。
 
