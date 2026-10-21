@@ -38,10 +38,21 @@ if [ ! -f "$ROOT/llama.cpp/convert_hf_to_gguf.py" ]; then
       "https://ghproxy.net/https://github.com/ggml-org/llama.cpp/archive/refs/heads/master.tar.gz"
   tar xzf "$ROOT/llama.cpp.tar.gz" -C "$ROOT/llama.cpp" --strip-components=1
 fi
-pip install -q -i https://mirrors.aliyun.com/pypi/simple/ -r "$ROOT/llama.cpp/requirements/requirements-convert_hf_to_gguf.txt"
+# The converter's requirements pin torch==2.11 (CPU). Installing them into the
+# training venv replaces the cu121 build and breaks the next training run. Keep
+# the converter in its own venv that inherits the training packages but cannot
+# shadow them.
+CONVERT_VENV="$ROOT/gguf-venv"
+if [ ! -x "$CONVERT_VENV/bin/python" ]; then
+  python3 -m venv --system-site-packages "$CONVERT_VENV"
+fi
+if ! "$CONVERT_VENV/bin/python" -c "import gguf" >/dev/null 2>&1; then
+  "$CONVERT_VENV/bin/pip" install -q -i https://mirrors.aliyun.com/pypi/simple/ \
+    gguf sentencepiece protobuf
+fi
 
 echo "==> [3/3] convert + quantize"
-python "$ROOT/llama.cpp/convert_hf_to_gguf.py" "$MERGED" \
+"$CONVERT_VENV/bin/python" "$ROOT/llama.cpp/convert_hf_to_gguf.py" "$MERGED" \
   --outfile "$F16_GGUF" --outtype f16
 if [ ! -x "$ROOT/llama.cpp/build/bin/llama-quantize" ]; then
   echo "    building llama-quantize"

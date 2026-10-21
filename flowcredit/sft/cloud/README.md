@@ -128,6 +128,9 @@ bash /root/fcode-sft/cloud/merge-and-export.sh
 `Modelfile` 不写 `SYSTEM`：FCode 每次请求都会发送自己的 system prompt，双重
 system 会改变训练分布。
 
+转换器的依赖装在独立的 `gguf-venv`（继承主 venv 的包，但不覆盖），不会再出现
+converter 的 `torch==2.11` 把训练环境的 cu121 torch 替换掉的问题。
+
 ## 6. 回本机，装进 Ollama
 
 ```bash
