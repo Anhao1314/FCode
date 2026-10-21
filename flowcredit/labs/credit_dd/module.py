@@ -1,49 +1,22 @@
-"""The credit-DD lab's DomainModule instance.
-
-This module is deliberately not registered in ``flowagent.domains`` or in the
-demo's ``DOMAINS``. Phase 0 only proves that the protocol can describe a second
-domain; making it selectable by the product would be a later phase.
-"""
+"""Thin lab alias for the production credit domain module."""
 
 from __future__ import annotations
 
-from typing import Any
-
-from flowagent.domains.base import DomainModule
-from flowagent.tools.base import ToolSpec
-
-from .planner import CreditPlanner
-from .tools import build_credit_tools
-from .verifier import verify_observation
-from .world import CreditWorld
-
-__all__ = ["CREDIT_DD_DOMAIN", "APPROVAL_TOOLS", "create_world", "build_tools", "make_planner"]
-
-APPROVAL_TOOLS: tuple[str, ...] = ("report_blocked",)
-
-
-def create_world(partial: bool = False) -> CreditWorld:
-    return CreditWorld(partial=partial)
-
-
-def build_tools(world: CreditWorld, **_: Any) -> list[ToolSpec]:
-    return build_credit_tools(world)
-
-
-def make_planner() -> CreditPlanner:
-    return CreditPlanner()
-
-
-CREDIT_DD_DOMAIN = DomainModule(
-    key="credit-due-diligence",
-    title="信用尽调",
-    create_world=create_world,
-    build_tools=build_tools,
-    make_planner=make_planner,
-    # The loop calls this once per committed result observation, so both credit
-    # metrics are verified independently through the module contract.
-    verify=verify_observation,
-    result_tools=("compute_credit_metric",),
-    approval_tools=APPROVAL_TOOLS,
-    report_template="credit-memo",
+from flowagent.domains.credit import (  # noqa: F401
+    APPROVAL_TOOLS,
+    CREDIT_DOMAIN,
+    build_tools,
+    create_world,
+    make_planner,
 )
+
+CREDIT_DD_DOMAIN = CREDIT_DOMAIN
+
+__all__ = [
+    "CREDIT_DD_DOMAIN",
+    "CREDIT_DOMAIN",
+    "APPROVAL_TOOLS",
+    "create_world",
+    "build_tools",
+    "make_planner",
+]

@@ -1,19 +1,18 @@
-"""Phase 0 seam spike: a two-metric credit check through the real runtime.
+"""Phase 0 seam proof, now a thin runner over the production credit module.
 
 Run from ``flowcredit/``::
 
     PYTHONPATH=src python3.12 labs/credit_dd/spike.py
 
-Two cases are executed with the real ``TaskStore`` / ``ReceiptStore`` /
-``Harness`` / ``Loop`` / ``MockProvider(policy="research")`` / ``TraceRecorder``:
+The lab no longer owns a world, planner, toolset or verifier. It selects the
+production ``CreditWorld`` for ``hengxing`` and runs the production fourteen-step
+blueprint through the real ``TaskStore`` / ``Harness`` / ``Loop`` /
+``MockProvider`` / ``TraceRecorder``. The two cases are:
 
-* ``happy-path``: six plan steps, both metrics recomputed, status ``succeeded``;
-* ``partial-world``: the debt schedule is missing, ``c4`` is blocked, ``c5`` is
-  abandoned, ``c6`` still runs, and the task ends non-succeeded without a
-  computed net-debt/EBITDA figure in the trace.
-
-The process prints one JSON object and exits non-zero unless both cases match
-their expectations.
+* ``happy-path``: all eight metrics verified, status ``succeeded``;
+* ``partial-world``: the debt schedule is removed, c5 is blocked, c7/c9/c11/c12
+  are abandoned, c8/c10/c13/c14 still run, and the task ends
+  ``INSUFFICIENT_EVIDENCE`` without a computed net-debt/EBITDA figure.
 """
 
 from __future__ import annotations
@@ -34,45 +33,58 @@ from flowagent.core.contracts import Task  # noqa: E402
 from flowagent.core.plan import Plan  # noqa: E402
 from flowagent.core.receipts import ReceiptStore  # noqa: E402
 from flowagent.core.store import TaskStore  # noqa: E402
+from flowagent.domains.credit import CREDIT_DOMAIN  # noqa: E402
 from flowagent.providers.mock import MockProvider  # noqa: E402
 from flowagent.runtime.budget import BudgetLimits  # noqa: E402
 from flowagent.runtime.harness import Harness  # noqa: E402
 from flowagent.runtime.loop import Loop  # noqa: E402
+from flowagent.tools.credit.planner import CreditPlanner  # noqa: E402
+from flowagent.tools.credit.tools import CREDIT_TOOL_NAMES, build_credit_tools  # noqa: E402
+from flowagent.tools.credit.world import CreditWorld  # noqa: E402
 from flowagent.tools.registry import ToolRegistry  # noqa: E402
 from flowagent.trajectory.exporter import verify_trace  # noqa: E402
 from flowagent.trajectory.recorder import TraceRecorder  # noqa: E402
 
-from labs.credit_dd.module import CREDIT_DD_DOMAIN  # noqa: E402
-from labs.credit_dd.planner import CreditPlanner  # noqa: E402
-from labs.credit_dd.tools import TOOL_NAMES, build_credit_tools  # noqa: E402
-from labs.credit_dd.world import CreditWorld  # noqa: E402
-
 __all__ = ["CaseRun", "EXPECTED_METRICS", "run_case", "main"]
 
-EXPECTED_METRICS: dict[str, int] = {
-    "net_debt_to_ebitda": 377,
-    "interest_coverage": 417,
+EXPECTED_METRICS: dict[str, Any] = {
+    "net_debt_to_ebitda": 37714,
+    "interest_coverage": 41667,
+    "ocf_to_short_term_debt": 3000,
+    "receivables_to_revenue": 2296,
+    "related_party_funding_ratio": 577,
+    "contingent_liabilities_to_equity": 281,
+    "audit_opinion": "standard_unqualified",
+    "rating_migration": "stable",
 }
 
 
-def _metrics_from_result(result: dict[str, Any] | None) -> dict[str, int]:
-    """Read metrics from either the single-result or multi-result shape."""
+def _metrics_from_result(result: dict[str, Any] | None) -> dict[str, Any]:
     if not result:
         return {}
     if "results" in result:
         return {
-            item["metric"]: item["value_x100"]
+            item["metric"]: (
+                item.get("value_bp")
+                if item.get("kind") == "ratio"
+                else item.get("value_code")
+            )
             for item in result["results"]
-            if item.get("computed") and item.get("metric") and "value_x100" in item
         }
-    if result.get("computed") and result.get("metric") and "value_x100" in result:
-        return {result["metric"]: result["value_x100"]}
+    if result.get("computed") and result.get("metric"):
+        return {
+            result["metric"]: (
+                result.get("value_bp")
+                if result.get("kind") == "ratio"
+                else result.get("value_code")
+            )
+        }
     return {}
 
 
 @dataclass
 class CaseRun:
-    """Everything one spike case produced, kept for assertions and reporting."""
+    """Everything one lab case produced, kept for assertions and reporting."""
 
     name: str
     partial: bool
@@ -99,16 +111,14 @@ class CaseRun:
             return False
         if self.summary["failure_code"] != "INSUFFICIENT_EVIDENCE":
             return False
-        if "net_debt_to_ebitda" in self.summary["metrics"]:
-            return False
         if not self.plan.is_blocked():
             return False
         statuses = {todo.id: todo.status for todo in self.plan.todos}
-        if statuses.get("c4") != "blocked":
+        if statuses.get("c5") != "blocked":
             return False
-        if statuses.get("c5") not in ("abandoned", "blocked"):
+        if any(statuses.get(todo) != "abandoned" for todo in ("c7", "c9", "c11", "c12")):
             return False
-        if statuses.get("c6") != "done":
+        if any(statuses.get(todo) != "done" for todo in ("c8", "c10", "c13", "c14")):
             return False
         return not self.has_computed_net_debt()
 
@@ -129,15 +139,14 @@ def run_case(
     name: str,
     *,
     partial: bool = False,
-    max_rounds: int = 12,
-    planner: Any | None = None,
+    issuer: str = "hengxing",
+    max_rounds: int = 20,
 ) -> CaseRun:
     """Assemble the real stack, run one case, and return its trace and state."""
-    active_planner = planner or CreditPlanner()
     with tempfile.TemporaryDirectory(prefix=f"fcode-credit-{name}-") as tmp:
         store = TaskStore(Path(tmp) / "task.sqlite")
         try:
-            world = CreditWorld(partial=partial)
+            world = CreditWorld(issuer=issuer, partial=partial)
             registry = ToolRegistry(build_credit_tools(world))
             receipts = ReceiptStore(store)
             provider = MockProvider(policy="research")
@@ -154,19 +163,18 @@ def run_case(
                 world=world,
                 limits=limits,
                 receipts=receipts,
-                verifier=lambda observation: CREDIT_DD_DOMAIN.verify(world, observation),
+                verifier=lambda observation: CREDIT_DOMAIN.verify(world, observation),
             )
-
-            allowed = list(TOOL_NAMES)
+            allowed = list(CREDIT_TOOL_NAMES)
             task = harness.create(
                 task_id=f"task-credit-dd-{name}",
-                objective="对恒星智造（合成数据）完成 FY2025 净负债/EBITDA 与利息覆盖倍数核查",
-                principal="credit-dd-spike",
+                objective=f"对{world.display_name}做 FY2025 八指标信用核查",
+                principal="credit-dd-lab",
                 binding={
                     "scenario": name,
                     "corpus": "synthetic-authored-v1",
-                    "module": "credit-due-diligence",
-                    "company": "恒星智造",
+                    "module": CREDIT_DOMAIN.key,
+                    "issuer": issuer,
                     "synthetic": True,
                 },
                 allowed_tools=allowed,
@@ -187,22 +195,16 @@ def run_case(
             )
             task = Loop(
                 harness,
-                planner=active_planner,
+                planner=CreditPlanner(),
                 max_rounds=max_rounds,
                 observer=recorder,
-                # The module, not the kernel, declares which tool's verified
-                # observations are the domain's answer.
-                result_tools=CREDIT_DD_DOMAIN.result_tools,
+                result_tools=CREDIT_DOMAIN.result_tools,
             ).run(task.id)
 
             trace = recorder.build(task)
             verification = verify_trace(trace)
             events = store.events(task.id)
-            plan = (
-                Plan.from_dict(task.plan_state)
-                if task.plan_state
-                else active_planner.decompose(task.objective)
-            )
+            plan = Plan.from_dict(task.plan_state) if task.plan_state else CreditPlanner().decompose(task.objective)
             failure = task.failure or {}
             summary = {
                 "name": name,
