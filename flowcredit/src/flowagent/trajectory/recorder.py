@@ -124,7 +124,7 @@ class TraceRecorder:
             "model": {
                 "provider": self._provider_name,
                 "model": self._model_name,
-                "note": "offline deterministic mock; no network, no credentials, no paid call",
+                "note": "provider-supplied proposal source; runtime independently verifies results",
             },
             "rounds": [record.to_dict() for record in self._rounds],
             "terminal": self._terminal,

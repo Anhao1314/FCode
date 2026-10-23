@@ -90,7 +90,7 @@ python viewer/server.py --repo ..   # 打开 http://127.0.0.1:8642/
 python -m unittest discover -s tests -v
 ```
 
-42 项，覆盖计划层与权限门控（未注册 / 越权 / 超 grant / 参数非法）、预算三个维度、状态机非法迁移、并发写 CAS、事件篡改、收据伪造、独立重算拒绝伪造观测、trace 篡改、审批放行与拒绝、计划跳过 / 提前、预算追加、失败续跑、运行中操作员消息入链，以及七个场景的端到端断言（其中崩溃场景用真实 SIGKILL，断言"没有任何一轮被重复提议"）。
+277 项，覆盖计划层与权限门控（未注册 / 越权 / 超 grant / 参数非法）、预算三个维度、状态机非法迁移、并发写 CAS、事件篡改、收据伪造、独立重算拒绝伪造观测、trace 篡改、审批放行与拒绝、计划跳过 / 提前、预算追加、失败续跑、运行中操作员消息入链，Kimi/DeepSeek/local provider 纪律，以及七个场景的端到端断言（其中崩溃场景用真实 SIGKILL，断言"没有任何一轮被重复提议"）。
 
 CI 在 Ubuntu 与 macOS 上跑 Python 3.11 与 3.13，包含 `python demo.py all` 与零配置入口冒烟。
 
@@ -101,12 +101,12 @@ src/flowagent/
   core/        hashing（canonical JSON）、contracts（状态与校验）、plan（目标/计划/todo）、store（sqlite + 哈希链）、receipts（签名收据）
   runtime/     state_machine、permissions（主机门控）、budget、control（人工控制协议）、harness（单轮）、loop（多轮 + 恢复）
   tools/       base/registry，finance/（只读工具 + Evidence Authority）
-  providers/   base、mock（离线确定性，三种策略）
+  providers/   base、mock、local、kimi、deepseek、oracle（模型只提议）
   memory/      context（模型可见的观测摘要，从事件日志重建）
   trajectory/  recorder、exporter（导出与独立重算）
   demo/        CLI、终端渲染、七个场景、崩溃 worker
 viewer/        实时控制台 + Trace 回放（零依赖零构建）
-tests/         42 项 unittest
+tests/         277 项 unittest
 ```
 
 ## 现在还没有的

@@ -6,11 +6,11 @@
 ## 分层与依赖方向
 
 ```
-demo/          CLI、渲染、场景          ← 唯一选择具体实现的地方
+demo/          CLI、渲染、场景、provider 显式选择
    │
 runtime/       门控、预算、harness、loop
    │
-tools/  providers/  memory/  trajectory/
+tools/  providers/(mock·local·kimi·deepseek·oracle)  memory/  trajectory/
    │
 core/          哈希、契约、存储、收据
 ```
@@ -133,7 +133,7 @@ hash_n = sha256(canonical_json({sequence, type, payload, prev_hash, at}))
 | --- | --- | --- |
 | 新工具 | `tools/` 加一个 `ToolSpec` | runtime 一行不动 |
 | 新领域 | 新 `tools/<domain>/` + 自己的 authority | core / runtime 一行不动 |
-| 真实供应商 | `providers/` 实现 `Provider` | 门控、预算、收据全部复用 |
+| 真实供应商 | `providers/` 实现 `Provider`，demo 加显式 `--provider` | 门控、预算、收据全部复用 |
 | 新场景 | `demo/fixtures.py` 加一条数据 | runtime 一行不动 |
 
 最后一行是这套架构最想证明的事：**场景是数据，不是分支**。
@@ -152,7 +152,12 @@ hash_n = sha256(canonical_json({sequence, type, payload, prev_hash, at}))
 | `runtime/harness.py` | 单轮机制 + 独立重算 | 成功只能由 verify 产生 |
 | `runtime/loop.py` | 多轮 + 恢复 | 轮次不重复；支持 packet 模式与 fast path |
 | `runtime/policy.py` | DecisionPacket / ActionCompiler / Policy | 模型只选候选；单候选不调模型 |
+| `providers/local.py` | OpenAI 兼容本地 Provider | 零成本如实记账；失败 unknown，不重试 |
 | `providers/local_policy.py` | LocalPolicy | choice-only；一次修复；失败不编造 |
+| `providers/kimi.py` | Kimi API Provider | 价格必填；输入全量计价；HMAC receipt；不回退 |
+| `providers/deepseek.py` | DeepSeek API Provider / Policy | 价格快照；无 repair；不回退 |
+| `providers/deepseek_config.py` | DeepSeek Host 配置 | key 脱敏；缺价格启动前失败 |
+| `demo/provider_factory.py` | 显式 provider 装配 | 只有主机选择，无 silent fallback |
 | `providers/packet_prompt.py` | packet prompt 渲染器 | 训练/推理共用；不含工具目录 |
 | `sft/choices.py` | choice SFT 导出 | packet + policy_decided → 样本 |
 | `sft/evaluate.py` | packet 评测平面 | 结果、调用、修复、tokens、packet 体积 |
@@ -171,4 +176,4 @@ hash_n = sha256(canonical_json({sequence, type, payload, prev_hash, at}))
 | `viewer/design.css` | Paper & Proof tokens / 组件 | 新样式唯一入口；旧层只留布局 |
 | `viewer/design.html` | 设计系统样式页 | tokens、类型、组件、做与不做 |
 | `trajectory/exporter.py` | 导出 + 重算 | 与 viewer 算法一致 |
-| `demo/runner.py` | 装配 | 唯一选择具体实现的地方 |
+| `demo/runner.py` | 装配 | 唯一选择具体实现的地方；批成本闸只在任务间触发 |

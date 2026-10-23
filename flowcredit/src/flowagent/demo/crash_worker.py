@@ -27,6 +27,18 @@ from ..tools.finance.planner import FinancePlanner
 from ..tools.finance.tools import build_finance_tools
 from ..tools.registry import ToolRegistry
 from ..domains.finance import FINANCE_DOMAIN, verify_observation as verify_finance
+from .fixtures import get_scenario
+from .provider_factory import build_provider
+
+
+def _optional_float(name: str) -> float | None:
+    value = os.environ.get(name, "").strip()
+    if not value:
+        return None
+    try:
+        return float(value)
+    except ValueError:
+        return None
 
 
 def main() -> int:
@@ -35,6 +47,12 @@ def main() -> int:
     crash_at = os.environ.get("FLOWAGENT_CRASH_AT", "tool_succeeded")
     crash_count = int(os.environ.get("FLOWAGENT_CRASH_AT_COUNT", "1"))
     max_rounds = int(os.environ.get("FLOWAGENT_MAX_ROUNDS", "12"))
+    provider_name = os.environ.get("FLOWAGENT_PROVIDER", "mock")
+    model = os.environ.get("FLOWAGENT_PROVIDER_MODEL", "").strip() or None
+    endpoint = os.environ.get("FLOWAGENT_PROVIDER_ENDPOINT", "").strip() or None
+    reasoning_effort = os.environ.get("FLOWAGENT_PROVIDER_REASONING_EFFORT", "").strip() or None
+    calibration = os.environ.get("FLOWAGENT_KIMI_CALIBRATION", "").strip()
+    scenario = get_scenario(os.environ.get("FLOWAGENT_SCENARIO", "crash"))
 
     # Patch save(), not _write(): _write runs *inside* the transaction, so killing
     # there would roll the event back and the crash would test nothing. save()
@@ -56,16 +74,35 @@ def main() -> int:
     TaskStore.save = patched_save  # type: ignore[method-assign]
 
     store = TaskStore(Path(db))
-    world = FinanceWorld()  # the crash scenario uses the complete corpus
+    world = FinanceWorld(partial=scenario.partial_corpus)
     registry = ToolRegistry(build_finance_tools(world))
     receipts = ReceiptStore(store)
-    provider = MockProvider()
+    if provider_name == "mock":
+        provider = MockProvider()
+    else:
+        provider = build_provider(
+            provider_name,
+            scenario=scenario,
+            receipts=receipts,
+            model=model,
+            endpoint=endpoint,
+            timeout=_optional_float("FLOWAGENT_PROVIDER_TIMEOUT"),
+            json_mode=bool(os.environ.get("FLOWAGENT_PROVIDER_JSON_MODE")),
+            structured=bool(os.environ.get("FLOWAGENT_PROVIDER_STRUCTURED")),
+            reasoning_effort=reasoning_effort,
+            calibration_path=Path(calibration) if calibration else None,
+        )
     harness = Harness(
         store=store,
         registry=registry,
         provider=provider,
         world=world,
-        limits=BudgetLimits(12, 20, 20_000, 20_000),
+        limits=BudgetLimits(
+            int(os.environ.get("FLOWAGENT_BUDGET_MAX_CALLS", "12")),
+            int(os.environ.get("FLOWAGENT_BUDGET_MAX_READS", "20")),
+            int(os.environ.get("FLOWAGENT_BUDGET_MAX_COST_MICROUSD", "20_000").replace("_", "")),
+            int(os.environ.get("FLOWAGENT_BUDGET_MAX_TOKENS", "20_000").replace("_", "")),
+        ),
         receipts=receipts,
         verifier=lambda observation: verify_finance(world, observation),
     )

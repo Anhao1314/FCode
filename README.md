@@ -211,12 +211,13 @@ python3.12 credit_demo.py --all
 | 判断面与审查记录（事实 / 解释候选 / 待判断 / 决定入链） | 已实现（v1，金融核查） |
 | Reviewer profile（同类历史判断聚合 / 建议只预填 / 报告带判断记录） | 已实现（v1） |
 | 模型验收（Ollama → packet eval → 结果/链/修复判定） | 已实现（等待本地 GGUF） |
-| 本地模型供应商（Qwen3-4B LoRA · OpenAI 兼容 · 零依赖） | **骨架就绪**，门控关闭 |
+| 本地模型供应商（Qwen3-4B LoRA · OpenAI 兼容 · 零依赖） | **demo 可显式启用**（`--provider local`）；默认仍 mock |
 | 真实供应商（DeepSeek API · 价格快照 + 预算预留 + 无重试） | **CLI/lab 已实测**；控制台仍 offline-mock |
+| 真实供应商（Kimi API · 价格快照 + token 校准 + HMAC 收据） | **provider/demo 已实现**；真实 E2E 待 key |
 
 ## 数字
 
-- **265** 项单元与场景测试，全部离线
+- **277** 项单元与场景测试，全部离线
 - **7** 个可复现场景，其中崩溃场景用真实 `SIGKILL`
 - **0** 个第三方运行时依赖（只用标准库）
 - **9** 轮完成一次完整研究，**4500 µUSD** 合成预算
@@ -231,12 +232,12 @@ flowcredit/          Python Runtime 与 Demo
     core/            canonical JSON、契约与状态机、计划层、sqlite + 哈希链、签名收据
     runtime/         门控、预算、单轮 harness、多轮 loop（含恢复）
     tools/           封闭注册表；finance/ 只读工具与 Evidence Authority
-    providers/       离线确定性 mock（三种策略）
+    providers/       mock / local / kimi / deepseek / oracle（均只提议，不执行）
     memory/          短期观测摘要 + 案例簿 + 双时态事实簿（确定性投影、可解释检索）
     trajectory/      记录、导出、独立重算
     demo/            CLI、终端渲染、七个场景、崩溃 worker
   viewer/            实时控制台 + Trace 回放（零依赖零构建）
-  tests/             265 项 unittest
+  tests/             277 项 unittest
   docs/              架构、设计决策、框架对照、JD 映射
 archive/             v1：Node.js 研究原型（保留，不参与 CI）
 ```

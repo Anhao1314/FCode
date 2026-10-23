@@ -16,7 +16,8 @@ import sys
 import webbrowser
 
 from ..core.contracts import AgentError
-from .fixtures import SCENARIOS
+from ..runtime.budget import BudgetLimits
+from .fixtures import SCENARIOS, get_scenario
 from .runner import PROJECT_ROOT, WORK_DIR, run_all, run_scenario
 from .serve import serve
 
@@ -45,12 +46,62 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--fast", action="store_true", help="disable pauses between rounds")
     parser.add_argument("--trace-out", metavar="PATH", help="write the trace here instead of work/demo/")
-    parser.add_argument("--model", default="mock", help="proposal source (Phase 1: mock only)")
+    parser.add_argument(
+        "--provider",
+        choices=("mock", "local", "kimi", "deepseek", "oracle"),
+        default="mock",
+        help="explicit host-selected proposal source (default: offline mock)",
+    )
+    parser.add_argument(
+        "--model",
+        default=None,
+        help="provider model override; without --provider this old flag remains gated",
+    )
+    parser.add_argument("--endpoint", default=None, help="local endpoint or oracle exchange directory")
+    parser.add_argument("--timeout", type=float, default=None, help="provider timeout in seconds")
+    parser.add_argument("--json-mode", action="store_true", help="request JSON mode from a local provider")
+    parser.add_argument("--structured", action="store_true", help="request the local provider's JSON schema mode")
+    parser.add_argument("--reasoning-effort", choices=("low", "high", "max"), default=None, help="Kimi K3 reasoning effort")
+    parser.add_argument("--max-cost-microusd", type=int, default=None, help="host budget override for one scenario")
+    parser.add_argument("--max-tokens-budget", type=int, default=None, help="host token-budget override for one scenario")
+    parser.add_argument("--max-total-cost", type=int, default=None, help="batch guard in µUSD (required for external provider batches)")
+    parser.add_argument("--workdir", default=None, help="isolated directory for one real-provider run")
+    parser.add_argument("--workroot", default=None, help="parent directory for batch runs; each scenario gets a subdir")
     parser.add_argument("--open", action="store_true", dest="open_viewer", help="open the trace viewer afterwards")
     parser.add_argument("--serve", action="store_true", help="serve the viewer on 127.0.0.1 and open it")
     parser.add_argument("--port", type=int, default=0, help="port for --serve (default: pick a free one)")
     parser.add_argument("--list", action="store_true", dest="list_scenarios", help="list scenarios and exit")
     return parser
+
+
+def _provider_options(args: argparse.Namespace) -> dict[str, object]:
+    return {
+        "endpoint": args.endpoint,
+        "timeout": args.timeout,
+        "json_mode": args.json_mode,
+        "structured": args.structured,
+        "reasoning_effort": args.reasoning_effort,
+    }
+
+
+def _limits(args: argparse.Namespace, scenario_key: str) -> BudgetLimits | None:
+    if args.max_cost_microusd is None and args.max_tokens_budget is None:
+        return None
+    base = get_scenario(scenario_key).limits
+    return BudgetLimits(
+        max_calls=base.max_calls,
+        max_reads=base.max_reads,
+        max_cost_microusd=(
+            args.max_cost_microusd
+            if args.max_cost_microusd is not None
+            else base.max_cost_microusd
+        ),
+        max_tokens=(
+            args.max_tokens_budget
+            if args.max_tokens_budget is not None
+            else base.max_tokens
+        ),
+    )
 
 
 def _menu() -> str:
@@ -99,19 +150,37 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         if key == "all":
-            results = run_all()
+            results = run_all(
+                provider_name=args.provider,
+                provider_options=_provider_options(args),
+                workroot=args.workroot,
+                limits=_limits(args, "full"),
+                max_total_cost=args.max_total_cost,
+            )
             code = 0 if all(result.ok for result in results) else 1
         else:
-            result = run_scenario(key, fast=args.fast, trace_out=args.trace_out, model=args.model)
+            result = run_scenario(
+                key,
+                fast=args.fast,
+                trace_out=args.trace_out,
+                model=args.model,
+                provider_name=args.provider,
+                provider_options=_provider_options(args),
+                workdir=args.workdir,
+                limits=_limits(args, key),
+            )
             code = result.exit_code
     except KeyError:
         print(f"unknown scenario {key!r}; run with --list to see the options")
         return 2
+    except ValueError as error:
+        print(f"PROVIDER_CONFIG_INVALID: {error}")
+        return 2
     except AgentError as error:
         if error.code == "PROVIDER_GATED":
             print(error.message)
-            print("a real provider requires a one-time transmission approval, a credential provider,")
-            print("a host-reviewed price snapshot and a hard budget. See docs/design-decisions.md.")
+            print("a real provider requires an explicit --provider selection, credentials from the host environment,")
+            print("a host-reviewed price snapshot and a hard budget. See docs/deepseek.md and docs/kimi.md.")
             return 2
         print(f"{error.code}: {error.message}")
         return 1

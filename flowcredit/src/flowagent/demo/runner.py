@@ -18,12 +18,14 @@ import subprocess
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from ..core.contracts import AgentError, Task
 from ..core.receipts import ReceiptStore
 from ..core.store import TaskStore
+from ..providers.base import Provider
 from ..providers.mock import MockProvider
+from ..runtime.budget import BudgetLimits
 from ..runtime.harness import Harness
 from ..runtime.loop import Loop
 from ..tools.finance.fixtures import FinanceWorld
@@ -33,6 +35,7 @@ from ..tools.registry import ToolRegistry
 from ..trajectory.exporter import export_trace, verify_trace
 from ..trajectory.recorder import TraceRecorder
 from .fixtures import SCENARIOS, Scenario, get_scenario
+from .provider_factory import build_provider, provider_start_line
 from .render import Renderer
 from ..domains.finance import FINANCE_DOMAIN, verify_observation as verify_finance
 
@@ -60,6 +63,10 @@ class RunResult:
     model_calls: int = 0
     note: str = ""
     expected: str = "succeeded"
+    provider: str = "offline-mock"
+    receipt_cost_microusd: int = 0
+    chain_head: str = ""
+    calibration: dict[str, Any] | None = None
 
     @property
     def ok(self) -> bool:
@@ -77,7 +84,7 @@ class Stack:
     world: FinanceWorld
     registry: ToolRegistry
     receipts: ReceiptStore
-    provider: MockProvider
+    provider: Provider
     harness: Harness
     planner: FinancePlanner
     issued: dict[str, str] = field(default_factory=dict)
@@ -133,7 +140,13 @@ def _fresh_database(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
 
 
-def build_stack(db_path: Path, scenario: Scenario) -> Stack:
+def build_stack(
+    db_path: Path,
+    scenario: Scenario,
+    *,
+    provider_factory: Callable[[ReceiptStore], Provider] | None = None,
+    limits: BudgetLimits | None = None,
+) -> Stack:
     """Assemble store, world, registry, provider and harness for one scenario."""
     store = TaskStore(db_path)
     world = FinanceWorld(partial=scenario.partial_corpus)
@@ -146,17 +159,20 @@ def build_stack(db_path: Path, scenario: Scenario) -> Stack:
         issued["ref"] = ref
         return ref
 
-    provider = MockProvider(
-        policy=scenario.policy,
-        fail_at_call=scenario.fail_at_call,
-        issue_receipt=issue if scenario.fail_at_call else None,
-    )
+    if provider_factory is None:
+        provider = MockProvider(
+            policy=scenario.policy,
+            fail_at_call=scenario.fail_at_call,
+            issue_receipt=issue if scenario.fail_at_call else None,
+        )
+    else:
+        provider = provider_factory(receipts)
     harness = Harness(
         store=store,
         registry=registry,
         provider=provider,
         world=world,
-        limits=scenario.limits,
+        limits=limits or scenario.limits,
         receipts=receipts,
         verifier=lambda observation: verify_finance(world, observation),
     )
@@ -178,8 +194,22 @@ def _create_task(stack: Stack, scenario: Scenario) -> Task:
     )
 
 
-def _finish(stack: Stack, scenario: Scenario, task: Task, recorder: TraceRecorder, renderer: Renderer, *, trace_out: str | None) -> tuple[str, bool]:
+def _finish(
+    stack: Stack,
+    scenario: Scenario,
+    task: Task,
+    recorder: TraceRecorder,
+    renderer: Renderer,
+    *,
+    trace_out: str | None,
+    provider_audit: list[dict[str, Any]] | None = None,
+    provider_metadata: dict[str, Any] | None = None,
+) -> tuple[str, bool, dict[str, Any]]:
     trace = recorder.build(task)
+    if provider_audit is not None:
+        trace["provider_audit"] = provider_audit
+    if provider_metadata is not None:
+        trace["provider_metadata"] = provider_metadata
     target = Path(trace_out) if trace_out else WORK_DIR / f"{scenario.key}.trace.json"
     path = export_trace(trace, target)
     renderer.footer(str(path), stack.harness.budget(task).snapshot(), task.model.attempts)
@@ -191,7 +221,19 @@ def _finish(stack: Stack, scenario: Scenario, task: Task, recorder: TraceRecorde
     except Exception as error:  # noqa: BLE001 - surfaced, never swallowed
         verified = False
         print(f" 轨迹自检  失败：{error}")
-    return str(path), verified
+    return str(path), verified, trace
+
+
+def _provider_calibration(provider: Provider) -> dict[str, Any] | None:
+    target = getattr(provider, "wrapped", provider)
+    calibration = getattr(target, "calibration", None)
+    if calibration is None:
+        return None
+    return {
+        "formula": calibration.formula,
+        "measured_ratio": calibration.measured_ratio,
+        "reports": list(calibration.reports),
+    }
 
 
 def run_scenario(
@@ -199,20 +241,72 @@ def run_scenario(
     *,
     fast: bool = False,
     trace_out: str | None = None,
-    model: str = "mock",
+    model: str | None = None,
     quiet: bool = False,
+    provider_name: str = "mock",
+    provider_options: dict[str, Any] | None = None,
+    workdir: str | Path | None = None,
+    limits: BudgetLimits | None = None,
 ) -> RunResult:
-    """Run one scenario and return its numbers."""
+    """Run one scenario and return its numbers.
+
+    ``provider_name`` is the explicit host decision. The legacy ``model``
+    argument remains only so an old ``--model real-model`` call still reaches
+    ``PROVIDER_GATED`` instead of silently changing meaning.
+    """
     scenario = get_scenario(key)
-    if model != "mock":
+    if provider_name == "mock" and model not in (None, "mock"):
         raise AgentError(
             "PROVIDER_GATED",
-            f"model {model!r} is gated off in Phase 1: only the offline mock is enabled",
+            f"model {model!r} is gated off: pass --provider explicitly",
         )
 
-    db = _db_path(key)
+    if workdir is not None:
+        run_dir = Path(workdir).expanduser().resolve()
+        if run_dir in (Path("/"), PROJECT_ROOT):
+            raise ValueError(f"refusing to use {run_dir} as a demo workdir")
+        run_dir.mkdir(parents=True, exist_ok=True)
+        db = run_dir / "task.sqlite"
+        default_trace = run_dir / f"{scenario.key}.trace.json"
+    else:
+        db = _db_path(key)
+        default_trace = WORK_DIR / f"{scenario.key}.trace.json"
+
+    provider_audit: list[dict[str, Any]] = []
+    options = dict(provider_options or {})
+    calibration_path = None
+    if provider_name == "kimi":
+        calibration_path = (
+            run_dir.parent / "kimi-calibration.json"
+            if workdir is not None
+            else WORK_DIR / "kimi-calibration.json"
+        )
+
+    def factory(receipts: ReceiptStore) -> Provider:
+        return build_provider(
+            provider_name,
+            scenario=scenario,
+            receipts=receipts,
+            model=model,
+            endpoint=options.get("endpoint"),
+            timeout=options.get("timeout"),
+            json_mode=bool(options.get("json_mode", False)),
+            structured=bool(options.get("structured", False)),
+            reasoning_effort=options.get("reasoning_effort"),
+            calibration_path=calibration_path,
+            raw_sink=provider_audit.append,
+        )
+
     _fresh_database(db)
-    stack = build_stack(db, scenario)
+    stack = build_stack(
+        db,
+        scenario,
+        provider_factory=factory if provider_name != "mock" else None,
+        limits=limits,
+    )
+    if provider_name != "mock":
+        print(provider_start_line(stack.provider))
+
     renderer = Renderer(fast=fast, quiet=quiet)
     recorder = TraceRecorder(stack.store, provider_name=stack.provider.name, model_name=stack.provider.model)
     observer = _Tee(renderer, recorder)
@@ -224,7 +318,19 @@ def run_scenario(
     note = ""
 
     if scenario.crash_at:
-        task, recovered = _run_crash(stack, scenario, task, observer, renderer)
+        task, recovered = _run_crash(
+            stack,
+            scenario,
+            task,
+            observer,
+            renderer,
+            db_path=db,
+            provider_name=provider_name,
+            provider_options=options,
+            model=model,
+            calibration_path=calibration_path,
+            limits=limits,
+        )
     else:
         task = Loop(
             stack.harness,
@@ -245,14 +351,53 @@ def run_scenario(
             reconciled = True
             renderer.event("RECONCILED", f"签名收据匹配 round {task.model.attempts}，继续执行", colour=Renderer.GREEN)
             task = Loop(
-            stack.harness,
-            planner=stack.planner,
-            max_rounds=scenario.max_rounds,
-            observer=observer,
-            result_tools=FINANCE_DOMAIN.result_tools,
-        ).run(task.id)
+                stack.harness,
+                planner=stack.planner,
+                max_rounds=scenario.max_rounds,
+                observer=observer,
+                result_tools=FINANCE_DOMAIN.result_tools,
+            ).run(task.id)
 
-    path, verified = _finish(stack, scenario, task, recorder, renderer, trace_out=trace_out)
+    if (
+        scenario.key == "tool-denied"
+        and provider_name not in ("mock",)
+        and task.status != "denied"
+    ):
+        note = "model declined to propose unregistered tool; gate covered by mock regression"
+
+    target = trace_out or (str(default_trace) if workdir is not None else None)
+    redacted = getattr(getattr(stack.provider, "wrapped", stack.provider), "redacted", None)
+    provider_metadata: dict[str, Any] = {
+        "provider": stack.provider.name,
+        "model": stack.provider.model,
+    }
+    if scenario.key == "tool-denied" and provider_name != "mock":
+        provider_metadata["fault_injection"] = True
+        provider_metadata["disclosure"] = (
+            "scenario deliberately includes an unregistered tool in the plan; "
+            "test target is host gating, not model spontaneity"
+        )
+    if callable(redacted):
+        provider_metadata["config"] = redacted()
+    calibration = _provider_calibration(stack.provider)
+    if calibration is not None:
+        provider_metadata["calibration"] = calibration
+
+    path, verified, trace = _finish(
+        stack,
+        scenario,
+        task,
+        recorder,
+        renderer,
+        trace_out=target,
+        provider_audit=provider_audit,
+        provider_metadata=provider_metadata,
+    )
+    receipt_cost = sum(
+        int((record.get("receipt") or {}).get("cost_microusd") or 0)
+        for record in trace.get("rounds", [])
+        if record.get("receipt")
+    )
     budget = stack.harness.budget(task).snapshot()
     result = RunResult(
         key=key,
@@ -269,6 +414,10 @@ def run_scenario(
         model_calls=_count(stack.store, task.id, "model_started"),
         note=note,
         expected=scenario.expected_status,
+        provider=stack.provider.name,
+        receipt_cost_microusd=receipt_cost,
+        chain_head=str(trace.get("chain", {}).get("head_hash") or ""),
+        calibration=calibration,
     )
     stack.store.close()
     return result
@@ -280,16 +429,38 @@ def _run_crash(
     task: Task,
     observer: _Tee,
     renderer: Renderer,
+    *,
+    db_path: Path,
+    provider_name: str = "mock",
+    provider_options: dict[str, Any] | None = None,
+    model: str | None = None,
+    calibration_path: Path | None = None,
+    limits: BudgetLimits | None = None,
 ) -> tuple[Task, bool]:
     """Run until the worker kills itself, then resume in this process."""
+    options = provider_options or {}
+    budget = limits or scenario.limits
     env = {
         **os.environ,
         "PYTHONPATH": str(PROJECT_ROOT / "src"),
-        "FLOWAGENT_DB": str(_db_path(scenario.key)),
+        "FLOWAGENT_DB": str(db_path),
         "FLOWAGENT_TASK_ID": task.id,
         "FLOWAGENT_CRASH_AT": scenario.crash_at or "tool_succeeded",
         "FLOWAGENT_CRASH_AT_COUNT": str(scenario.crash_at_count),
         "FLOWAGENT_MAX_ROUNDS": str(scenario.max_rounds),
+        "FLOWAGENT_PROVIDER": provider_name,
+        "FLOWAGENT_SCENARIO": scenario.key,
+        "FLOWAGENT_PROVIDER_MODEL": model or "",
+        "FLOWAGENT_PROVIDER_ENDPOINT": str(options.get("endpoint") or ""),
+        "FLOWAGENT_PROVIDER_TIMEOUT": str(options.get("timeout") or ""),
+        "FLOWAGENT_PROVIDER_JSON_MODE": "1" if options.get("json_mode") else "",
+        "FLOWAGENT_PROVIDER_STRUCTURED": "1" if options.get("structured") else "",
+        "FLOWAGENT_PROVIDER_REASONING_EFFORT": str(options.get("reasoning_effort") or ""),
+        "FLOWAGENT_KIMI_CALIBRATION": str(calibration_path) if calibration_path else "",
+        "FLOWAGENT_BUDGET_MAX_CALLS": str(budget.max_calls),
+        "FLOWAGENT_BUDGET_MAX_READS": str(budget.max_reads),
+        "FLOWAGENT_BUDGET_MAX_COST_MICROUSD": str(budget.max_cost_microusd),
+        "FLOWAGENT_BUDGET_MAX_TOKENS": str(budget.max_tokens),
     }
     completed = subprocess.run(
         [sys.executable, "-m", "flowagent.demo.crash_worker"],
@@ -297,7 +468,7 @@ def _run_crash(
         env=env,
         capture_output=True,
         text=True,
-        timeout=120,
+        timeout=600,
     )
     killed = completed.returncode < 0
     renderer.event(
@@ -348,11 +519,64 @@ def _run_crash(
     return task, killed
 
 
-def run_all(*, trace_dir: str | None = None) -> list[RunResult]:
-    """Run every scenario in order and print a summary table."""
+def run_all(
+    *,
+    trace_dir: str | None = None,
+    provider_name: str = "mock",
+    provider_options: dict[str, Any] | None = None,
+    workroot: str | Path | None = None,
+    limits: BudgetLimits | None = None,
+    max_total_cost: int | None = None,
+) -> list[RunResult]:
+    """Run every scenario in order and print a summary table.
+
+    The optional total-cost guard is batch-level and conservative: it checks
+    cumulative receipt costs between tasks. A task already in flight remains
+    governed by its own pre-dispatch budget, so the guard never kills a model
+    call halfway and turns a known outcome into an unknown one.
+    """
+    if provider_name != "mock" and max_total_cost is None:
+        raise ValueError("an external provider batch requires --max-total-cost")
+
+    keys = list(SCENARIOS)
+    per_task_cap = limits.max_cost_microusd if limits is not None else SCENARIOS[keys[0]].limits.max_cost_microusd
+    worst_case = len(keys) * per_task_cap
+    print(
+        f"batch worst-case cost estimate: {len(keys)} tasks × "
+        f"{per_task_cap} µUSD = {worst_case} µUSD"
+    )
+    if max_total_cost is not None and worst_case > max_total_cost:
+        print(
+            "warning: the total-cost ceiling is below the configured batch upper bound; "
+            "later tasks may stop after completed runs"
+        )
+
     results: list[RunResult] = []
-    for key in SCENARIOS:
-        results.append(run_scenario(key, fast=True, quiet=True, trace_out=None))
+    cumulative = 0
+    stopped_by_guard = False
+    for key in keys:
+        result = run_scenario(
+            key,
+            fast=True,
+            quiet=True,
+            trace_out=trace_dir,
+            provider_name=provider_name,
+            provider_options=provider_options,
+            workdir=Path(workroot) / key if workroot is not None else None,
+            limits=limits,
+        )
+        results.append(result)
+        cumulative += result.receipt_cost_microusd
+        if max_total_cost is not None and cumulative >= max_total_cost:
+            stopped_by_guard = True
+            result.note = (
+                f"{result.note}; " if result.note else ""
+            ) + "batch_stopped_by_cost_guard"
+            print(
+                "batch_stopped_by_cost_guard: "
+                f"cumulative receipt cost {cumulative} µUSD reached {max_total_cost} µUSD"
+            )
+            break
 
     print()
     print("─" * 78)
@@ -372,5 +596,7 @@ def run_all(*, trace_dir: str | None = None) -> list[RunResult]:
         print(f" {len(failures)} 个场景的轨迹未通过自检")
     else:
         print(f" 全部 {len(results)} 个场景的轨迹均通过自检")
+    if stopped_by_guard:
+        print(f" 批量成本闸触发：已完成 {len(results)} 个场景，累计收据成本 {cumulative} µUSD")
     print()
     return results
