@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import shutil
 from pathlib import Path
 from typing import Any
@@ -21,8 +20,10 @@ from ..domains.finance import FINANCE_DOMAIN, verify_observation
 from ..memory.cases import CaseIndex
 from ..memory.facts import FactStore
 from ..providers.deepseek import DeepSeekPolicy, PriceSnapshot
+from ..providers.deepseek_config import load_deepseek_settings
 from ..providers.local_policy import LocalPolicy
 from ..providers.mock import MockProvider
+from ..runtime.budget import BudgetLimits
 from ..runtime.harness import Harness
 from ..runtime.loop import Loop
 from ..runtime.policy import MockPolicy, compile_packet
@@ -57,6 +58,8 @@ def run(
     api_key: str = "",
     base_url: str = "https://api.deepseek.com/v1",
     max_tokens: int = 64,
+    max_rounds: int | None = None,
+    limits: BudgetLimits | None = None,
 ) -> dict[str, Any]:
     scenario = get_scenario(scenario_key)
     workdir = workdir.expanduser().resolve()
@@ -85,7 +88,7 @@ def run(
         registry=registry,
         provider=provider,
         world=world,
-        limits=scenario.limits,
+        limits=limits or scenario.limits,
         receipts=receipts,
         verifier=lambda observation: verify_observation(world, observation),
     )
@@ -123,7 +126,7 @@ def run(
     loop = Loop(
         harness,
         planner=FinancePlanner(),
-        max_rounds=scenario.max_rounds,
+        max_rounds=max_rounds or scenario.max_rounds,
         observer=recorder,
         policy=policy,
         result_tools=FINANCE_DOMAIN.result_tools,
@@ -208,41 +211,63 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--endpoint", default="http://127.0.0.1:11434/v1")
     parser.add_argument("--model", default=None)
     parser.add_argument("--json-mode", action="store_true")
-    parser.add_argument("--timeout", type=float, default=120.0)
-    parser.add_argument("--base-url", default="https://api.deepseek.com/v1")
+    parser.add_argument("--timeout", type=float, default=None)
+    parser.add_argument("--base-url", default=None)
     parser.add_argument("--api-key-env", default="DEEPSEEK_API_KEY")
     parser.add_argument("--input-price-microusd-per-mtok", type=int, default=None)
     parser.add_argument("--output-price-microusd-per-mtok", type=int, default=None)
     parser.add_argument("--cache-hit-price-microusd-per-mtok", type=int, default=None)
-    parser.add_argument("--price-as-of", default="")
-    parser.add_argument("--price-source", default="host")
-    parser.add_argument("--max-tokens", type=int, default=64)
+    parser.add_argument("--price-as-of", default=None)
+    parser.add_argument("--price-source", default=None)
+    parser.add_argument("--max-tokens", type=int, default=None)
+    parser.add_argument("--max-rounds", type=int, default=0)
+    parser.add_argument("--max-calls", type=int, default=None)
+    parser.add_argument("--max-reads", type=int, default=None)
+    parser.add_argument("--max-cost-microusd", type=int, default=None)
+    parser.add_argument("--max-tokens-budget", type=int, default=None)
     args = parser.parse_args(argv)
 
     price = None
     api_key = ""
     model = args.model or "qwen3-4b-fcode"
     json_mode = args.json_mode
+    timeout = args.timeout if args.timeout is not None else 120.0
+    base_url = args.base_url or "https://api.deepseek.com/v1"
+    max_tokens = args.max_tokens if args.max_tokens is not None else 64
+    limits = None
     if args.policy == "deepseek":
-        if args.input_price_microusd_per_mtok is None or args.output_price_microusd_per_mtok is None:
-            parser.error("deepseek policy requires input/output price snapshots")
-        if not args.price_as_of:
-            parser.error("deepseek policy requires --price-as-of")
-        api_key = os.environ.get(args.api_key_env, "")
-        if not api_key.strip():
-            parser.error(f"{args.api_key_env} is not set")
         try:
-            price = PriceSnapshot(
-                input_microusd_per_mtok=args.input_price_microusd_per_mtok,
-                output_microusd_per_mtok=args.output_price_microusd_per_mtok,
-                cache_hit_microusd_per_mtok=args.cache_hit_price_microusd_per_mtok,
-                as_of=args.price_as_of,
-                source=args.price_source,
+            settings = load_deepseek_settings(
+                api_key_env=args.api_key_env,
+                base_url=args.base_url,
+                model=args.model,
+                timeout=args.timeout,
+                max_tokens=args.max_tokens,
+                max_packet_tokens=None,
+                input_price=args.input_price_microusd_per_mtok,
+                output_price=args.output_price_microusd_per_mtok,
+                cache_hit_price=args.cache_hit_price_microusd_per_mtok,
+                price_as_of=args.price_as_of,
+                price_source=args.price_source,
             )
         except ValueError as error:
             parser.error(str(error))
-        model = args.model or "deepseek-chat"
+        price = settings.price
+        api_key = settings.api_key
+        model = settings.model
         json_mode = True
+        timeout = settings.timeout
+        base_url = settings.base_url
+        max_tokens = settings.max_tokens
+        from .api import budget_limits_from_overrides
+
+        limits = budget_limits_from_overrides(
+            args.scenario,
+            max_calls=args.max_calls,
+            max_reads=args.max_reads,
+            max_cost_microusd=args.max_cost_microusd,
+            max_tokens=args.max_tokens_budget,
+        )
 
     summary = run(
         workdir=Path(args.workdir),
@@ -252,14 +277,19 @@ def main(argv: list[str] | None = None) -> int:
         endpoint=args.endpoint,
         model=model,
         json_mode=json_mode,
-        timeout=args.timeout,
+        timeout=timeout,
         price=price,
         api_key=api_key,
-        base_url=args.base_url,
-        max_tokens=args.max_tokens,
+        base_url=base_url,
+        max_tokens=max_tokens,
+        max_rounds=args.max_rounds or None,
+        limits=limits,
     )
+    expected = get_scenario(args.scenario).expected_status
+    summary["expected_status"] = expected
+    summary["outcome_ok"] = summary["status"] == expected
     print(json.dumps(summary, ensure_ascii=False, indent=2))
-    return 0 if summary["verified"] and summary["status"] == "succeeded" else 1
+    return 0 if summary["verified"] and summary["outcome_ok"] else 1
 
 
 if __name__ == "__main__":

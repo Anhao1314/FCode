@@ -19,7 +19,11 @@ from flowagent.providers.deepseek import (  # noqa: E402
     DeepSeekProvider,
     PriceSnapshot,
 )
-from flowagent.runtime.policy import ActionCandidate, DecisionPacket  # noqa: E402
+from flowagent.runtime.policy import (  # noqa: E402
+    ActionCandidate,
+    DecisionPacket,
+    PacketProvider,
+)
 
 
 class _Response:
@@ -112,8 +116,26 @@ class DeepSeekTests(unittest.TestCase):
         self.assertEqual(choice.cost_microusd, 120)
         self.assertEqual(choice.request_id, "req-2")
         self.assertEqual(choice.repaired, False)
+        self.assertEqual(choice.metadata["billing"], "external")
+        self.assertEqual(choice.metadata["price_as_of"], "2026-10-21")
+        self.assertEqual(choice.metadata["price_source"], "host")
+        self.assertNotIn("usage_missing", choice.metadata)
         self.assertEqual(policy.reserve_tokens, 4160)
         self.assertEqual(seen["body"]["max_tokens"], 64)
+
+        class FrozenChoicePolicy:
+            name = policy.name
+            model = policy.model
+
+            def choose(self, packet):  # noqa: ARG002
+                return choice
+
+        proposal = PacketProvider(packet, FrozenChoicePolicy()).propose({})
+        receipt = proposal.receipt()
+        self.assertEqual(receipt["metadata"]["provider_request_id"], "req-2")
+        self.assertEqual(receipt["metadata"]["price_as_of"], "2026-10-21")
+        self.assertEqual(receipt["metadata"]["price_source"], "host")
+        self.assertEqual(receipt["metadata"]["billing"], "external")
 
     def test_invalid_choice_fails_without_repair(self) -> None:
         calls = {"n": 0}

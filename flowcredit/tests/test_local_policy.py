@@ -178,7 +178,8 @@ class LocalPolicyTests(unittest.TestCase):
         self.assertIn('"a1"', user)
         self.assertIn('"a2"', user)
         self.assertNotIn("normalize_units", user)
-        self.assertIn("fcode.packet-prompt/v1", user)
+        self.assertIn("fcode.packet-prompt/v2", user)
+        self.assertIn("先选读取、统一口径、核对重述或解除依赖的候选", system)
 
 
 if __name__ == "__main__":

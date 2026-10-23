@@ -19,7 +19,7 @@ __all__ = [
 
 from .prompt import canonical
 
-POLICY_PROMPT_VERSION = "fcode.packet-prompt/v1"
+POLICY_PROMPT_VERSION = "fcode.packet-prompt/v2"
 
 POLICY_SYSTEM_PROMPT = (
     "你是 FCode 运行时的决策策略头。你只能从 candidates 里选择一个动作。"
@@ -28,9 +28,11 @@ POLICY_SYSTEM_PROMPT = (
     "规则：\n"
     "1. choice 必须是 candidates 中存在的 id；\n"
     "2. 一次只选一个；\n"
-    "3. 证据不足或 candidates 里有 report_blocked 时，可以选择它；\n"
-    "4. 不要生成 tool、参数、解释或计划；\n"
-    "5. 不确定时选择最保守、最可复核的候选。"
+    "3. 先选读取、统一口径、核对重述或解除依赖的候选，再选依赖这些前置条件的计算；\n"
+    "4. 口径、单位、重述或输入依赖未完成时，不要选择计算；\n"
+    "5. 出现 blocker 时，优先选择能解除 blocker 的候选；只有没有候选能解除时才选 report_blocked；\n"
+    "6. 不要生成 tool、参数、解释或计划；\n"
+    "7. 不确定时选择最保守、最可复核的候选。"
 )
 
 

@@ -287,10 +287,18 @@ class DeepSeekPolicy:
         if packet.candidate(choice) is None:
             raise AgentError("POLICY_INVALID_CHOICE", f"{choice!r} is not a candidate id")
         _, _, total_tokens = _usage_tokens(usage)
+        metadata = {
+            "billing": "external",
+            "price_as_of": self.price.as_of,
+            "price_source": self.price.source,
+        }
+        if not usage:
+            metadata["usage_missing"] = True
         return ActionChoice(
             choice,
             tokens=total_tokens,
             latency_ms=latency_ms,
             cost_microusd=self.price.cost(usage),
             request_id=request_id,
+            metadata=metadata,
         )

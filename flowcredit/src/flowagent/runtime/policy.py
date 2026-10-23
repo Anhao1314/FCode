@@ -62,6 +62,9 @@ class ActionChoice:
     repaired: bool = False
     cost_microusd: int = 0
     request_id: str = ""
+    #: Provider provenance (price snapshot, billing mode, usage honesty) that
+    #: belongs in the round receipt without becoming model-facing packet state.
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -178,6 +181,7 @@ class PacketProvider:
             todo_id=candidate.todo_id or None,
             metadata={
                 "policy": PACKET_VERSION,
+                **dict(choice.metadata),
                 "packet_hash": self.packet.packet_hash,
                 "candidate_id": candidate.id,
                 "reason": choice.reason,

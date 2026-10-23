@@ -85,8 +85,12 @@ PYTHONPATH=src python3 -m flowagent.demo.packet   --workdir /tmp/fcode-packet-lo
 
 ### packet prompt
 
-`providers/packet_prompt.py`：版本 `fcode.packet-prompt/v1`。
+`providers/packet_prompt.py`：版本 `fcode.packet-prompt/v2`。
 模型只看到 packet 和输出 schema，不再看到完整工具目录；训练和推理共用同一渲染器。
+v2 增加依赖顺序规则：先读取、统一口径、核对重述或解除依赖，再计算；blocked
+时优先选择能解除 blocker 的候选，只有无法解除才 `report_blocked`。
+2026-10-24 之前生成的 `sft/data/choices_*` 仍是 v1 样本；本地 policy head
+恢复训练前必须用 v2 renderer 重新生成，不能混用。
 
 ### choice SFT
 

@@ -49,7 +49,7 @@ class ChoiceSFTTests(unittest.TestCase):
         self.assertEqual([turn["from"] for turn in turns], ["system", "user", "assistant"])
         self.assertIn('"a1"', turns[1]["value"])
         self.assertEqual(json.loads(turns[2]["value"]), {"choice": "a1"})
-        self.assertEqual(stats["prompt_version"], "fcode.packet-prompt/v1")
+        self.assertEqual(stats["prompt_version"], "fcode.packet-prompt/v2")
 
     def test_duplicate_packet_choice_pairs_are_dropped(self) -> None:
         records, stats = samples_to_sharegpt(samples_from_trace(trace(), "run-1") * 2)
