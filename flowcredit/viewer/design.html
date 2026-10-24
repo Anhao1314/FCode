@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="color-scheme" content="dark">
-<title>Console Dark · FCode 设计系统</title>
+<meta name="color-scheme" content="light">
+<title>Console Light · FCode 设计系统</title>
 <link rel="stylesheet" href="app.css?v=53">
 <link rel="stylesheet" href="design.css?v=53">
 </head>
@@ -12,19 +12,19 @@
 <main class="guide">
   <header class="guide-head">
     <div class="guide-kicker">FCODE DESIGN SYSTEM · V2</div>
-    <h1 class="guide-title">Console Dark<br>近黑与单强调</h1>
-    <p class="guide-sub">一套为可复核工作底稿而生的界面语言。近黑画布承托证据，单一强调色标记进行中，语义色只表达状态；哈希、时间戳与预算一律等宽对齐。</p>
+    <h1 class="guide-title">Console Light<br>浅色与单强调</h1>
+    <p class="guide-sub">一套为可复核工作底稿而生的界面语言。浅色画布承托证据，近黑强调标记进行中，语义色只表达状态；哈希、时间戳与预算一律等宽对齐。</p>
   </header>
 
   <section class="guide-section">
     <h2>六条原则</h2>
     <p>不是风格偏好，是产品承诺的视觉对应。</p>
     <div class="guide-principles">
-      <div class="guide-principle"><b>01 近黑画布</b><small>画布 #0A0A0B、面板 #131316、悬浮 #1A1A1F 三层表面；不引入第四种亮度。</small></div>
-      <div class="guide-principle"><b>02 单一强调色</b><small>#6C7CFF 只用于连接状态、焦点环与进行中动画；不做装饰。</small></div>
-      <div class="guide-principle"><b>03 语义色只表达状态</b><small>PASS / DENIED / unknown 配小圆点指示，不做大色块徽章。</small></div>
+      <div class="guide-principle"><b>01 浅色画布</b><small>画布 #FAFAFB、面板 #F4F4F6、悬浮 #FFFFFF 三层表面；不引入第四种亮度。</small></div>
+      <div class="guide-principle"><b>02 单一强调色</b><small>近黑 #18181B 只用于连接状态、焦点环、进行中动画与主按钮；不做装饰。</small></div>
+      <div class="guide-principle"><b>03 语义色只表达状态</b><small>PASS / DENIED / unknown 配小圆点指示，不做大色块徽章；白底对比度 ≥ 4.5:1。</small></div>
       <div class="guide-principle"><b>04 数字像账本</b><small>金额、比例、哈希用等宽与 tabular numerals，对齐比装饰重要。</small></div>
-      <div class="guide-principle"><b>05 线与圆角</b><small>统一 1px 白 8% 描边、8px 圆角；层级靠间距与字重，不靠阴影。</small></div>
+      <div class="guide-principle"><b>05 线与圆角</b><small>统一 1px 黑 8% 描边、8px 圆角；层级靠间距与字重，不靠阴影。</small></div>
       <div class="guide-principle"><b>06 动效是状态变化</b><small>统一 150ms ease，新内容 200ms 淡入；不做影响录屏清晰度的动画。</small></div>
     </div>
   </section>
@@ -33,15 +33,15 @@
     <h2>颜色</h2>
     <p>三层表面、一个强调色、三种状态；没有第四个品牌色。</p>
     <div class="guide-grid">
-      <div class="guide-swatch"><div class="chipbox" style="background:#0A0A0B"></div><b>--canvas</b><small>#0A0A0B</small></div>
-      <div class="guide-swatch"><div class="chipbox" style="background:#131316"></div><b>--panel</b><small>#131316</small></div>
-      <div class="guide-swatch"><div class="chipbox" style="background:#1A1A1F"></div><b>--raised</b><small>#1A1A1F</small></div>
-      <div class="guide-swatch"><div class="chipbox" style="background:rgba(255,255,255,.08)"></div><b>--line</b><small>rgba(255,255,255,.08)</small></div>
-      <div class="guide-swatch"><div class="chipbox" style="background:#6C7CFF"></div><b>--accent</b><small>#6C7CFF</small></div>
-      <div class="guide-swatch"><div class="chipbox" style="background:#34C77B"></div><b>--ok</b><small>#34C77B</small></div>
-      <div class="guide-swatch"><div class="chipbox" style="background:#F5B83D"></div><b>--warn</b><small>#F5B83D</small></div>
-      <div class="guide-swatch"><div class="chipbox" style="background:#F5545D"></div><b>--bad</b><small>#F5545D</small></div>
-      <div class="guide-swatch"><div class="chipbox" style="background:#ECECED"></div><b>--text-1</b><small>#ECECED</small></div>
+      <div class="guide-swatch"><div class="chipbox" style="background:#FAFAFB;border:1px solid rgba(0,0,0,.1)"></div><b>--canvas</b><small>#FAFAFB</small></div>
+      <div class="guide-swatch"><div class="chipbox" style="background:#F4F4F6;border:1px solid rgba(0,0,0,.1)"></div><b>--panel</b><small>#F4F4F6</small></div>
+      <div class="guide-swatch"><div class="chipbox" style="background:#FFFFFF;border:1px solid rgba(0,0,0,.1)"></div><b>--raised</b><small>#FFFFFF</small></div>
+      <div class="guide-swatch"><div class="chipbox" style="background:rgba(0,0,0,.08)"></div><b>--line</b><small>rgba(0,0,0,.08)</small></div>
+      <div class="guide-swatch"><div class="chipbox" style="background:#18181B"></div><b>--accent</b><small>#18181B</small></div>
+      <div class="guide-swatch"><div class="chipbox" style="background:#15803D"></div><b>--ok</b><small>#15803D</small></div>
+      <div class="guide-swatch"><div class="chipbox" style="background:#B45309"></div><b>--warn</b><small>#B45309</small></div>
+      <div class="guide-swatch"><div class="chipbox" style="background:#DC2626"></div><b>--bad</b><small>#DC2626</small></div>
+      <div class="guide-swatch"><div class="chipbox" style="background:#1B1B1F"></div><b>--text-1</b><small>#1B1B1F</small></div>
     </div>
   </section>
 

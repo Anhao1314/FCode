@@ -7,7 +7,7 @@
 ```
 flowcredit/viewer/
   index.html          ← 前端外壳（零依赖、零构建）
-  app.css             ← design tokens（近黑三层表面 / 单强调色 / 语义色）+ 外壳布局
+  app.css             ← design tokens（浅色三层表面 / 单强调色 / 语义色）+ 外壳布局
   app.js              ← 全部前端逻辑（回放 / 直播 / 建单向导 / 运行管理）
   report.js           ← 自包含审计报告生成器（结论 / 账单 / 证据 / 人工决定 / 链附录）
   server.py           ← 本地控制台服务（标准库）：静态文件 + JSON/SSE API + 运行管理
@@ -145,7 +145,7 @@ plan_steered / budget_adjusted / control_rejected / task_resumed / operator_mess
 
 ## 设计说明
 
-- 近黑控制台语言（设计令牌集中在 `app.css` 顶部，组件视觉在 `design.css`）：
+- 浅色控制台语言（设计令牌集中在 `app.css` 顶部，组件视觉在 `design.css`）：
   画布 `#0A0A0B`、面板 `#131316`、悬浮 `#1A1A1F`，统一 1px 白 8% 描边与 8px 圆角。
 - 强调色只有一个 `#6C7CFF`，仅用于连接状态、焦点环与进行中动画；
   语义色（PASS `#34C77B` / DENIED `#F5545D` / unknown `#F5B83D`）配小圆点表达状态，不做大色块徽章。
