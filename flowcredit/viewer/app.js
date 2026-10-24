@@ -193,9 +193,18 @@ const sessions = new Map();
 function renderMain(html, { mode = "run", scroll = null } = {}) {
   const main = document.getElementById("main");
   if (!main) return;
+  // 救援：舞台态时 composer 住在 #main 的 stage-dock 里，必须先搬回 footer，
+  // 否则下面的 innerHTML 替换会连同单实例节点与其事件绑定一起销毁
+  const liveComposer = document.querySelector(".stage-dock > .composer");
+  if (liveComposer) {
+    const wrap = document.querySelector(".composer-wrap");
+    if (wrap) wrap.appendChild(liveComposer);
+    document.getElementById("app")?.classList.remove("stage-mode");
+  }
   main.innerHTML = html;
   main.dataset.view = mode;
   store.mode = mode;
+  setStageMode(mode === "empty");
   if (scroll === "top") main.scrollTop = 0;
   else if (scroll === "bottom") main.scrollTop = main.scrollHeight;
 }
@@ -1939,13 +1948,48 @@ function renderHead(trace, title) {
   document.getElementById("tb-chips").innerHTML = "";
 }
 
-/* RENDER LAYER — 舞台式空状态：标识、字标与提示。 */
+/* RENDER LAYER — 舞台式空状态：标识、字标与提示；composer 由 setStageMode
+   以单实例 appendChild 搬进 stage-dock，模板 chips 在其下。 */
 function stageEmptyHtml() {
   return `<section class="stage-empty" aria-label="空状态">
     <img class="stage-logo" src="brand/logo.svg" alt="FCode" width="56" height="56">
     <div class="stage-mark">FCode</div>
     <p class="stage-note">还没有运行记录</p>
+    <div class="stage-dock" id="stage-dock"></div>
+    <div class="stage-chips" id="stage-chips" aria-label="按模板开始委托"></div>
   </section>`;
+}
+
+/* RENDER LAYER — composer 双形态（对齐 kimi.com 的居中舞台 → 吸底节奏）。
+   单实例搬运：同一个 .composer 节点在 footer 与舞台容器之间 appendChild，
+   不复制第二份 DOM；事件绑定都在 composer 内部元素上，随节点走零风险。 */
+function setStageMode(on) {
+  const app = document.getElementById("app");
+  if (!app) return;
+  const composer = document.querySelector(".composer-wrap > .composer, .stage-dock > .composer");
+  if (!composer) return;
+  const dock = document.getElementById("stage-dock");
+  const wrap = document.querySelector(".composer-wrap");
+  if (on && dock && composer.parentElement !== dock) {
+    dock.appendChild(composer);
+    renderStageChips();
+  } else if (!on && wrap && composer.parentElement !== wrap) {
+    wrap.appendChild(composer);
+  }
+  app.classList.toggle("stage-mode", !!on);
+}
+
+/* 居中 composer 下的模板 chips：与 composer 模板选择器同源（/api/templates），
+   点击 = 选中该模板 + 预填目标 + 聚焦，是真实委托入口。 */
+function renderStageChips() {
+  const slot = document.getElementById("stage-chips");
+  if (!slot) return;
+  const source = (templates && templates.length)
+    ? templates.map(t => [t.key, (t.title || t.key).split("：")[0]])
+    : SCENARIOS.map(([key, label]) => [key, label]);
+  slot.innerHTML = source.map(([key, label]) =>
+    `<button type="button" class="stage-chip" data-stage-chip="${esc(key)}" title="以「${esc(label)}」模板开始委托">${esc(label)}</button>`
+  ).join("");
 }
 
 /* RENDER LAYER — 阅读列会话头：标题下方一行 meta；证据面板按需打开。 */
@@ -3525,6 +3569,7 @@ async function initLive() {
       templates = [];
     }
     if (!templates.length) health.live = false;
+    renderStageChips();
   }
   if (!health.live) {
     const ta = document.getElementById("composer-ta");
@@ -4773,6 +4818,19 @@ function bind() {
     }
     const qAct = event.target.closest("[data-q-act]");
     if (qAct) { handleQueueAction(qAct); return; }
+    const stageChip = event.target.closest("[data-stage-chip]");
+    if (stageChip) {
+      const key = stageChip.dataset.stageChip;
+      setTemplate(key);
+      const template = (templates || []).find(t => t.key === key);
+      const ta = document.getElementById("composer-ta");
+      if (ta) {
+        ta.value = (template && template.objective) || "";
+        autosize(ta);
+        ta.focus();
+      }
+      return;
+    }
     const intakeChoice = event.target.closest("[data-intake-choice]");
     if (intakeChoice) {
       intakeChoose(intakeChoice.dataset.intakeField, intakeChoice.dataset.intakeValue, intakeChoice.dataset.intakeLabel || "");

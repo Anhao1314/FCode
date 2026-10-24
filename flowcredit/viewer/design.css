@@ -1738,25 +1738,60 @@ body.reduce-motion *, body.reduce-motion *::before, body.reduce-motion *::after 
 }
 .copy-mini:hover { color:var(--text-1); }
 
-/* 空状态舞台 */
+/* 空状态舞台：居中栈 = logo + 字标 + 提示 + composer（setStageMode 搬入）+ 模板 chips。
+   垂直居中由 .stage-mode 的 main-inner 决定；栈超高时可滚动。 */
 .stage-empty {
-  min-height:52vh; display:flex; flex-direction:column; align-items:center; justify-content:center;
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
   text-align:center; animation:turnIn var(--t-fade) var(--ease) both;
 }
 .stage-logo { display:block; margin:0 auto 6px; }
 .stage-mark { font:700 46px/1 var(--font-ui); letter-spacing:-.03em; color:var(--text-1); }
 .stage-note { margin:14px 0 0; color:var(--text-3); font-size:var(--fs-3); }
+/* 单实例 composer 的舞台容器：与吸底 dock 同一个 760px 体系 */
+.stage-dock {
+  width: min(var(--reading-w), 100%);
+  margin: 22px auto 0;
+}
 .stage-chips {
-  display:flex; gap:8px; max-width:calc(var(--reading-w) - 20px); margin-top:22px;
+  display:flex; gap:8px; max-width:min(var(--reading-w), 100%); margin-top:18px;
   overflow-x:auto; scrollbar-width:none; padding:2px 0 4px;
+  justify-content:center;
 }
 .stage-chips::-webkit-scrollbar { display:none; }
 .stage-chip {
   flex:none; border:1px solid var(--line-strong); border-radius:var(--radius-pill);
   background:var(--panel); color:var(--text-2); text-decoration:none;
   padding:6px 14px; font-size:var(--fs-2); cursor:pointer;
+  transition: background-color var(--t) ease, color var(--t) ease;
 }
 .stage-chip:hover { background:var(--raised); color:var(--text-1); }
+
+/* composer 双形态：#app.stage-mode = 空状态居中舞台，否则吸底 dock。
+   节点搬运后 150ms ease 淡入落位（appendChild 会重放动画），无闪跳。 */
+@keyframes composerDock {
+  from { opacity:0; transform:translateY(6px); }
+  to { opacity:1; transform:translateY(0); }
+}
+.stage-dock > .composer, .composer-wrap > .composer {
+  animation: composerDock 150ms var(--ease);
+}
+.app.stage-mode .composer-wrap { display:none; }
+.app.stage-mode .main { display:flex; flex-direction:column; }
+.app.stage-mode .main-inner {
+  margin: auto;
+  display:flex; flex-direction:column; justify-content:center;
+  width:100%; max-width: calc(var(--reading-w) + 64px);
+  flex:none;
+}
+.app.stage-mode .composer .composer-box { box-shadow: 0 18px 48px rgba(0, 0, 0, .07); }
+@media (max-width: 900px) {
+  .app.stage-mode .main-inner { padding:18px 14px 28px; }
+  .stage-dock { width:100%; margin-top:16px; }
+  .stage-chips { justify-content:flex-start; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .stage-dock > .composer, .composer-wrap > .composer { animation:none; }
+}
 
 /* 证据浮层：raised 面板 + 常驻关闭口，遮罩只在面板外可点 */
 .rail { background:var(--raised); }
