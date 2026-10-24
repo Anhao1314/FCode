@@ -1939,9 +1939,10 @@ function renderHead(trace, title) {
   document.getElementById("tb-chips").innerHTML = "";
 }
 
-/* RENDER LAYER — 舞台式空状态：字标与提示。 */
+/* RENDER LAYER — 舞台式空状态：标识、字标与提示。 */
 function stageEmptyHtml() {
   return `<section class="stage-empty" aria-label="空状态">
+    <img class="stage-logo" src="brand/logo.svg" alt="FCode" width="56" height="56">
     <div class="stage-mark">FCode</div>
     <p class="stage-note">还没有运行记录</p>
   </section>`;
@@ -2179,8 +2180,11 @@ function liveApply(s, data) {
       return !hit;
     });
     if (s.queuedMsgs.length !== before) toast("消息已入链 · 下轮生效");
-    paintQueuedMsgs();
   }
+
+  // 队列权威同步：server 队列是事实源（SSE 帧携带）；在出链回执之后执行，
+  // 消费竞态下最多闪现一帧，不吞掉回执提示
+  if (Array.isArray(data.queue)) reconcileQueue(s, data.queue);
 
   if (s.planQueued && events > s.planQueued.events) {
     const added = eventList.slice(s.planQueued.events);
@@ -2676,6 +2680,7 @@ function attachStream(s) {
     const data = {
       snapshot: s.trace,
       pending: delta.pending || null,
+      queue: delta.queue,
       finished: !!delta.finished,
       status: delta.status,
       tracePath: delta.tracePath,
@@ -3307,6 +3312,41 @@ async function queueCommand(op, msg, newText) {
     toast("队列操作未送达：" + error.message);
     return false;
   }
+}
+
+/* 队列权威同步：server 队列是事实源。已确认条目（有 serverId）以 server 为准
+   （文本 / steer 标记 / 存在性——被其他客户端删除或已消费的不再留在面板）；
+   server 有而本地没有的是别的客户端（或 API）入队的项，收编进本地面板；
+   本地尚无 serverId 的条目是 POST 在途，先按文本认领再乐观保留。 */
+function reconcileQueue(s, serverQueue) {
+  if (!s) return;
+  if (!Array.isArray(s.queuedMsgs)) s.queuedMsgs = [];
+  const serverIds = new Set(serverQueue.map(item => item && item.id).filter(Boolean));
+  for (const item of serverQueue) {
+    if (!item || !item.id) continue;
+    let local = s.queuedMsgs.find(m => m.serverId === item.id);
+    if (!local) {
+      // POST 在途（还没有 serverId）的同文本条目直接认领，避免重复
+      local = s.queuedMsgs.find(m => !m.serverId && m.state === "queued" && m.text === item.text);
+    }
+    if (local) {
+      local.serverId = item.id;
+      local.text = String(item.text || "");
+      local.steered = !!item.steered;
+      if (local.state !== "queued") local.state = "queued";
+      local.error = "";
+    } else {
+      s.queuedMsgs.push({
+        id: queueMsgId(),
+        serverId: item.id,
+        text: String(item.text || ""),
+        steered: !!item.steered,
+        state: "queued",
+      });
+    }
+  }
+  s.queuedMsgs = s.queuedMsgs.filter(m => !m.serverId || serverIds.has(m.serverId));
+  paintQueuedMsgs();
 }
 
 function findQueuedMsg(el) {
@@ -4993,12 +5033,22 @@ async function fromFile(file) {
   }
 }
 
-document.addEventListener("DOMContentLoaded", () => {
+document.addEventListener("DOMContentLoaded", async () => {
   bind();
   renderNav();
-  initLive();
-  const param = new URLSearchParams(location.search).get("trace");
-  if (param) {
+  // await：?run= 直链要在 health/runHistory 就绪后才能判定运行状态
+  await initLive();
+  const params = new URLSearchParams(location.search);
+  const runParam = params.get("run");
+  const param = params.get("trace");
+  if (runParam) {
+    // 运行直链：运行中 → 接入 SSE；已结束 → 拉 trace 回放。
+    // selectRun 需要 runHistory 判定状态，先等一次运行列表。
+    renderMain(`<div class="empty">加载运行 ${esc(runParam)}…</div>`, { mode: "loading" });
+    refreshRuns().then(() => selectRun(runParam)).catch(() => {
+      renderMain(`<div class="empty">无法加载运行 ${esc(runParam)}：运行不存在或已删除</div>`, { mode: "error" });
+    });
+  } else if (param) {
     fetch(param, { cache: "no-store" })
       .then(r => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
       .then(trace => render(trace, param.split("/").pop()))

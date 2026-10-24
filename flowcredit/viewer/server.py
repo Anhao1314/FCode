@@ -219,6 +219,7 @@ class Run:
     pinned: bool = False
     approval: str = "consequential"  # off | consequential | all
     pending: dict | None = None
+    queue: list | None = None
     cost: dict | None = None
     spec: dict | None = None
     controller: Any = None
@@ -254,6 +255,7 @@ class Run:
         if detail:
             out["error"] = self.error
             out["pending"] = self.pending
+            out["queue"] = self.queue or []
         return out
 
 
@@ -867,6 +869,25 @@ class RunControl:
     def queue(self, command: dict) -> None:
         with self._lock:
             self._commands.append(command)
+        if command.get("kind") == "message":
+            # 发布权威队列：任何客户端入队后，所有客户端的排队面板立即同步
+            self._publish_queue()
+
+    def queue_snapshot(self) -> list[dict]:
+        """The authoritative queued-message list (server order is truth)."""
+        with self._lock:
+            return [
+                {"id": c.get("id"), "text": c.get("text", ""), "steered": bool(c.get("steered"))}
+                for c in self._commands
+                if c.get("kind") == "message"
+            ]
+
+    def _publish_queue(self) -> None:
+        """Mirror the queue onto the run and wake SSE subscribers."""
+        snapshot = self.queue_snapshot()
+        with self.run.lock:
+            self.run.queue = snapshot
+            self.run.bump()
 
     def steer_message(self, message_id: str) -> dict:
         """Promote a queued operator message to the front, flagged ``steered``.
@@ -878,15 +899,7 @@ class RunControl:
         return self.mutate_message(message_id, "steer")
 
     def mutate_message(self, message_id: str, op: str, new_text: str | None = None) -> dict:
-        """Edit / remove / reorder a queued operator message by id."""
-
-        def snapshot() -> list[dict]:
-            return [
-                {"id": c.get("id"), "text": c.get("text", ""), "steered": bool(c.get("steered"))}
-                for c in self._commands
-                if c.get("kind") == "message"
-            ]
-
+        """Edit / remove / reorder / steer a queued operator message by id."""
         with self._lock:
             idx = next(
                 (
@@ -926,7 +939,8 @@ class RunControl:
                 self._commands.appendleft(command)
             else:
                 return {"ok": False, "error": "op must be edit, remove, moveUp or steer"}
-            return {"ok": True, "queue": snapshot()}
+        self._publish_queue()
+        return {"ok": True, "queue": self.queue_snapshot()}
 
     def decide(self, approval_id: str, *, allow: bool, remember: bool = False) -> bool:
         with self._lock:
@@ -957,6 +971,9 @@ class RunControl:
                 task = self._apply_budget(task, round_no, command)
             elif command["kind"] == "message":
                 task = self._apply_message(task, round_no, command)
+        if any(c["kind"] == "message" for c in commands):
+            # 队列在本边界被消费：把权威队列的新状态推给所有订阅者
+            self._publish_queue()
         return self.RoundControl(task=task, plan=plan)
 
     def before_tool(self, *, round_no: int, task, step: dict, decision):
@@ -1438,6 +1455,10 @@ class Handler(SimpleHTTPRequestHandler):
                 return self._stream(run)
             if action == "":
                 return self._json(run.to_json(detail=True))
+            if action == "queue":
+                control = getattr(run, "controller", None)
+                queue = control.queue_snapshot() if control is not None else (run.queue or [])
+                return self._json({"id": run.id, "queue": queue})
             return self._json({"error": "unknown action"}, 404)
         return self._json({"error": "unknown endpoint"}, 404)
 
@@ -1448,7 +1469,7 @@ class Handler(SimpleHTTPRequestHandler):
         self.send_header("Connection", "keep-alive")
         self.send_header("X-Accel-Buffering", "no")
         self.end_headers()
-        if not self._sse("hello", {"runId": run.id, "status": run.status}):
+        if not self._sse("hello", {"runId": run.id, "status": run.status, "queue": run.queue or []}):
             return
         last = -1
         # Incremental protocol: the first frame carries the whole trace, every
@@ -1471,6 +1492,7 @@ class Handler(SimpleHTTPRequestHandler):
                 error = run.error
                 pending = run.pending
                 approval = run.approval
+                queue = run.queue
             if version > last and snapshot is not None:
                 last = version
                 if not sent_full:
@@ -1490,6 +1512,7 @@ class Handler(SimpleHTTPRequestHandler):
                             "snapshot": snapshot,
                             "pending": pending,
                             "approval": approval,
+                            "queue": queue or [],
                         },
                     )
                 else:
@@ -1507,6 +1530,7 @@ class Handler(SimpleHTTPRequestHandler):
                         "error": error,
                         "pending": pending,
                         "approval": approval,
+                        "queue": queue or [],
                         "roundStart": round_start,
                         "rounds": rounds[round_start:],
                         "events": events[sent_events:],
