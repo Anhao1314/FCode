@@ -200,7 +200,28 @@ class Harness:
         )
         if first:
             updated = updated.advance("planned")
-        return self._commit(task, updated, "plan_validated", {"plan": plan.to_dict(), "round": context["round"]}), proposal
+        try:
+            return self._commit(task, updated, "plan_validated", {"plan": plan.to_dict(), "round": context["round"]}), proposal
+        except TypeError as error:
+            # The integrity layer rejected the model-authored body (e.g. a
+            # float where the runtime requires int micro-units or basis
+            # points). The model said it, so this is a confirmed failure,
+            # not an unknown outcome.
+            failed = task.with_model(status="failed", receipt=proposal.receipt())
+            failed.failure = {
+                "code": "PROPOSAL_MALFORMED",
+                "message": f"plan body rejected by integrity layer: {error}",
+                "retryable": False,
+            }
+            return (
+                self._commit(
+                    task,
+                    failed.advance("failed"),
+                    "model_invalid",
+                    {"code": "PROPOSAL_MALFORMED"},
+                ),
+                None,
+            )
 
     def auto_step(
         self,

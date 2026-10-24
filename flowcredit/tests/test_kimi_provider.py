@@ -177,6 +177,20 @@ class KimiProviderTests(unittest.TestCase):
         self.assertTrue(report["adjusted"])
         self.assertIn("max(ceil(chars/2)", report["new_formula"])
 
+        # The calibration report travels inside receipt metadata into committed
+        # event bodies; canonical_json rejects floats, so it must be int-only.
+        def _float_free(node: object) -> bool:
+            if isinstance(node, float):
+                return False
+            if isinstance(node, dict):
+                return all(_float_free(v) for v in node.values())
+            if isinstance(node, (list, tuple)):
+                return all(_float_free(v) for v in node)
+            return True
+
+        self.assertTrue(_float_free(report))
+        self.assertIsInstance(report["ratio_actual_to_reserve_bp"], int)
+
     def test_calibrated_reserve_uses_measured_ratio(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             path = pathlib.Path(tmp) / "kimi-calibration.json"

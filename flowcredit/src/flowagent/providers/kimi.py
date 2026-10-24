@@ -150,7 +150,12 @@ class KimiCalibration:
             "chars": int(chars),
             "reserved_prompt_tokens": int(reserved),
             "usage_prompt_tokens": int(actual),
-            "ratio_actual_to_reserve": round(actual / reserved, 6) if reserved else None,
+            # Ratio in integer basis points: this report travels inside the
+            # receipt metadata into committed event bodies, and canonical_json
+            # rejects floats. The float measured_ratio stays in memory only.
+            "ratio_actual_to_reserve_bp": int(round(actual / reserved * 10000))
+            if reserved
+            else None,
             "old_formula": self.formula,
             "adjusted": False,
         }
