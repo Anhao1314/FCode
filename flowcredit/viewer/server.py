@@ -655,6 +655,7 @@ class RunManager:
                 max_rounds=max_rounds,
                 observer=observer,
                 control=control,
+                result_tools=module.result_tools,
             )
             if resume_limits:
                 # The world is in-memory; the event log is not. Rebuild the
