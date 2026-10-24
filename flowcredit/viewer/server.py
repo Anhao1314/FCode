@@ -683,6 +683,7 @@ class RunManager:
                         max_rounds=max_rounds,
                         observer=observer,
                         control=control,
+                        result_tools=module.result_tools,
                     ).run(task.id)
                 status = task.status
             except StopRequested:
@@ -866,6 +867,66 @@ class RunControl:
     def queue(self, command: dict) -> None:
         with self._lock:
             self._commands.append(command)
+
+    def steer_message(self, message_id: str) -> dict:
+        """Promote a queued operator message to the front, flagged ``steered``.
+
+        Steer never bypasses the chain: the message is still applied by the run
+        thread at the next round boundary, only earlier in the queue and with a
+        visible ``steered`` mark on its ``operator_message`` event.
+        """
+        return self.mutate_message(message_id, "steer")
+
+    def mutate_message(self, message_id: str, op: str, new_text: str | None = None) -> dict:
+        """Edit / remove / reorder a queued operator message by id."""
+
+        def snapshot() -> list[dict]:
+            return [
+                {"id": c.get("id"), "text": c.get("text", ""), "steered": bool(c.get("steered"))}
+                for c in self._commands
+                if c.get("kind") == "message"
+            ]
+
+        with self._lock:
+            idx = next(
+                (
+                    i
+                    for i, c in enumerate(self._commands)
+                    if c.get("kind") == "message" and c.get("id") == message_id
+                ),
+                None,
+            )
+            if idx is None:
+                return {"ok": False, "error": "no queued message with that id"}
+            if op == "remove":
+                del self._commands[idx]
+            elif op == "moveUp":
+                prev = next(
+                    (
+                        j
+                        for j in range(idx - 1, -1, -1)
+                        if self._commands[j].get("kind") == "message"
+                    ),
+                    None,
+                )
+                if prev is not None:
+                    self._commands[idx], self._commands[prev] = (
+                        self._commands[prev],
+                        self._commands[idx],
+                    )
+            elif op == "edit":
+                text = str(new_text or "").strip()
+                if not text:
+                    return {"ok": False, "error": "text is required"}
+                self._commands[idx]["text"] = text[:600]
+            elif op == "steer":
+                command = self._commands[idx]
+                del self._commands[idx]
+                command["steered"] = True
+                self._commands.appendleft(command)
+            else:
+                return {"ok": False, "error": "op must be edit, remove, moveUp or steer"}
+            return {"ok": True, "queue": snapshot()}
 
     def decide(self, approval_id: str, *, allow: bool, remember: bool = False) -> bool:
         with self._lock:
@@ -1097,14 +1158,17 @@ class RunControl:
         # text, so this does not steer the planner yet — but it is committed
         # to the same hash chain as every other human decision, and a real
         # provider consumes it from the event log like any other input.
+        # A steered message keeps its queue priority visible on the event:
+        # ``steered`` is an annotation, never a bypass of the round boundary.
         text = str(command.get("text") or "").strip()
         if not text:
             return task
-        return self.harness.record(
-            task,
-            "operator_message",
-            {"round": round_no, "text": text[:600], "by": "operator"},
-        )
+        detail: dict = {"round": round_no, "text": text[:600], "by": "operator"}
+        if command.get("id"):
+            detail["message_id"] = str(command["id"])
+        if command.get("steered"):
+            detail["steered"] = True
+        return self.harness.record(task, "operator_message", detail)
 
 
 class _EventsShim:
@@ -1212,10 +1276,13 @@ def _run_crash(rt: Runtime, harness, store, world, scenario, task, observer, db:
     )
     resumed = store.load(task.id)
     module = rt.get_domain(DOMAIN_KEY)
-    memory = rt.Loop(harness, planner=module.make_planner()).restore(resumed)
+    memory = rt.Loop(
+        harness, planner=module.make_planner(), result_tools=module.result_tools,
+    ).restore(resumed)
     world.apply_state(memory.state())
     return rt.Loop(
-        harness, planner=module.make_planner(), max_rounds=scenario.max_rounds, observer=observer
+        harness, planner=module.make_planner(), max_rounds=scenario.max_rounds, observer=observer,
+        result_tools=module.result_tools,
     ).run(resumed.id)
 
 
@@ -1598,8 +1665,40 @@ class Handler(SimpleHTTPRequestHandler):
                 return self._json({"error": "text is required"}, 400)
             if len(text) > 600:
                 return self._json({"error": "message too long"}, 400)
-            control.queue({"kind": "message", "text": text})
-            return self._json({"queued": True, "id": run.id}, 202)
+            message_id = uuid.uuid4().hex[:10]
+            control.queue({"kind": "message", "text": text, "id": message_id})
+            return self._json({"queued": True, "id": run.id, "messageId": message_id}, 202)
+        if path.startswith("/api/runs/") and path.endswith("/steer"):
+            run_id = path[len("/api/runs/") : -len("/steer")]
+            run = mgr.get(run_id)
+            if run is None:
+                return self._json({"error": "no such run"}, 404)
+            if run.finished:
+                return self._json({"error": "run has finished"}, 409)
+            control = getattr(run, "controller", None)
+            if control is None:
+                return self._json({"error": "run has no live control"}, 409)
+            body = self._read_body()
+            result = control.steer_message(str(body.get("messageId") or ""))
+            if not result.get("ok"):
+                return self._json({"error": result.get("error", "steer failed")}, 409)
+            return self._json(result)
+        if path.startswith("/api/runs/") and path.endswith("/queue"):
+            run_id = path[len("/api/runs/") : -len("/queue")]
+            run = mgr.get(run_id)
+            if run is None:
+                return self._json({"error": "no such run"}, 404)
+            if run.finished:
+                return self._json({"error": "run has finished"}, 409)
+            control = getattr(run, "controller", None)
+            if control is None:
+                return self._json({"error": "run has no live control"}, 409)
+            body = self._read_body()
+            op = str(body.get("op") or "")
+            result = control.mutate_message(str(body.get("messageId") or ""), op, body.get("text"))
+            if not result.get("ok"):
+                return self._json({"error": result.get("error", "queue op failed")}, 409)
+            return self._json(result)
         if path.startswith("/api/runs/") and path.endswith("/plan"):
             run_id = path[len("/api/runs/") : -len("/plan")]
             run = mgr.get(run_id)

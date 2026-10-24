@@ -854,12 +854,63 @@ function planActions(todo, confirmId) {
   </span>`;
 }
 
+/* token 分类计量（对照官方 ChatStatus 的分类显示）：
+   数据源是收据 metadata 的 usage_prompt_tokens / cached_tokens；
+   completion 由 total − prompt 推导。收据没有分类字段时如实说明。 */
+function tokenSplit(trace) {
+  let prompt = 0, cached = 0, total = 0, known = false;
+  for (const r of (trace.rounds || [])) {
+    const receipt = r.receipt || {};
+    const meta = receipt.metadata || {};
+    total += Number(receipt.tokens || 0);
+    if (meta.usage_prompt_tokens !== undefined && meta.usage_prompt_tokens !== null) {
+      known = true;
+      prompt += Number(meta.usage_prompt_tokens) || 0;
+      cached += Number(meta.cached_tokens) || 0;
+    }
+  }
+  return { prompt, cached, total, completion: known ? Math.max(0, total - prompt) : null, known };
+}
+
+function tokenSplitHtml(trace) {
+  const t = tokenSplit(trace);
+  if (!t.total) return "";
+  if (!t.known) {
+    return `<div class="tok-split unknown"><span class="tok-note">tokens ${num(t.total)} · 当前收据未含 token 分类（offline-mock 不产生 usage_prompt_tokens）</span></div>`;
+  }
+  return `<div class="tok-split">
+    <div class="tok-row"><span class="k">prompt</span><span class="v">${num(t.prompt)}</span></div>
+    <div class="tok-row"><span class="k">cached</span><span class="v">${num(t.cached)}</span><span class="note">缓存命中按输入价计费（v1）</span></div>
+    <div class="tok-row"><span class="k">completion</span><span class="v">${num(t.completion)}</span></div>
+  </div>`;
+}
+
+/* 运行中双轨：已完成轮的累计之外，再显示当前进行中轮已计入的增量
+   （含发送前预留）。只读 trace 预算快照推导，不参与治理。 */
+function activeRoundDelta(trace) {
+  const b = lastBudget(trace);
+  if (!b) return null;
+  const rounds = trace.rounds || [];
+  let settled = 0;
+  for (let i = rounds.length - 1; i >= 0; i--) {
+    const r = rounds[i];
+    if (r.receipt || (r.decision && r.decision.allowed === false)) {
+      settled = Number((r.budget_after || {}).tokens_used ?? 0);
+      break;
+    }
+    if (i === 0) settled = Number((r.budget_before || {}).tokens_used ?? 0);
+  }
+  const delta = Number(b.tokens_used || 0) - settled;
+  return delta > 0 ? delta : null;
+}
+
 function renderMeters(trace, opts = {}) {
   const b = lastBudget(trace);
   if (!b) return "";
   const lim = b.limits || {};
   const editable = !!opts.editable;
   const editing = editable && !!opts.editing;
+  const active = opts.live ? activeRoundDelta(trace) : null;
   const meters = [
     ["calls", b.calls_used, lim.max_calls, ""],
     ["reads", b.reads_used, lim.max_reads, ""],
@@ -874,14 +925,17 @@ function renderMeters(trace, opts = {}) {
       ${meters.map(([label, used, max, cls]) => {
         const ratio = max ? Math.min(1, (used || 0) / max) : 0;
         const hot = ratio >= .95 ? " over" : ratio >= .7 ? " hot" : "";
+        const isActive = active !== null && label === "tokens";
         return `<span class="meter${hot}${cls ? " " + cls : ""}">
           <span class="m-k">${label}</span>
           <span class="m-bar"><i style="width:${Math.round(ratio * 100)}%"></i></span>
           <span class="m-v">${num(used || 0)}/${num(max || 0)}</span>
+          ${isActive ? `<span class="m-active">本轮 +${num(active)}</span>` : ""}
         </span>`;
       }).join("")}
       ${editable ? `<button class="p-edit${editing ? " active" : ""}" data-budget-edit>${editing ? "取消" : "调整"}</button>` : ""}
     </div>
+    ${tokenSplitHtml(trace)}
     ${editing ? budgetForm(lim) : ""}
   </div>`;
 }
@@ -1029,8 +1083,92 @@ function genericToolDetail(obs) {
   return (kv || "") + extra;
 }
 
-function renderToolDetail(obs) {
+function renderToolDetail(obs, kind = "brief") {
+  if (kind === "diff") return writeDiffHtml(obs);
+  if (kind === "removed") return removedResultHtml(obs);
   return (TOOL_RENDERERS[obs.tool] || genericToolDetail)(obs);
+}
+
+/* ================================================== 执行结果四块（对照官方 DisplayBlocks）
+   brief   读取类：摘要行 + 展开全文（缺省回退）
+   todo    计划变更：前后对照列表（round.plan → round.plan_after）
+   diff    写入/追加类：目标对象 + 变更内容；语义色只用于状态点
+   removed 拒绝/删除类：弱化呈现，不产生证据 */
+const RESULT_BLOCK_KINDS = {
+  list_documents: "brief",
+  read_document: "brief",
+  check_restatement: "brief",
+  reconcile_basis: "brief",
+  normalize_units: "brief",
+  calculate_margin: "brief",
+  compute_credit_metric: "brief",
+  working_paper_append: "diff",
+  collect_source: "diff",
+  write_document: "diff",
+  report_blocked: "removed",
+};
+
+function resultBlockKind(round) {
+  if (round.decision && round.decision.allowed === false) return "removed";
+  const obs = round.observation || {};
+  const step = ((round.proposal || {}).steps || [])[0] || {};
+  const tool = obs.tool || (round.decision || {}).tool || step.tool || "";
+  return RESULT_BLOCK_KINDS[tool] || "brief";
+}
+
+/* 写入/追加类：目标对象 + 变更内容（+/− 行语义，色只做状态点） */
+function writeDiffHtml(obs) {
+  const args = obs.arguments || {};
+  const result = obs.result || {};
+  const target = ["target", "doc_id", "document_id", "section", "path"]
+    .map(k => args[k])
+    .find(v => v !== undefined && v !== null && v !== "")
+    || result.target || result.doc_id || "(目标未声明)";
+  const added = result.content || result.appended || result.summary || result.text || "";
+  const rest = Object.entries(result).filter(([k, v]) =>
+    !["content", "appended", "summary", "text", "target", "doc_id"].includes(k)
+    && v !== null && v !== undefined && v !== "");
+  return `<div class="t-detail block-diff">
+    <div class="diff-head">目标 · <code>${esc(String(target))}</code></div>
+    ${added ? `<div class="diff-line add"><span class="sign">+</span><span class="body">${esc(String(added))}</span></div>` : ""}
+    ${kvDetail(rest)}
+  </div>`;
+}
+
+/* 拒绝/删除类：弱化呈现 */
+function removedResultHtml(obs) {
+  const r = obs.result || {};
+  const reason = r.reason || r.message || r.blocked || "";
+  return `<div class="t-detail block-removed">
+    <div class="removed-line">该调用未产生可采信证据 · 结果弱化呈现</div>
+    ${reason ? `<div class="removed-why">${esc(String(reason))}</div>` : ""}
+  </div>`;
+}
+
+/* 计划变更：对照“上一轮的 plan_after → 本轮 plan”。steer 在轮边界前生效，
+   所以变更跨轮可见（本轮 plan 的 revision 高于上一轮终态）；轮内
+   plan→plan_after 是自然推进，不算变更。 */
+function planTodoBlock(round, prevRound) {
+  const plan = round.plan;
+  if (!plan || !prevRound) return "";
+  const before = prevRound.plan_after || prevRound.plan;
+  if (!before) return "";
+  if (Number(plan.revision || 1) <= Number(before.revision || 1)) return "";
+  const beforeMap = new Map((before.todos || []).map(t => [t.id, t]));
+  const glyph = { done: "✓", blocked: "✕", abandoned: "–", active: "◐", pending: "○" };
+  const rows = (plan.todos || []).map(t => {
+    const prev = beforeMap.get(t.id);
+    const changed = !prev || prev.status !== t.status || prev.text !== t.text;
+    return `<div class="todo-row ${esc(t.status)}${changed ? " changed" : ""}">
+      <span class="todo-glyph">${glyph[t.status] || "○"}</span>
+      <span class="todo-text">${esc(t.text || t.id)}${t.reason ? ` · ${esc(t.reason)}` : ""}</span>
+      ${changed ? `<span class="todo-tag">${esc(prev ? "本轮修订" : "本轮新增")}</span>` : ""}
+    </div>`;
+  }).join("");
+  return `<div class="block-todo">
+    <div class="todo-head">计划变更 · rev ${esc(String(before.revision))} → ${esc(String(plan.revision))}</div>
+    ${rows}
+  </div>`;
 }
 
 function outcomeText(round, ann) {
@@ -1058,7 +1196,7 @@ function turnBudgetDelta(round) {
   return parts.join(" · ");
 }
 
-function renderRound(round, index, ann = {}) {
+function renderRound(round, index, ann = {}, prevRound = null) {
   const empty = !round.proposal && !round.decision && !round.observation && !round.receipt;
   if (empty && ann.terminal) {
     return `<article class="round turn terminal" data-open="false">
@@ -1119,6 +1257,11 @@ function renderRound(round, index, ann = {}) {
     round.receipt && round.receipt.latency_ms !== undefined ? `${round.receipt.latency_ms} ms` : "",
     ann.reconciled ? `receipt ${esc(shortHash(ann.reconciled))}…` : "",
   ].filter(Boolean).join(" · ");
+  const blockKind = resultBlockKind(round);
+  const removedBlock = denied ? `<div class="block-removed standalone">
+      <div class="removed-line">提议被主机拒绝 · 未执行 · 不产生证据</div>
+      <div class="removed-why">${esc(decision.code || "DENIED")}${decision.reason ? " · " + esc(decision.reason) : ""}</div>
+    </div>` : "";
 
   return `<article class="round turn${!round.observation && !denied ? " live" : ""}" data-open="${denied ? "true" : "false"}">
     <header class="turn-head">
@@ -1141,17 +1284,19 @@ function renderRound(round, index, ann = {}) {
     </div>
 
     ${round.observation ? `
-    <div class="tool-result">
+    <div class="tool-result" data-block="${esc(blockKind)}">
       <button class="tool-result-head" type="button" data-toggle>
         <span class="tool-result-title">执行结果 · ${esc(tool)}</span>
         <span class="tool-result-summary">${esc(outcomeText(round, ann)).slice(0, 132)}</span>
         <span class="chev">▾</span>
       </button>
       <div class="tool-result-body">
-        ${renderToolDetail(obs)}
+        ${renderToolDetail(obs, blockKind)}
         <details class="raw"><summary>完整返回与收据</summary><pre>${esc(JSON.stringify(raw, null, 2))}</pre></details>
       </div>
-    </div>` : ""}
+    </div>` : removedBlock}
+
+    ${planTodoBlock(round, prevRound)}
 
     <footer class="turn-receipt">
       <code>${hash ? esc(hash) : "result hash pending"}</code>
@@ -1898,7 +2043,7 @@ async function render(trace, title) {
       </div>
     </details>
     <section class="turns" id="turns" aria-label="运行时间轴">
-      <div id="rounds-slot">${rounds.map((r, i) => roundWrapHtml(messagesByRound(trace), r, anns[i])).join("")}</div>
+      <div id="rounds-slot">${rounds.map((r, i) => roundWrapHtml(messagesByRound(trace), r, anns[i], i > 0 ? rounds[i - 1] : null)).join("")}</div>
     </section>
     <div id="result-slot">${terminal && terminal.status ? renderResult(trace) : ""}</div>
   `, { mode: "run" });
@@ -2018,11 +2163,21 @@ function liveApply(s, data) {
 
   // 消息入链回执：排队中的消息一旦以 operator_message 事件落进快照，就移出排队区
   if (s.queuedMsgs && s.queuedMsgs.length) {
-    const delivered = new Set(
-      eventList.filter(e => e.type === "operator_message").map(e => ((e.payload || {}).detail || {}).text)
-    );
+    const deliveredIds = new Set();
+    const deliveredTexts = new Set();
+    for (const e of eventList) {
+      if (e.type !== "operator_message") continue;
+      const d = (e.payload || {}).detail || {};
+      if (d.message_id) deliveredIds.add(String(d.message_id));
+      deliveredTexts.add(String(d.text || ""));
+    }
     const before = s.queuedMsgs.length;
-    s.queuedMsgs = s.queuedMsgs.filter(m => !delivered.has(m.text));
+    s.queuedMsgs = s.queuedMsgs.filter(m => {
+      const hit = (m.serverId && deliveredIds.has(m.serverId))
+        || (!m.serverId && deliveredTexts.has(m.text));
+      if (hit) m.state = "delivered";
+      return !hit;
+    });
     if (s.queuedMsgs.length !== before) toast("消息已入链 · 下轮生效");
     paintQueuedMsgs();
   }
@@ -2064,6 +2219,7 @@ function liveApply(s, data) {
     editable: running,
     editing: s.budgetEditing,
     queued: !!s.budgetQueued,
+    live: running,
   });
   if (budgetHtml !== s.budgetHtml) {
     const slot = document.getElementById("budget-slot");
@@ -2132,7 +2288,8 @@ function liveApply(s, data) {
   updateStatusline();
 }
 
-/* 已入链的运行中消息，按其生效轮次分组（detail.round = 该轮开始前） */
+/* 已入链的运行中消息，按其生效轮次分组（detail.round = 该轮开始前）；
+   steer 过的消息带 steered 标注，在时间线上可见。 */
 function messagesByRound(trace) {
   const map = new Map();
   for (const e of (trace.events || [])) {
@@ -2140,18 +2297,18 @@ function messagesByRound(trace) {
     const d = (e.payload || {}).detail || {};
     const round = Number(d.round) || 0;
     if (!map.has(round)) map.set(round, []);
-    map.get(round).push(String(d.text || ""));
+    map.get(round).push({ text: String(d.text || ""), steered: !!d.steered });
   }
   return map;
 }
 
-function roundWrapHtml(msgMap, round, ann) {
+function roundWrapHtml(msgMap, round, ann, prevRound = null) {
   const msgs = msgMap.get(round.index) || [];
-  const bubbles = msgs.map(text => `<div class="msg op">
-    <div class="msg-head"><span class="msg-who">你</span><span class="msg-state">已入链 · 第 ${esc(round.index)} 轮前生效</span></div>
-    <div class="msg-text">${esc(text)}</div>
+  const bubbles = msgs.map(m => `<div class="msg op${m.steered ? " steered" : ""}">
+    <div class="msg-head"><span class="msg-who">你</span><span class="msg-state">${m.steered ? "⚡ 已插话 · 第 " + esc(round.index) + " 轮前优先入链" : "已入链 · 第 " + esc(round.index) + " 轮前生效"}</span></div>
+    <div class="msg-text">${esc(m.text)}</div>
   </div>`).join("");
-  return `<div class="round-wrap">${bubbles}${renderRound(round, round.index - 1, ann)}</div>`;
+  return `<div class="round-wrap">${bubbles}${renderRound(round, round.index - 1, ann, prevRound)}</div>`;
 }
 
 function syncLiveRounds(s, trace) {
@@ -2166,7 +2323,7 @@ function syncLiveRounds(s, trace) {
     if (card) open.set(i, { open: card.dataset.open, user: card.dataset.user });
   });
   for (let i = 0; i < rounds.length; i++) {
-    const html = roundWrapHtml(msgMap, rounds[i], anns[i]);
+    const html = roundWrapHtml(msgMap, rounds[i], anns[i], i > 0 ? rounds[i - 1] : null);
     if (s.roundHtml[i] === html) continue;
     const holder = document.createElement("div");
     holder.innerHTML = html;
@@ -2234,6 +2391,33 @@ function fmtCountdown(seconds) {
   return `${String(Math.floor(total / 60)).padStart(2, "0")}:${String(total % 60).padStart(2, "0")}`;
 }
 
+/* 审批动词映射：标题动词化（对照官方 ApprovalDialog 的 "Allow this write?"）。
+   映射表集中定义；缺省回退工具名，不猜动作。 */
+const APPROVAL_VERBS = {
+  read_document: "读取",
+  list_documents: "列出资料",
+  normalize_units: "换算",
+  reconcile_basis: "核对口径",
+  check_restatement: "核对重述",
+  calculate_margin: "计算毛利率",
+  compute_credit_metric: "计算信用指标",
+  report_blocked: "宣告受阻",
+};
+
+/* 有状态变更的写入类工具：审批默认展开影响区（对照官方 diff 自动展开） */
+const WRITE_TOOLS = new Set(["working_paper_append", "collect_source", "write_document"]);
+
+function approvalVerb(tool) {
+  if (WRITE_TOOLS.has(tool)) return "写入";
+  return APPROVAL_VERBS[tool] || "";
+}
+
+/* 注意：审批档位菜单另有同名概念的 approvalTitle(mode)，这里是待批动作标题 */
+function approvalActionTitle(tool) {
+  const verb = approvalVerb(tool);
+  return verb ? `允许这次${verb}？` : `允许这次 ${tool} 调用？`;
+}
+
 function renderApproval(pending, deciding) {
   if (!pending) return "";
   const argsObj = pending.arguments || {};
@@ -2246,9 +2430,13 @@ function renderApproval(pending, deciding) {
   const busy = deciding
     ? `<span class="apv-count">${deciding.allow ? "已允许 · 等待 Runtime 继续…" : "已拒绝 · 运行将终止…"}</span>`
     : `<span class="apv-count" data-countdown>${fmtCountdown(pending.expiresIn)}</span>`;
-  return `<div class="card approval" data-approval="${esc(pending.id)}">
+  const write = WRITE_TOOLS.has(pending.tool);
+  const model = (activeSession()?.trace?.model) || {};
+  const sender = `${model.provider || "provider"} · ${model.model || "model"} · 第 ${esc(pending.round)} 轮发起`;
+  const impact = write ? approvalImpactHtml(argsObj) : "";
+  return `<div class="card approval${write ? " approval-write" : ""}" data-approval="${esc(pending.id)}">
     <div class="card-head">
-      <span class="card-title">${doodleSvg("key", true)} 需要你的决定</span>
+      <span class="card-title">${doodleSvg("key", true)} ${esc(approvalActionTitle(pending.tool))}</span>
       <span class="grow"></span>
       <span class="badge warn"><span class="dot"></span>${deciding ? "已提交" : "等待授权"}</span>
     </div>
@@ -2258,15 +2446,39 @@ function renderApproval(pending, deciding) {
         <span class="tool">${esc(pending.tool)}</span>
         ${args ? `<span class="args">${esc(args)}</span>` : ""}
       </div>
+      ${impact}
       <div class="apv-why">${esc(why)}</div>
+      <div class="apv-choices" role="group" aria-label="审批选项">
+        <button class="apv-choice" data-decision="allow"${deciding ? " disabled" : ""}>
+          <span class="no">1</span><span class="label">本次允许</span>
+        </button>
+        <button class="apv-choice" data-decision="allow-remember"${deciding ? " disabled" : ""}>
+          <span class="no">2</span><span class="label">本会话允许<small>本次运行内不再询问该工具</small></span>
+        </button>
+        <button class="apv-choice danger" data-decision="deny"${deciding ? " disabled" : ""}>
+          <span class="no">3</span><span class="label">拒绝</span>
+        </button>
+      </div>
       <div class="apv-foot">
         ${busy}
-        <label class="apv-remember"><input type="checkbox" data-remember${deciding ? " disabled" : ""}> 本次运行内不再询问该工具</label>
         <span class="grow"></span>
-        <span class="apv-keys">1 允许 · 2 拒绝</span>
-        <button class="a-btn" data-decision="deny"${deciding ? " disabled" : ""}>拒绝</button>
-        <button class="a-btn strong" data-decision="allow"${deciding ? " disabled" : ""}>允许</button>
+        <span class="apv-keys">1 本次允许 · 2 本会话允许 · 3 拒绝</span>
       </div>
+      <div class="apv-sender">${esc(sender)}</div>
+    </div>
+  </div>`;
+}
+
+/* 写入类审批的影响区：列出参数与影响对象，默认展开（对照官方 diff 自动展开） */
+function approvalImpactHtml(argsObj) {
+  const rows = Object.entries(argsObj).filter(([, v]) => v !== undefined && v !== null && v !== "");
+  const target = rows.find(([k]) => ["target", "doc_id", "document_id", "section", "path"].includes(k));
+  const affected = target ? `${target[0]}=${target[1]}` : "本次调用声明的目标对象";
+  return `<div class="apv-impact">
+    <div class="apv-impact-head">写入影响 · 默认展开</div>
+    <div class="kv">
+      <span class="k">影响对象</span><span class="v">${esc(affected)}</span>
+      ${rows.map(([k, v]) => `<span class="k">${esc(k)}</span><span class="v">${esc(String(v))}</span>`).join("")}
     </div>
   </div>`;
 }
@@ -2278,13 +2490,11 @@ function paintApproval() {
   slot.innerHTML = s && s.pending ? renderApproval(s.pending, s.deciding) : "";
 }
 
-async function decideApproval(allow) {
+async function decideApproval(allow, remember = false) {
   const s = activeSession();
   if (!s || !s.pending || s.deciding) return;
   const pending = s.pending;
-  const rememberEl = document.querySelector("[data-remember]");
-  const remember = !!(rememberEl && rememberEl.checked && allow);
-  s.deciding = { allow };
+  s.deciding = { allow, remember };
   paintApproval();
   try {
     const response = await fetch(`/api/runs/${encodeURIComponent(s.id)}/decision`, {
@@ -2296,7 +2506,7 @@ async function decideApproval(allow) {
       const error = await response.json().catch(() => ({}));
       throw new Error(error.error || `HTTP ${response.status}`);
     }
-    toast(allow ? "已允许 · 运行继续" : "已拒绝 · 运行将终止");
+    toast(allow ? (remember ? "本会话已授权 · 运行继续" : "已允许 · 运行继续") : "已拒绝 · 运行将终止");
   } catch (error) {
     s.deciding = null;
     paintApproval();
@@ -2328,6 +2538,7 @@ function paintBudget() {
     editable: s.running && !s.finished,
     editing: s.budgetEditing,
     queued: !!s.budgetQueued,
+    live: s.running && !s.finished,
   });
   slot.innerHTML = html;
   s.budgetHtml = html;
@@ -2544,8 +2755,10 @@ function finishSession(s, data) {
   s.deciding = null;
   s.approvalKey = "";
   if (s.es) { s.es.close(); s.es = null; }
+  s.queueEditingId = null;
+  let draftCount = 0;
   s.queuedMsgs.forEach(m => {
-    if (m.state === "queued") { m.state = "failed"; m.error = "运行已结束，消息未入链"; }
+    if (m.state === "queued") { m.state = "draft"; m.steered = false; draftCount += 1; }
   });
   const trace = s.trace || (s.lastData && s.lastData.snapshot) || null;
   s.trace = trace;
@@ -2590,7 +2803,11 @@ function finishSession(s, data) {
     );
   }
   renderTabs();
-  if (activeSession() === s) updateStatusline();
+  if (activeSession() === s) {
+    updateStatusline();
+    paintQueuedMsgs();
+    if (draftCount) toast(`未送达的 ${draftCount} 条已保留为草稿`);
+  }
   if (s.autoReport && status === "succeeded" && activeSession() === s) {
     s.autoReport = false;
     setTimeout(() => { if (activeSession() === s && shownTrace()) openReport(); }, 300);
@@ -2978,7 +3195,7 @@ function composerSubmit() {
   return sendTask();
 }
 
-/* 运行中插话：乐观渲染排队气泡，入链后由 snapshot 事件确认 */
+/* 运行中插话：入队渲染在排队面板，入链后由 snapshot 事件确认并移出队列 */
 async function sendOperatorMessage() {
   const s = activeSession();
   if (!s || !s.running || s.finished) return;
@@ -2987,7 +3204,7 @@ async function sendOperatorMessage() {
   if (!text) return;
   ta.value = "";
   autosize(ta);
-  const msg = { text, state: "queued" };
+  const msg = { id: queueMsgId(), text, state: "queued" };
   s.queuedMsgs.push(msg);
   paintQueuedMsgs();
   try {
@@ -3000,6 +3217,9 @@ async function sendOperatorMessage() {
       const error = await response.json().catch(() => ({}));
       throw new Error(error.error || `HTTP ${response.status}`);
     }
+    const data = await response.json().catch(() => ({}));
+    if (data.messageId) msg.serverId = data.messageId;
+    paintQueuedMsgs();
   } catch (error) {
     msg.state = "failed";
     msg.error = error.message;
@@ -3008,19 +3228,153 @@ async function sendOperatorMessage() {
   }
 }
 
+let queueMsgSeq = 0;
+function queueMsgId() {
+  queueMsgSeq += 1;
+  return `q${Date.now().toString(36)}-${queueMsgSeq}`;
+}
+
+/* 排队面板（对照官方 QueuedMessagesPanel）：两行截断摘要 + hover 操作
+   （steer 闪电 / 编辑 / 上移 / 删除）；草稿条目点击回填输入框。 */
 function paintQueuedMsgs() {
   const slot = document.getElementById("queued-slot");
   if (!slot) return;
   const s = activeSession();
   const msgs = s && s.queuedMsgs ? s.queuedMsgs : [];
-  slot.innerHTML = msgs.length ? `<div class="queued-msgs">${msgs.map(m => `
-    <div class="msg op ${esc(m.state)}">
-      <div class="msg-head">
-        <span class="msg-who">你</span>
-        <span class="msg-state">${m.state === "failed" ? "未送达 · " + esc(m.error || "") : "排队中 · 下一轮入链"}</span>
+  if (!msgs.length) { slot.innerHTML = ""; return; }
+  const items = msgs.map((m, index) => {
+    if (s.queueEditingId && s.queueEditingId === m.id) {
+      return `<div class="q-item editing" data-mid="${esc(m.id)}">
+        <input class="q-edit" data-q-edit-input value="${esc(m.text)}" spellcheck="false">
+        <div class="q-acts">
+          <button class="q-act" data-q-act="save" title="保存 (↵)">✓</button>
+          <button class="q-act" data-q-act="cancel" title="取消 (esc)">×</button>
+        </div>
+      </div>`;
+    }
+    const first = index === 0;
+    const acts = [];
+    if (m.state === "queued" && s.running && !s.finished) {
+      acts.push(`<button class="q-act bolt${m.steered ? " done" : ""}" data-q-act="steer" title="${m.steered ? "已插话 · 下一轮优先处理" : "立即插入（下一轮优先处理）"}">⚡</button>`);
+    }
+    if (m.state === "draft") {
+      acts.push(`<button class="q-act" data-q-act="refill" title="回填输入框">↩</button>`);
+    } else {
+      acts.push(`<button class="q-act" data-q-act="edit" title="编辑">✎</button>`);
+      if (!first && m.state === "queued") acts.push(`<button class="q-act" data-q-act="moveup" title="上移">↑</button>`);
+      acts.push(`<button class="q-act danger" data-q-act="remove" title="删除">🗑</button>`);
+    }
+    const state = m.state === "failed" ? `未送达 · ${esc(m.error || "")}`
+      : m.state === "draft" ? "草稿 · 未入链"
+      : m.state === "delivered" ? "已入链"
+      : m.steered ? "⚡ 插话 · 下一轮优先入链"
+      : "排队中 · 下一轮入链";
+    return `<div class="q-item ${esc(m.state)}${m.steered ? " steered" : ""}" data-mid="${esc(m.id)}">
+      <div class="q-main">
+        <div class="q-text">${esc(m.text)}</div>
+        <div class="q-state">${state}</div>
       </div>
-      <div class="msg-text">${esc(m.text)}</div>
-    </div>`).join("")}</div>` : "";
+      <div class="q-acts">${acts.join("")}</div>
+    </div>`;
+  }).join("");
+  slot.innerHTML = `<div class="queued-msgs">
+    <div class="q-head"><span>排队插话 · ${msgs.length} 条</span><span class="grow"></span><span class="q-hint">下一轮边界入链 · 顺序即生效顺序</span></div>
+    ${items}
+  </div>`;
+  const editing = slot.querySelector(".q-edit");
+  if (editing) { editing.focus(); editing.setSelectionRange(editing.value.length, editing.value.length); }
+}
+
+/* 队列管理指令：全部走 server 端点，server 侧队列才是生效顺序的事实源 */
+async function queueCommand(op, msg, newText) {
+  const s = activeSession();
+  if (!s || !msg) return false;
+  if (op === "steer" && !msg.serverId) { toast("这条消息还在发送中，稍后再插话"); return false; }
+  try {
+    const response = await fetch(`/api/runs/${encodeURIComponent(s.id)}/${op === "steer" ? "steer" : "queue"}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(op === "steer"
+        ? { messageId: msg.serverId }
+        : { op, messageId: msg.serverId, text: newText }),
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.error || `HTTP ${response.status}`);
+    }
+    return true;
+  } catch (error) {
+    toast("队列操作未送达：" + error.message);
+    return false;
+  }
+}
+
+function findQueuedMsg(el) {
+  const item = el.closest("[data-mid]");
+  const s = activeSession();
+  if (!item || !s) return null;
+  return (s.queuedMsgs || []).find(m => m.id === item.dataset.mid) || null;
+}
+
+function handleQueueAction(button) {
+  const act = button.dataset.qAct;
+  const msg = findQueuedMsg(button);
+  const s = activeSession();
+  if (!msg || !s) return;
+  if (act === "edit") { s.queueEditingId = msg.id; paintQueuedMsgs(); return; }
+  if (act === "cancel") { s.queueEditingId = null; paintQueuedMsgs(); return; }
+  if (act === "save") { saveQueueEdit(s, msg); return; }
+  if (act === "refill") {
+    const ta = document.getElementById("composer-ta");
+    ta.value = msg.text;
+    autosize(ta);
+    ta.focus();
+    s.queuedMsgs = s.queuedMsgs.filter(m => m.id !== msg.id);
+    paintQueuedMsgs();
+    return;
+  }
+  if (act === "remove") {
+    (async () => {
+      if (msg.serverId && !(await queueCommand("remove", msg))) return;
+      s.queuedMsgs = s.queuedMsgs.filter(m => m.id !== msg.id);
+      paintQueuedMsgs();
+    })();
+    return;
+  }
+  if (act === "moveup") {
+    (async () => {
+      if (msg.serverId && !(await queueCommand("moveUp", msg))) return;
+      const list = s.queuedMsgs;
+      const i = list.indexOf(msg);
+      if (i > 0) { list.splice(i, 1); list.splice(i - 1, 0, msg); }
+      paintQueuedMsgs();
+    })();
+    return;
+  }
+  if (act === "steer") {
+    (async () => {
+      if (!(await queueCommand("steer", msg))) return;
+      const list = s.queuedMsgs;
+      const i = list.indexOf(msg);
+      if (i > 0) { list.splice(i, 1); list.unshift(msg); }
+      msg.steered = true;
+      paintQueuedMsgs();
+      toast("已插话 · 下一轮优先处理");
+    })();
+  }
+}
+
+function saveQueueEdit(s, msg) {
+  const item = document.querySelector(`[data-mid="${CSS.escape(msg.id)}"]`);
+  const input = item ? item.querySelector(".q-edit") : null;
+  const text = (input ? input.value : "").trim();
+  if (!text) { toast("内容不能为空"); return; }
+  (async () => {
+    if (msg.serverId && !(await queueCommand("edit", msg, text))) return;
+    msg.text = text;
+    s.queueEditingId = null;
+    paintQueuedMsgs();
+  })();
 }
 
 async function sendTask() {
@@ -3337,7 +3691,7 @@ function costChipsHtml(trace) {
     <span class="mini">calls ${b.calls_used}/${num(lim.max_calls || 0)}</span>
     <span class="mini">reads ${b.reads_used}/${num(lim.max_reads || 0)}</span>
     <span class="mini">tokens ${num(b.tokens_used)}</span>
-  </div>`;
+  </div>${tokenSplitHtml(trace)}`;
 }
 
 function runActionsHtml(trace) {
@@ -4377,6 +4731,8 @@ function bind() {
       toast(ok ? "哈希已复制" : "复制失败");
       return;
     }
+    const qAct = event.target.closest("[data-q-act]");
+    if (qAct) { handleQueueAction(qAct); return; }
     const intakeChoice = event.target.closest("[data-intake-choice]");
     if (intakeChoice) {
       intakeChoose(intakeChoice.dataset.intakeField, intakeChoice.dataset.intakeValue, intakeChoice.dataset.intakeLabel || "");
@@ -4428,7 +4784,11 @@ function bind() {
       }
     }
     const decision = event.target.closest("[data-decision]");
-    if (decision) { decideApproval(decision.dataset.decision === "allow"); return; }
+    if (decision) {
+      const choice = decision.dataset.decision;
+      decideApproval(choice !== "deny", choice === "allow-remember");
+      return;
+    }
     const planEdit = event.target.closest("[data-plan-edit]");
     if (planEdit) {
       const s = activeSession();
@@ -4493,6 +4853,17 @@ function bind() {
     const panel = input.closest("[data-review-panel]");
     if (panel) syncReviewDraft(panel.dataset.reviewRun, panel, input);
   });
+  document.getElementById("main").addEventListener("keydown", event => {
+    const input = event.target.closest(".q-edit");
+    if (!input) return;
+    const item = input.closest("[data-mid]");
+    const s = activeSession();
+    if (!s || !item) return;
+    const msg = (s.queuedMsgs || []).find(m => m.id === item.dataset.mid);
+    if (!msg) return;
+    if (event.key === "Enter") { event.preventDefault(); saveQueueEdit(s, msg); }
+    else if (event.key === "Escape") { event.preventDefault(); s.queueEditingId = null; paintQueuedMsgs(); }
+  });
   const app = document.getElementById("app");
   setChromeState({ rail: railOpen });
   document.getElementById("sidebar-toggle").addEventListener("click", () => {
@@ -4547,14 +4918,20 @@ function bind() {
       document.getElementById("run-search").focus();
       return;
     }
-    if (!typing && s && s.pending && !s.deciding && (e.key === "1" || e.key === "2")) {
+    if (!typing && s && s.pending && !s.deciding && (e.key === "1" || e.key === "2" || e.key === "3")) {
       const overlay = ["palette", "report-layer"].some(id => {
         const el = document.getElementById(id);
         return el && !el.hidden;
       });
       if (!overlay) {
         e.preventDefault();
-        decideApproval(e.key === "1");
+        // 数字键直选：等于点击对应档位按钮；先给焦点环，再提交决定
+        const button = document.querySelector(`.apv-choice[data-decision="${e.key === "1" ? "allow" : e.key === "2" ? "allow-remember" : "deny"}"]`);
+        if (button) {
+          button.classList.add("kb-selected");
+          button.focus();
+          decideApproval(e.key !== "3", e.key === "2");
+        }
         return;
       }
     }
