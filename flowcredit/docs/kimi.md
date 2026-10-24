@@ -324,10 +324,14 @@ python3.12 demo.py \
 | --- | --- | ---: | ---: | --- |
 | full | `succeeded / -250bp` | 49 | 72,779 µUSD | `e4220d9ec9a5…b1bfb3f` |
 | tool-denied | 结局 B：真实运行 `failed / ROUND_LIMIT`，mock 回归 `denied / TOOL_NOT_REGISTERED` | 18 + 4 | 19,112 µUSD（真实）+ 420 µUSD（mock） | `45d0e4b7ff92…2ab67bb` / `bc2f55cb9e14…b9850` |
-| crash | 真实 SIGKILL 后恢复，`succeeded`，无重复 round | 48 | 60,628 µUSD | `b28f91d03d16…899dcd5` |
+| crash | 真实 SIGKILL 后恢复，`succeeded`，无重复 round | 48 | 77,368 µUSD | `b28f91d03d16…899dcd5` |
 
 三项 trace 均通过 `verify_trace()`；viewer 使用同一事件链算法重算。三个真实
-Kimi 场景的收据成本合计 **152,519 µUSD = $0.152519**（mock 回归另计 420 µUSD）。
+Kimi 场景的收据成本合计 **169,259 µUSD = $0.169259**（mock 回归另计 420 µUSD）。
+
+crash 的 77,368 µUSD = 崩溃前 worker 的 3 轮（16,740 µUSD）+ 恢复后 6 轮
+（60,628 µUSD）。预崩溃调用是真实支出；"无重复"指没有任何一轮被计费两次，
+不是崩溃前的调用不计费。
 
 第 1 轮 token 校准：
 
