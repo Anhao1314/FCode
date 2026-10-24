@@ -1,8 +1,120 @@
-/* ============================================================ FCode console — 布局层
-   app.css 只负责外壳结构：盒模型、shell/侧栏/主区/右栏的几何、滚动容器、
-   浮层与状态行的定位、响应式堆叠与可见性。
-   所有组件视觉（排版、颜色、边框、圆角、图标、动效）在 design.css；
-   design.css 在 app.css 之后加载，Paper & Proof 覆盖层保持最后。 */
+/* ============================================================ FCode console — tokens + 布局层
+   app.css 承担两件事：
+   1. :root 设计令牌（本文件顶部）——整套皮肤的唯一取色处，design.css 与
+      app.js 的内联样式都从这里取值；
+   2. 外壳几何：shell / 侧栏 / 主区 / 右栏的盒模型、滚动容器、浮层定位、
+      响应式堆叠与可见性。
+   组件视觉（排版、边框、圆角、图标、动效）在 design.css，其在本文件之后
+   加载，可以覆盖这里的任何非令牌规则。 */
+
+:root {
+  /* ---- 表面：三层近黑，禁止再亮 ------------------------------------------------
+     --canvas  页面画布，最暗的一层，滚动区与设置页的底；
+     --panel   面板：侧栏、卡片、右栏等一切"躺在画布上"的表面；
+     --raised  悬浮/置顶：浮层、菜单、命令面板、会话标签、当前选中项。 */
+  --canvas: #0A0A0B;
+  --panel: #131316;
+  --raised: #1A1A1F;
+  /* 代码 / 输出等嵌入面，比画布再沉一档，制造"凹进去"的阅读井 */
+  --inset: #0D0D10;
+
+  /* ---- 线与圆角 ---------------------------------------------------------------
+     统一 1px 白 8% 描边；--line-strong 只用于需要比邻居更高一级的边
+     （悬浮层描边、当前项指示）。圆角统一 8px，胶囊（chips）例外用 999px。 */
+  --line: rgba(255, 255, 255, .08);
+  --line-strong: rgba(255, 255, 255, .16);
+  --radius: 8px;
+  --radius-pill: 999px;
+
+  /* ---- 文字：三档灰 ------------------------------------------------------------
+     --text-1 主文字（结论、标题、正文）；
+     --text-2 次级（说明、元信息标签）；
+     --text-3 弱化（分组标题、占位符、禁用态）。 */
+  --text-1: #ECECED;
+  --text-2: #8A8A93;
+  --text-3: #5A5A63;
+
+  /* ---- 强调色：全站唯一 --------------------------------------------------------
+     #6C7CFF 只允许出现在：连接/运行状态、焦点环、进行中动画。
+     状态语义（通过 / 拒绝 / 未知警告）用下面三个语义色，不做装饰。 */
+  --accent: #6C7CFF;
+  --accent-soft: rgba(108, 124, 255, .13);
+  --accent-line: rgba(108, 124, 255, .40);
+
+  /* ---- 语义状态色：只表达状态，配小圆点使用，不做大面积色块 -------------------- */
+  --ok: #34C77B;                                /* PASS / 链验证通过 */
+  --ok-soft: rgba(52, 199, 123, .12);
+  --bad: #F5545D;                               /* DENIED / 失败 / 链验证失败 */
+  --bad-soft: rgba(245, 84, 93, .12);
+  --warn: #F5B83D;                              /* unknown / 警告 / 等待审批 */
+  --warn-soft: rgba(245, 184, 61, .12);
+
+  /* ---- 字体：系统栈 + 等宽 ------------------------------------------------------
+     界面正文用系统无衬线；所有哈希、时间戳、预算数字用 ui-monospace，
+     数字密集处配 font-variant-numeric: tabular-nums 对齐。 */
+  --font-ui: -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", "Hiragino Sans GB", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+
+  /* ---- 字号四档：12 / 13 / 15 / 20 -------------------------------------------- */
+  --fs-2: 12px;
+  --fs-3: 13px;
+  --fs-4: 15px;
+  --fs-5: 20px;
+
+  /* ---- 动效：统一 150ms ease；新事件淡入 200ms --------------------------------- */
+  --t: 150ms;
+  --t-fade: 200ms;
+  --ease: ease;
+
+  /* ---- 旧别名：app.js 内联样式与历史规则仍引用这些名字，取值对齐上面积分 ------- */
+  --bg: var(--canvas);
+  --card: var(--panel);
+  --card-2: var(--raised);
+  --well: var(--inset);
+  --active: rgba(255, 255, 255, .055);
+  --accent-fill: var(--accent-soft);
+  --border: var(--line-strong);
+  --border-soft: var(--line);
+  --text: var(--text-1);
+  --green: var(--ok);
+  --green-soft: var(--ok-soft);
+  --red: var(--bad);
+  --red-soft: var(--bad-soft);
+  --yellow: var(--warn);
+  --yellow-soft: var(--warn-soft);
+  --serif: var(--font-ui);
+  --sans: var(--font-ui);
+  --mono: var(--font-mono);
+  --r-card: var(--radius);
+  --r-btn: var(--radius);
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --motion-fast: var(--t);
+  --motion-page: var(--t-fade);
+  --ease-paper: var(--ease);
+  --rule: var(--line);
+  --rule-strong: var(--line-strong);
+  --paper: var(--panel);
+  --paper-wash: var(--raised);
+  --paper-well: var(--inset);
+  --ink: var(--text-1);
+  --ink-2: var(--text-2);
+  --ink-3: var(--text-3);
+  --verified: var(--ok);
+  --alert: var(--bad);
+  --pending: var(--warn);
+  --font-display: var(--font-ui);
+  --font-body: var(--font-ui);
+  --radius-card: var(--radius);
+  --radius-menu: 10px;
+  --radius-control: var(--radius);
+  --radius-chip: var(--radius-pill);
+}
 
 * { box-sizing: border-box; }
 html, body { height: 100%; }
@@ -11,17 +123,16 @@ body { margin: 0; }
 
 .shell { display: flex; height: 100vh; }
 
-/* ================================================================ sidebar */
+/* ================================================================ sidebar（左区：委托导航） */
 .sidebar {
-  width: 272px; flex: none; display: flex; flex-direction: column; min-height: 0;
-  background: var(--bg); border-right: 1px solid var(--border-soft);
+  width: 264px; flex: none; display: flex; flex-direction: column; min-height: 0;
   padding: 10px 8px 8px;
 }
-.side-head { display: flex; align-items: center; padding: 4px 6px 8px; }
+.side-head { display: flex; align-items: center; gap: 8px; padding: 4px 6px 12px; }
 .side-list { flex: 1; min-height: 0; overflow-y: auto; padding: 0 2px; }
 .side-foot {
   display: flex; align-items: center; gap: 7px;
-  border-top: 1px solid var(--border-soft); margin-top: 8px; padding: 10px 10px 2px;
+  border-top: 1px solid var(--line); margin-top: 8px; padding: 10px 10px 2px;
 }
 
 /* ============================================================== workspace */
@@ -29,20 +140,20 @@ body { margin: 0; }
 
 .topbar {
   height: 50px; flex: none; display: flex; align-items: center; gap: 10px;
-  padding: 0 14px 0 18px; border-bottom: 1px solid var(--border-soft);
+  padding: 0 14px 0 18px; border-bottom: 1px solid var(--line);
 }
 
 .content { flex: 1; min-height: 0; display: flex; }
 .center { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .main { flex: 1; min-height: 0; overflow-y: auto; }
-.main-inner { max-width: 780px; margin: 0 auto; padding: 24px 26px 36px; }
+.main-inner { max-width: 780px; margin: 0 auto; padding: 28px 32px 44px; }
 .result .metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; padding: 2px 14px 8px; }
 
-/* ================================================================== rail */
+/* ================================================================== rail（右区：案卷） */
 .rail {
   width: 360px; flex: none; display: flex; flex-direction: column; min-height: 0;
-  border-left: 1px solid var(--border-soft); background: var(--bg);
-  transition: width .18s ease, opacity .18s ease;
+  border-left: 1px solid var(--line);
+  transition: width var(--t) ease, opacity var(--t) ease;
 }
 @media (min-width: 1101px) {
   .app.rail-hidden .rail { width: 0; opacity: 0; pointer-events: none; border-left: 0; overflow: hidden; }
@@ -51,17 +162,16 @@ body { margin: 0; }
   .rail {
     position: fixed; top: 50px; right: 0; bottom: 0;
     width: min(380px, 88vw); z-index: 40;
-    transform: translateX(102%); transition: transform .2s ease;
-    box-shadow: -28px 0 70px rgba(0, 0, 0, .55);
-    background: #171717;
+    transform: translateX(102%); transition: transform var(--t) ease;
+    box-shadow: -24px 0 48px rgba(0, 0, 0, .45);
   }
   .app.rail-open .rail { transform: translateX(0); }
 }
-.rail-head { padding: 12px 14px 10px; }
+.rail-head { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px 10px; border-bottom: 1px solid var(--line); }
 .rail-body { flex: 1; min-height: 0; overflow-y: auto; padding: 4px 14px 16px; }
 
 /* ============================================================== composer */
-.composer-wrap { flex: none; padding: 0 26px 18px; }
+.composer-wrap { flex: none; padding: 0 32px 20px; }
 .composer { max-width: 780px; margin: 0 auto; }
 
 /* =============================================================== palette */
@@ -82,7 +192,7 @@ body { margin: 0; }
 /* ================================================== 会话 tabs（多运行并行） */
 .tabs {
   display: flex; align-items: stretch; gap: 2px; flex: none;
-  padding: 6px 14px 0; border-bottom: 1px solid var(--border-soft);
+  padding: 6px 14px 0; border-bottom: 1px solid var(--line);
   overflow-x: auto; scrollbar-width: none;
 }
 
@@ -94,19 +204,10 @@ body { margin: 0; }
 .statusline {
   display: flex; align-items: center; gap: 14px; flex: none; height: 26px;
   padding: 0 16px; overflow: hidden; white-space: nowrap;
+  border-top: 1px solid var(--line);
 }
 .statusline .sl-left, .statusline .sl-right { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .statusline .sl-right { margin-left: auto; }
-.sidebar { background: #ffffff; border-right: 1px solid var(--border-soft); }
-.main-inner { padding: 34px 40px 44px; }
-.composer-wrap { padding: 0 40px 22px; }
-.rail-head { border-bottom: 1px dashed var(--border-soft); }
-.sidebar { width: 264px; }
-.side-head { display: flex; align-items: center; gap: 8px; padding: 4px 6px 14px; }
-
-.side-list { padding: 0 2px; }
-.rail-head { display: flex; flex-direction: column; gap: 8px; padding: 10px 14px 8px; border-bottom: 1px dashed var(--border-soft); }
-.side-foot { padding: 8px 6px 2px; }
 
 /* 主区切换：聊天 / 设置 */
 #workspace.settings-open > .topbar,
