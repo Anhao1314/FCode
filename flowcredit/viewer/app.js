@@ -1964,11 +1964,11 @@ function renderHead(trace, title) {
 
 /* RENDER LAYER — 舞台式空状态：标识、字标与提示；composer 由 setStageMode
    以单实例 appendChild 搬进 stage-dock，模板 chips 在其下。 */
-function stageEmptyHtml() {
+function stageEmptyHtml(note = "还没有运行记录") {
   return `<section class="stage-empty" aria-label="空状态">
     <img class="stage-logo" src="brand/logo.svg" alt="FCode" width="56" height="56">
     <div class="stage-mark">FCode</div>
-    <p class="stage-note">还没有运行记录</p>
+    <p class="stage-note">${esc(note)}</p>
     <div class="stage-dock" id="stage-dock"></div>
     <div class="stage-chips" id="stage-chips" aria-label="按模板开始委托"></div>
   </section>`;
@@ -4772,7 +4772,22 @@ function bind() {
     if (slashMenu && !slashMenu.hidden && composerBox && !composerBox.contains(event.target)) slashMenu.hidden = true;
     if (!event.target.closest(".run-row")) closeRowMenus();
 
-    if (event.target.closest("#new-run") || event.target.closest("#composer-open")) { startIntake(""); return; }
+    if (event.target.closest("#new-run") || event.target.closest("#composer-open")) {
+      // 对齐 kimi 语法：新建委托先回居中舞台，首条消息提交后才进入需求确认。
+      const hasRuns = runHistory.length > 0;
+      if (settingsOpen) closeSettingsPage(false);
+      if (ledgerOpen) { ledgerOpen = false; }
+      if (activeSession()) detachLive();
+      store.key = null;
+      store.trace = null;
+      renderNav();
+      renderMain(stageEmptyHtml(hasRuns ? "描述你想做的分析，我先帮你确认清楚" : ""), { mode: "empty" });
+      document.getElementById("tb-title").textContent = "新委托";
+      document.getElementById("tb-chips").innerHTML = "";
+      const newTa = document.getElementById("composer-ta");
+      if (newTa) { newTa.value = ""; autosize(newTa); newTa.focus(); }
+      return;
+    }
     if (event.target.closest("#send")) { composerSubmit(); return; }
     if (event.target.closest("#run-chip")) { stopRun(); return; }
     if (event.target.closest("#desk-btn")) { renderMode("ledger"); return; }
