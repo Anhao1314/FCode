@@ -142,17 +142,22 @@ body { margin: 0; }
 }
 .app.side-collapsed .sidebar-frame { width:0; border-right:0; }
 .app.side-collapsed .sidebar {
-  width:0; padding:10px 0 8px; opacity:0; pointer-events:none;
+  width:0; padding:10px 0 8px; overflow:visible; pointer-events:none;
 }
+/* 折叠态只留折叠钮可见：其余内容 visibility 隐藏（不用 opacity，
+   否则悬浮展开钮作为子节点会一起消失） */
+.app.side-collapsed .sidebar > *:not(.side-head),
+.app.side-collapsed .side-head > *:not(#sidebar-toggle) { visibility: hidden; }
 /* 折叠后唯一的留痕：左上角悬浮展开钮（对齐 kimi.com）。
    按钮是 sidebar 的子节点，fixed 定位让它脱离零宽容器继续可见可点。 */
 .app.side-collapsed #sidebar-toggle {
   position: fixed; top: 14px; left: 14px; z-index: 120;
+  visibility: visible; pointer-events: auto;
   width: 32px; height: 32px;
   display: grid; place-items: center;
-  background: var(--raised); border: 1px solid var(--line);
+  background: var(--raised); border: 1px solid var(--line-strong);
   border-radius: var(--radius);
-  box-shadow: 0 1px 4px rgba(0,0,0,.06);
+  box-shadow: 0 1px 4px rgba(0,0,0,.08);
 }
 .side-head { display: flex; align-items: center; gap: 8px; padding: 4px 6px 12px; }
 .side-list { flex: 1; min-height: 0; overflow-y: auto; padding: 0 2px; }
