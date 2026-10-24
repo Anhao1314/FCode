@@ -11,11 +11,13 @@ flowcredit/viewer/
   app.js              ← 全部前端逻辑（回放 / 直播 / 建单向导 / 运行管理）
   report.js           ← 自包含审计报告生成器（结论 / 账单 / 证据 / 人工决定 / 链附录）
   server.py           ← 本地控制台服务（标准库）：静态文件 + JSON/SSE API + 运行管理
-  traces/             ← 7 个示例场景的 trace JSON（随仓库提供，可重新生成）
   runs/               ← 每次真实运行的产物（task.sqlite + trace.json + meta.json，不入库）
   docs/console-live.png
   README.md
 ```
+
+> 不再随仓库打包示例场景 trace。需要演示数据时用 `python demo.py` 生成到
+> `work/demo/`（或拷贝到 `viewer/traces/`），经 `?trace=` 加载。
 
 ## 快速开始
 
@@ -43,7 +45,7 @@ python3 flowcredit/viewer/server.py --repo . --pace 0.7
 │ ● 判断恒星…   │  ┌ Plan ────────────────────────┐ │ #3 ● plan_validated│
 │ 昨天          │  └──────────────────────────────┘ │ …                │
 │ ● 运行中…     │  ┌ 预算 calls ▓▓░ 4/12 · reads… ┐ │                  │
-│ ▸ 示例场景 7  │  #4 read_document(doc_fy2024) PASS │                  │
+│              │  #4 read_document(doc_fy2024) PASS │                  │
 │──────────────│     ⎿ FY2024 · 万元 · IFRS（折叠行）│                 │
 │ ● 可运行      │  #5 未完成的轮次        TERMINATED │                  │
 │              │  ┌ 结果 failed BUDGET_EXCEEDED ─┐ │                  │
@@ -75,7 +77,6 @@ python3 flowcredit/viewer/server.py --repo . --pace 0.7
   （手动展开过的轮次不会被自动收起）。行内提供文档列表、文档正文、口径换算、重述对比、
   毛利率三联指标等结构化细节，`原始数据` 折叠里是全量 JSON。
 - **运行记录**（服务端持久化在 `runs/*/meta.json`）：按今天 / 昨天 / 更早分组；搜索、悬停 ☆ 固定置顶、✎ 或双击重命名；「更早」默认显示 5 条，可展开/收起。状态点区分 succeeded / failed / denied / 运行中。
-- **示例场景**：7 个只读 trace 收在可折叠小节，有运行记录时默认折叠；展开状态记在 `localStorage`，也可从 `⌘K` 命令面板或新建向导打开。
 - **失败运行可操作**：结果卡里的「重试」以同一目标 + 模板重新提交；「复制诊断」生成一段
   可直接粘贴的诊断文本（运行 id、模板、终态、失败码、链验证、时间）。
 - **审计报告**：运行结束后的「签发报告」生成自包含 HTML 工作底稿（结论、账单、证据、
@@ -86,7 +87,7 @@ python3 flowcredit/viewer/server.py --repo . --pace 0.7
 
 | 键 | 行为 |
 | --- | --- |
-| `⌘K` / `Ctrl+K` | 命令面板：动作（重试 / 导出 / 重放 / 验链 / 展开折叠 / 通知开关）+ 运行记录 + 示例场景 |
+| `⌘K` / `Ctrl+K` | 命令面板：动作（重试 / 导出 / 重放 / 验链 / 展开折叠 / 通知开关）+ 运行记录 |
 | 点击顶栏链徽章 | 重新验证当前 trace 的签名链 |
 | `⌘.` / `Ctrl+.` | 停止当前运行 |
 | `⌘↵` / `Ctrl+Enter` | 允许当前审批 |
@@ -160,9 +161,9 @@ plan_steered / budget_adjusted / control_rejected / task_resumed / operator_mess
 
 ## 数据是从哪来的
 
-`traces/` 里的 7 个文件随仓库提供，由 Python Runtime 的离线 demo 生成，可随时重跑：
+演示数据不再随仓库提供。需要时由 Python Runtime 的离线 demo 生成，经 `?trace=` 加载：
 
 ```sh
 cd flowcredit && python demo.py all
-cp work/demo/*.trace.json viewer/traces/
+# 浏览器打开 viewer/index.html?trace=../work/demo/full.trace.json
 ```

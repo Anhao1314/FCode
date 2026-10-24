@@ -22,6 +22,9 @@ const SCENARIOS = [
   ["unknown",       "未知对账"],
   ["open-ended",    "开放问题"],
 ];
+/* SCENARIOS 现在只作 label 字典：把运行记录的 template key 翻译成中文标题。
+   内置示例场景入口已随打包 mock traces 一并移除；数据可由 demo.py 生成到
+   work/demo/ 后经 ?trace= 加载，或由 server.py 的真实运行产生。 */
 
 const EVENT_DOT = {
   task_created: "", model_started: "info", model_unknown: "warn", model_reconciled: "ok",
@@ -299,7 +302,6 @@ let ledgerConfirmId = null;
 function renderNav() {
   const desk = document.getElementById("desk-btn");
   if (desk) desk.classList.toggle("active", ledgerOpen);
-  renderScenarios();
   renderRuns();
 }
 
@@ -424,27 +426,6 @@ async function deleteRun(id) {
   toast("委托已删除");
 }
 
-function applyScenesOpen(open) {
-  const section = document.getElementById("scene-section");
-  const toggle = document.getElementById("scene-toggle");
-  if (!section || !toggle) return;
-  section.classList.toggle("open", open);
-  toggle.setAttribute("aria-expanded", open ? "true" : "false");
-}
-
-function scenesDefaultOpen() {
-  if (scenesOpen === "1") return true;
-  if (scenesOpen === "0") return false;
-  return runHistory.length === 0;
-}
-
-function setScenesOpen(open, persist = true) {
-  applyScenesOpen(open);
-  if (!persist) return;
-  scenesOpen = open ? "1" : "0";
-  localStorage.setItem("fa.scenesOpen", scenesOpen);
-}
-
 function runGroupOf(created) {
   const when = new Date(created || "");
   if (Number.isNaN(when.getTime())) return 2;
@@ -469,22 +450,6 @@ function setFoot(text, cls = "") {
   if (label) label.textContent = text;
   const dotEl = document.getElementById("foot-dot");
   if (dotEl) dotEl.className = "fdot" + (cls ? " " + cls : "");
-}
-
-function renderScenarios() {
-  const nav = document.getElementById("nav");
-  if (!nav) return;
-  nav.innerHTML = SCENARIOS.map(([key, label]) => {
-    const trace = cache.get(key);
-    const meta = trace ? `${(trace.rounds || []).length} 轮` : "";
-    return `<button class="session scene-row${key === store.key ? " active" : ""}" data-key="${key}">
-      <span class="slabel">${esc(label)}</span>
-      <span class="smeta">${meta}</span>
-    </button>`;
-  }).join("");
-  const count = document.getElementById("scene-count");
-  if (count) count.textContent = String(SCENARIOS.length);
-  applyScenesOpen(scenesDefaultOpen());
 }
 
 const STATUS_MARK = {
@@ -1829,14 +1794,11 @@ function renderHead(trace, title) {
   document.getElementById("tb-chips").innerHTML = "";
 }
 
-/* RENDER LAYER — 舞台式空状态：字标、提示与示例能力 chips。 */
+/* RENDER LAYER — 舞台式空状态：字标与提示。 */
 function stageEmptyHtml() {
   return `<section class="stage-empty" aria-label="空状态">
     <div class="stage-mark">FCode</div>
     <p class="stage-note">还没有运行记录</p>
-    <div class="stage-chips" aria-label="示例场景">
-      ${SCENARIOS.map(([key, label]) => `<a class="stage-chip" href="?trace=traces/${esc(key)}.trace.json">${esc(label)}</a>`).join("")}
-    </div>
   </section>`;
 }
 
@@ -3994,11 +3956,6 @@ function paletteMatches() {
     hint: run.status === "running" ? "运行中" : (run.rounds ? run.rounds + " 轮" : ""),
     run: () => selectRun(run.id),
   });
-  for (const [key, label] of SCENARIOS) {
-    if (!query || label.toLowerCase().includes(query)) push("示例场景", {
-      label, hint: "场景", run: () => { setScenesOpen(true); select(key, label); },
-    });
-  }
   return out;
 }
 
@@ -4256,11 +4213,6 @@ function bind() {
     if (event.target.closest("#report-close") || event.target.closest("[data-report-close]")) { closeReport(); return; }
     if (event.target.closest("#report-print")) { printReport(); return; }
     if (event.target.closest("#report-download")) { downloadReport(); return; }
-    if (event.target.closest("#scene-toggle")) {
-      const section = document.getElementById("scene-section");
-      setScenesOpen(!(section && section.classList.contains("open")));
-      return;
-    }
     if (event.target.closest("#palette-btn")) { openPalette(); return; }
     if (event.target.closest("#settings-btn")) { toggleSettingsPage(); return; }
     if (event.target.closest("#settings-mobile")) { renderMode("settings"); return; }
@@ -4302,12 +4254,6 @@ function bind() {
     document.getElementById("approval-menu").hidden = true;
     const s = activeSession();
     if (changed && s && s.running) toast("已切换 · 下一个任务生效");
-  });
-  document.getElementById("nav").addEventListener("click", event => {
-    const button = event.target.closest("[data-key]");
-    if (!button) return;
-    setScenesOpen(true);
-    select(button.dataset.key, labelOf(button.dataset.key));
   });
   document.getElementById("run-nav").addEventListener("click", event => {
     const moreBtn = event.target.closest("[data-more]");
@@ -4683,10 +4629,6 @@ document.addEventListener("DOMContentLoaded", () => {
         renderMain(`<div class="empty">无法加载 ${esc(param)}：${esc(error.message)}</div>`, { mode: "error" });
       });
   } else {
-    select("full", "完整研究");
-  }
-  // 预热其余场景，让侧栏状态点尽快着色
-  for (const [key] of SCENARIOS) {
-    if (key !== "full") loadTrace(key).then(() => renderNav());
+    renderMain(stageEmptyHtml(), { mode: "empty" });
   }
 });
