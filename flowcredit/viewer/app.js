@@ -3678,15 +3678,31 @@ function effectiveDraftBudget() {
 
 function renderAttachPanel() {
   const panel = document.getElementById("attach-panel");
+  const box = document.getElementById("composer-box");
   if (!panel) return;
-  panel.hidden = !attach.open;
   const btn = document.getElementById("composer-open");
   if (btn) {
     btn.classList.toggle("open", attach.open);
     btn.setAttribute("aria-expanded", attach.open ? "true" : "false");
     btn.title = attach.open ? "收起附加面板" : "资料 / 工具 / 预算";
   }
-  if (!attach.open) return;
+  box?.classList.toggle("open-attach", attach.open);
+  if (attach.open) {
+    clearTimeout(Number(panel.dataset.closeTimer || 0));
+    panel.classList.remove("closing");
+    panel.hidden = false;
+  } else if (!panel.hidden) {
+    // × 收起：先播 150ms 连体段收起动画，再真正 display:none
+    clearTimeout(Number(panel.dataset.closeTimer || 0));
+    panel.classList.add("closing");
+    panel.dataset.closeTimer = String(setTimeout(() => {
+      panel.hidden = true;
+      panel.classList.remove("closing");
+    }, 150));
+    return;
+  } else {
+    return;
+  }
 
   const limits = effectiveDraftBudget();
   const budget = attach.budget || {

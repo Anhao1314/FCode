@@ -25,6 +25,9 @@
   --line-strong: rgba(0, 0, 0, .14);
   --radius: 8px;
   --radius-pill: 999px;
+  /* composer 舞台连体胶囊与浅色弹层专用；不覆写通用 --radius */
+  --radius-stage: 24px;
+  --shadow-stage: 0 5px 16px -4px rgba(0, 0, 0, .07);
 
   /* ---- 文字：三档灰 ------------------------------------------------------------
      --text-1 主文字（结论、标题、正文）：近黑；
@@ -133,6 +136,7 @@ body { margin: 0; }
 /* ================================================================ sidebar（左区：委托导航） */
 .sidebar-frame {
   position: relative; flex: none; width: var(--sidebar-w); min-height: 0;
+  border-right: 0; /* 分隔靠 --panel 与 --canvas 的色差，不画线 */
   transition: width 200ms var(--ease); z-index: 60;
 }
 .sidebar {
