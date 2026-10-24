@@ -736,6 +736,31 @@ class RunManager:
                 return ref
 
             provider = self._build_provider(rt, run, scenario, receipts, issue)
+            if not resume_limits and run.model != "mock":
+                # scenario 的成本顶按 mock 免费价拟定；外部计费模型换真实价格后
+                # 一次预留就会击穿。按 provider 声明的价格快照重算成本顶与 token
+                # 顶（调用 / 读取次数沿用场景草案），上限是天花板不是目标，实际
+                # 计费仍以收据为准并逐轮展示。
+                price = getattr(provider, "price", None)
+                max_completion = int(getattr(provider, "max_completion_tokens", 512) or 512)
+                if price is not None:
+                    est_prompt_tokens = 6_000
+                    per_call_microusd = (
+                        est_prompt_tokens * price.input_microusd_per_mtok
+                        + max_completion * price.output_microusd_per_mtok
+                        + 999_999
+                    ) // 1_000_000
+                    limits = rt.BudgetLimits(
+                        max_calls=limits.max_calls,
+                        max_reads=limits.max_reads,
+                        max_cost_microusd=max(
+                            limits.max_cost_microusd, per_call_microusd * limits.max_calls
+                        ),
+                        max_tokens=max(
+                            limits.max_tokens,
+                            (est_prompt_tokens + max_completion) * limits.max_calls,
+                        ),
+                    )
             harness = rt.Harness(
                 store=store,
                 registry=registry,
