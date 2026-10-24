@@ -235,6 +235,9 @@ function renderMain(html, { mode = "run", scroll = null } = {}) {
   main.dataset.view = mode;
   store.mode = mode;
   setStageMode(mode === "empty");
+  // composer 只属于对话语境：功能页（判断记录 / 定时任务）不显示输入框
+  const composerWrap = document.querySelector(".composer-wrap");
+  if (composerWrap) composerWrap.hidden = (mode === "reviews" || mode === "scheduled");
   if (scroll === "top") main.scrollTop = 0;
   else if (scroll === "bottom") main.scrollTop = main.scrollHeight;
 }
