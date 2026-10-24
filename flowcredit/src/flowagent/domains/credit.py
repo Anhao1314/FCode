@@ -30,7 +30,7 @@ def build_tools(world: CreditWorld, **_: Any) -> list[ToolSpec]:
     return build_credit_tools(world)
 
 
-def make_planner() -> CreditPlanner:
+def make_planner(world: Any = None, **kwargs: Any) -> CreditPlanner:
     return CreditPlanner()
 
 

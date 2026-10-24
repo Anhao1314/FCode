@@ -6,8 +6,8 @@
 <meta name="color-scheme" content="light">
 <title>Fcode · flowcredit console</title>
 <link rel="icon" type="image/svg+xml" href="brand/favicon.svg">
-<link rel="stylesheet" href="app.css?v=73">
-<link rel="stylesheet" href="design.css?v=74">
+<link rel="stylesheet" href="app.css?v=74">
+<link rel="stylesheet" href="design.css?v=75">
 </head>
 <body>
 <div class="shell app rail-hidden" id="app">
@@ -39,7 +39,18 @@
       <span class="side-count" id="desk-count">0</span>
     </button>
 
+    <div class="side-nav">
+      <button class="nav-item" id="nav-reviews" title="判断记录">
+        <span data-doodle="clipboard-list"></span><span>判断记录</span>
+      </button>
+      <button class="nav-item" id="nav-scheduled" title="定时任务">
+        <span data-doodle="calendar"></span><span>定时任务</span>
+      </button>
+    </div>
+
     <div class="side-list">
+      <div class="side-section"><span>Projects</span><span class="side-count" id="proj-count">0</span></div>
+      <nav id="project-nav"></nav>
       <div class="side-section"><span>委托记录</span><span class="side-count" id="run-count">0</span></div>
       <nav class="nav" id="run-nav"></nav>
     </div>
@@ -332,6 +343,6 @@
 
 <script src="report.js?v=54"></script>
 <script src="icons-doodle.js?v=54"></script>
-<script src="app.js?v=73" type="module"></script>
+<script src="app.js?v=74" type="module"></script>
 </body>
 </html>

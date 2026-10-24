@@ -278,6 +278,18 @@ class Runtime:
         self.MAX_REVIEWER = m.MAX_REVIEWER
         m = imp("flowagent.review_profile")
         self.build_profile = m.build_profile
+        m = imp("flowagent.tools.general.sandbox")
+        self.WorkspaceSandbox = m.WorkspaceSandbox
+
+    def _module_for(self, template_key: str | None):
+        """The domain module a template runs on; finance stays the default."""
+        key = DOMAIN_KEY
+        if template_key:
+            try:
+                key = self.get_scenario(template_key).module
+            except Exception:  # noqa: BLE001 — unknown template falls back
+                key = DOMAIN_KEY
+        return self.get_domain(key)
 
     def tool_contracts(self) -> list[dict]:
         """The registered contracts (name, effect, version, schemas)."""
@@ -288,7 +300,9 @@ class Runtime:
 
     def corpus(self, template_key: str | None = None) -> list[dict]:
         """The document corpus a template will run against (operator-facing)."""
-        module = self.get_domain(DOMAIN_KEY)
+        module = self._module_for(template_key)
+        if module.key != DOMAIN_KEY:
+            return []  # general delegations select sources, not corpus documents
         partial = False
         if template_key:
             partial = self.get_scenario(template_key).partial_corpus
@@ -298,7 +312,7 @@ class Runtime:
     def template_tools(self, template_key: str) -> list[dict]:
         """This template's closed tool registry, in registration order."""
         scenario = self.get_scenario(template_key)
-        module = self.get_domain(DOMAIN_KEY)
+        module = self._module_for(template_key)
         world = module.create_world(partial=scenario.partial_corpus)
         registry = self.ToolRegistry(module.build_tools(world))
         allowed = set(scenario.allowed_tools)
@@ -330,7 +344,7 @@ class Runtime:
                     "expected": scenario.expected_status,
                     "max_rounds": scenario.max_rounds,
                     "limits": limits.to_dict(),
-                    "module": DOMAIN_KEY,
+                    "module": scenario.module,
                 }
             )
         return out
@@ -444,6 +458,41 @@ class RunManager:
         self._seq = 0
         RUNS_DIR.mkdir(exist_ok=True)
         self._load_history()
+        # The MCP bridge attaches whatever the host reviewed into mcp.json.
+        # Connection happens off-thread: a hanging server must not delay boot,
+        # and /api/mcp reports the honest per-server status meanwhile.
+        self.mcp: dict[str, Any] = {"ready": False, "bridge": None}
+        if runtime is not None:
+            config_path = os.environ.get("FCODE_MCP_CONFIG") or str(runtime.repo / "mcp.json")
+            thread = threading.Thread(
+                target=self._connect_mcp, args=(config_path,), name="mcp:bridge", daemon=True,
+            )
+            thread.start()
+
+    def _connect_mcp(self, config_path: str) -> None:
+        try:
+            from flowagent.tools.mcp.bridge import McpBridge
+
+            bridge = McpBridge(config_path, cwd=self.runtime.repo if self.runtime else None)
+            bridge.connect()
+            self.mcp = {"ready": True, "bridge": bridge}
+        except Exception as error:  # noqa: BLE001 — the bridge must never kill the console
+            traceback.print_exc()
+            self.mcp = {"ready": True, "bridge": None, "error": f"{type(error).__name__}: {error}"}
+
+    def mcp_tools(self) -> list[dict]:
+        """Honest MCP availability for the console (server-by-server)."""
+        bridge = self.mcp.get("bridge")
+        if bridge is None:
+            error = self.mcp.get("error")
+            return [{
+                "server": "mcp",
+                "connected": False,
+                "tools": [],
+                "refused": [],
+                "reason": error or "no mcp.json configured",
+            }]
+        return bridge.statuses()
 
     def resolve_model(self, model_key: str | None, effort: str | None) -> tuple[str, str]:
         """Fail-closed model resolution for run creation.
@@ -471,26 +520,46 @@ class RunManager:
     def validate_delegation_spec(self, spec: dict | None, scenario) -> dict | None:
         """Validate operator delegation overrides before a run exists.
 
-        ``scope`` limits which corpus documents this run may read; ``budget`` is
-        the operator-adjusted ceiling (calls / reads / cost). Both are facts in
-        the task binding, consumed by the run thread — not decorative UI state.
+        Finance delegations carry ``scope`` (which corpus documents this run may
+        read) and ``budget``. General delegations carry ``sources`` (the URLs
+        fetch_url may visit) and ``budget``. Both are facts in the task
+        binding, consumed by the run thread — not decorative UI state.
         """
         if spec is None:
             return None
         if not isinstance(spec, dict):
             raise ValueError("spec must be an object")
-        scope = spec.get("scope")
-        if scope is not None:
-            if not isinstance(scope, list) or not all(isinstance(item, str) for item in scope):
-                raise ValueError("scope must be a list of document ids")
-            if not scope:
-                raise ValueError("scope cannot be empty; omit it to use the full corpus")
-            if len(set(scope)) != len(scope):
-                raise ValueError("scope cannot contain duplicate documents")
-            known = {doc["id"] for doc in self.runtime.corpus(scenario.key)}
-            unknown = [doc for doc in scope if doc not in known]
-            if unknown:
-                raise ValueError(f"scope contains unknown documents: {', '.join(unknown)}")
+        general = getattr(scenario, "module", DOMAIN_KEY) != DOMAIN_KEY
+        if general:
+            sources = spec.get("sources")
+            if sources is not None:
+                if not isinstance(sources, list) or not all(isinstance(item, str) for item in sources):
+                    raise ValueError("sources must be a list of URLs")
+                if not 1 <= len(sources) <= 5:
+                    raise ValueError("sources must list 1 to 5 URLs")
+                if len(set(sources)) != len(sources):
+                    raise ValueError("sources must not repeat a URL")
+                for url in sources:
+                    parsed = urlparse(url)
+                    if parsed.scheme not in ("http", "https") or not parsed.hostname:
+                        raise ValueError(f"sources contains a non-http(s) URL: {url[:120]!r}")
+            elif "scope" not in spec:
+                # A general delegation without sources cannot plan a single
+                # fetch; refuse at creation instead of failing mid-run.
+                raise ValueError("a general delegation needs spec.sources (1 to 5 URLs)")
+        else:
+            scope = spec.get("scope")
+            if scope is not None:
+                if not isinstance(scope, list) or not all(isinstance(item, str) for item in scope):
+                    raise ValueError("scope must be a list of document ids")
+                if not scope:
+                    raise ValueError("scope cannot be empty; omit it to use the full corpus")
+                if len(set(scope)) != len(scope):
+                    raise ValueError("scope cannot contain duplicate documents")
+                known = {doc["id"] for doc in self.runtime.corpus(scenario.key)}
+                unknown = [doc for doc in scope if doc not in known]
+                if unknown:
+                    raise ValueError(f"scope contains unknown documents: {', '.join(unknown)}")
         budget = spec.get("budget")
         if budget is not None:
             if not isinstance(budget, dict):
@@ -853,20 +922,36 @@ class RunManager:
             run_dir = RUNS_DIR / run.id
             db = run_dir / "task.sqlite"
             store = rt.TaskStore(db)
-            module = rt.get_domain(DOMAIN_KEY)
-            world = module.create_world(partial=scenario.partial_corpus)
+            module = rt.get_domain(getattr(scenario, "module", DOMAIN_KEY))
+            general = module.key != DOMAIN_KEY
+            # The general module keeps its workspace sandbox inside the run
+            # directory, next to the chain it feeds; files survive restarts.
+            world_kwargs = {}
+            sandbox = None
+            if general:
+                sandbox = rt.WorkspaceSandbox(run_dir / "workspace")
+                world_kwargs = {"sandbox": sandbox}
+            world = module.create_world(
+                partial=scenario.partial_corpus, spec=run.spec or {}, **world_kwargs,
+            )
             # 委托 scope：world 与计划同宽。列表、读取和派生工具都只能看到
             # 所选文档；缺资料导致的阻塞由域工具如实报告，不静默放宽。
             scope = list(((run.spec or {}).get("scope") or []))
-            if scope:
+            if scope and hasattr(world, "documents"):
                 selected = set(scope)
                 unknown = selected - set(world.documents)
                 if unknown:
                     raise ValueError(f"scope contains unknown documents: {', '.join(sorted(unknown))}")
                 world.documents = {doc_id: world.documents[doc_id] for doc_id in selected}
-            registry = rt.ToolRegistry(module.build_tools(
+            native_tools = module.build_tools(
                 world, cases=self.case_index, facts=self.fact_store,
-            ))
+            )
+            # MCP 导入是"进注册表"，不是绕过注册表：只有通用域委托把导入
+            # 工具并入 allowed_tools 与 grant（主机决策，随 binding 入链）。
+            mcp_bridge = self.mcp.get("bridge") if general else None
+            mcp_specs = mcp_bridge.specs() if mcp_bridge else []
+            extra_allowed: list[str] = [spec.name for spec in mcp_specs]
+            registry = rt.ToolRegistry(native_tools + mcp_specs)
             receipts = rt.ReceiptStore(store)
             issued: dict[str, str] = {}
 
@@ -924,7 +1009,30 @@ class RunManager:
                         recorder.seed(json.loads(previous.read_text(encoding="utf-8")).get("rounds") or [])
                     except Exception:  # noqa: BLE001 — a damaged old trace must not block resume
                         pass
-            control = RunControl(run, harness, rt, scenario.approval_tools, self.approval_timeout)
+            approval_tools = tuple(scenario.approval_tools)
+            if mcp_bridge is not None:
+                # 导入工具默认 consequential：只有主机在 mcp.json 标了
+                # readonly 的才免审批。分类权在主机，不在 server 自述。
+                approval_tools += tuple(mcp_bridge.approval_names())
+
+            def _approval_preview(tool: str, arguments: dict) -> dict | None:
+                if sandbox is None or tool != "write_file":
+                    return None
+                path = str(arguments.get("path") or "")
+                content = str(arguments.get("content") or "")
+                if not path or not content:
+                    return None
+                try:
+                    return sandbox.diff_preview(path, content)
+                except Exception as error:  # noqa: BLE001 — 审批预览必须先于执行；沙箱拒绝也要如实上屏
+                    return {"path": path, "created": True, "additions": 0,
+                            "removals": 0, "truncated": False, "diff": "",
+                            "error": f"{getattr(error, 'code', type(error).__name__)}: {error}"}
+
+            control = RunControl(
+                run, harness, rt, approval_tools, self.approval_timeout,
+                preview=_approval_preview if sandbox is not None else None,
+            )
             run.controller = control
             if resume_limits:
                 task = store.load(run.task_id)
@@ -934,19 +1042,26 @@ class RunManager:
                 )
                 max_rounds = max(scenario.max_rounds, task.model.attempts + extra_rounds)
             else:
+                binding = {
+                    "scenario": scenario.key,
+                    "module": module.key,
+                    "source": "viewer-live",
+                    **({"spec": run.spec} if run.spec else {}),
+                }
+                if general:
+                    binding["workspace"] = "workspace"
+                if extra_allowed:
+                    binding["mcp_imports"] = extra_allowed
+                grant = dict(scenario.grant)
+                if extra_allowed:
+                    grant["allowed_tools"] = list(grant.get("allowed_tools") or []) + extra_allowed
                 task = harness.create(
                     task_id=f"task-{run.id}",
                     objective=run.objective,
                     principal="console-operator",
-                    binding={
-                    "scenario": scenario.key,
-                    "module": module.key,
-                    "corpus": "synthetic-authored-v1",
-                    "source": "viewer-live",
-                    **({"spec": run.spec} if run.spec else {}),
-                },
-                    allowed_tools=list(scenario.allowed_tools),
-                    grant=scenario.grant,
+                    binding=binding,
+                    allowed_tools=list(scenario.allowed_tools) + extra_allowed,
+                    grant=grant,
                 )
                 if self.case_index is not None:
                     try:
@@ -962,9 +1077,10 @@ class RunManager:
             )
             watcher.start()
 
+            base_planner = module.make_planner(world)
             planner = (
-                ScopedPlanner(rt, module.make_planner(), set(scope))
-                if scope else module.make_planner()
+                ScopedPlanner(rt, base_planner, set(scope))
+                if scope else base_planner
             )
             loop = rt.Loop(
                 harness,
@@ -1163,7 +1279,15 @@ class RunControl:
     makes "下一轮生效" a fact rather than a label.
     """
 
-    def __init__(self, run: Run, harness, runtime: Runtime, approval_tools, timeout: float) -> None:
+    def __init__(
+        self,
+        run: Run,
+        harness,
+        runtime: Runtime,
+        approval_tools,
+        timeout: float,
+        preview=None,
+    ) -> None:
         self.run = run
         self.harness = harness
         self.Plan = runtime.Plan
@@ -1171,6 +1295,10 @@ class RunControl:
         self.RoundControl = runtime.RoundControl
         self.ToolControl = runtime.ToolControl
         self.approval_tools = set(approval_tools)
+        #: Optional host hook: (tool, arguments) -> a preview payload the
+        #: approval dialog renders (write_file's real diff). Host-side by
+        #: construction; nothing executes before the decision.
+        self.preview = preview
         self.timeout = max(5.0, float(timeout))
         self._lock = threading.Lock()
         self._commands: deque[dict] = deque()
@@ -1316,6 +1444,13 @@ class RunControl:
             "expiresIn": int(self.timeout),
             "requestedAt": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         }
+        if self.preview is not None:
+            try:
+                payload = self.preview(tool, step.get("arguments") or {})
+            except Exception:  # noqa: BLE001 — a preview must never block the gate
+                payload = None
+            if payload is not None:
+                approval["preview"] = payload
         task = self.harness.transition(task, "paused", "approval_requested", approval)
         with self._lock:
             self._approval = approval
@@ -1607,13 +1742,13 @@ def _run_crash(rt: Runtime, harness, store, world, scenario, task, observer, db:
         timeout=180,
     )
     resumed = store.load(task.id)
-    module = rt.get_domain(DOMAIN_KEY)
+    module = rt.get_domain(getattr(scenario, "module", DOMAIN_KEY))
     memory = rt.Loop(
-        harness, planner=module.make_planner(), result_tools=module.result_tools,
+        harness, planner=module.make_planner(world), result_tools=module.result_tools,
     ).restore(resumed)
     world.apply_state(memory.state())
     return rt.Loop(
-        harness, planner=module.make_planner(), max_rounds=scenario.max_rounds, observer=observer,
+        harness, planner=module.make_planner(world), max_rounds=scenario.max_rounds, observer=observer,
         result_tools=module.result_tools,
     ).run(resumed.id)
 
@@ -1767,6 +1902,13 @@ class Handler(SimpleHTTPRequestHandler):
             if mgr.runtime is None:
                 return self._json({"error": mgr.runtime_error}, 503)
             return self._json({"modules": mgr.runtime.modules()})
+        if path == "/api/mcp":
+            bridge = mgr.mcp.get("bridge")
+            return self._json({
+                "ready": mgr.mcp.get("ready", False),
+                "servers": mgr.mcp_tools(),
+                "approvalTools": list(bridge.approval_names()) if bridge else [],
+            })
         if path == "/api/tools":
             if mgr.runtime is None:
                 return self._json({"error": mgr.runtime_error}, 503)
@@ -1801,6 +1943,24 @@ class Handler(SimpleHTTPRequestHandler):
                 control = getattr(run, "controller", None)
                 queue = control.queue_snapshot() if control is not None else (run.queue or [])
                 return self._json({"id": run.id, "queue": queue})
+            if action == "workspace" or action.startswith("workspace/"):
+                # Read-only views of the run's sandbox, jail-checked by the
+                # same WorkspaceSandbox the tools use — never raw paths.
+                if mgr.runtime is None:
+                    return self._json({"error": mgr.runtime_error}, 503)
+                sandbox = mgr.runtime.WorkspaceSandbox(RUNS_DIR / run.id / "workspace")
+                target = action[len("workspace"):].lstrip("/")
+                if not target:
+                    if not sandbox.root.exists():
+                        return self._json({"entries": [], "count": 0})
+                    return self._json({"entries": sandbox.ls(), "count": len(sandbox.ls())})
+                try:
+                    record = sandbox.read(target)
+                except Exception as error:  # noqa: BLE001 — jail refusals are 404/400, not crashes
+                    code = getattr(error, "code", "")
+                    status = 400 if code == "SANDBOX_PATH_DENIED" else 404
+                    return self._json({"error": code or str(error)}, status)
+                return self._json(record)
             return self._json({"error": "unknown action"}, 404)
         return self._json({"error": "unknown endpoint"}, 404)
 
@@ -1926,6 +2086,7 @@ class Handler(SimpleHTTPRequestHandler):
                     history=history[-20:],
                     spec=spec,
                     choice=choice,
+                    template=str(body.get("template") or ""),
                 )
             except Exception as error:  # noqa: BLE001
                 return self._json({"error": f"intake failed: {error}"}, 400)

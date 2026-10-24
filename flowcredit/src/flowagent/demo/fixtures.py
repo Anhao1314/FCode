@@ -37,6 +37,9 @@ class Scenario:
     #: before executing them. Data, not runtime policy: a different domain can
     #: name a different set without touching the loop.
     approval_tools: tuple[str, ...] = ("reconcile_basis", "report_blocked", "working_paper_append")
+    #: Which domain module assembles this scenario's world, tools and verifier.
+    #: The default keeps every existing scenario on finance; new domains opt in.
+    module: str = "finance-research"
 
 
 _ALL_TOOLS = (
@@ -165,6 +168,43 @@ SCENARIOS: dict[str, Scenario] = {
         max_rounds=12,
         partial_corpus=True,
         expected_status="failed",
+    ),
+    "general-research": Scenario(
+        key="general-research",
+        title="通用委托：抓取公开来源，写入 research.md",
+        objective="调研指定的公开主题，把来源摘录与结论写成 research.md 放进工作区",
+        story=(
+            "通用能力的参考实现：模型提议 fetch_url 抓取操作者圈定的公开来源，"
+            "再提议 write_file 把研究底稿写进沙箱。写入默认过人工审批（真实 diff），"
+            "网页内容如实标注 not-verified；runtime 复核的是文件哈希、预算与链。"
+        ),
+        allowed_tools=(
+            "ls_workspace",
+            "read_file",
+            "write_file",
+            "fetch_url",
+        ),
+        grant={
+            "grant_id": "general-host-grant",
+            "revision": 1,
+            "allowed_tools": [
+                "ls_workspace",
+                "read_file",
+                "write_file",
+                "fetch_url",
+            ],
+            # The host names the effect classes this delegation may use. A
+            # finance grant omits the key and keeps the read-only promise.
+            "allowed_effects": ["read", "write", "network"],
+            "max_calls": 12,
+            "max_reads": 20,
+            "max_cost_microusd": 20_000,
+            "max_tokens": 60_000,
+        },
+        limits=BudgetLimits(12, 20, 20_000, 60_000),
+        max_rounds=12,
+        approval_tools=("write_file",),
+        module="general-work",
     ),
 }
 

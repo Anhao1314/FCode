@@ -42,7 +42,7 @@ class Param:
     """One declared parameter of a tool."""
 
     name: str
-    kind: str  # "string" | "integer"
+    kind: str  # "string" | "integer" | "boolean" | "number" | "array"
     required: bool = True
     enum: tuple[str, ...] | None = None
     minimum: int | None = None
@@ -50,6 +50,10 @@ class Param:
     description: str = ""
     #: Output contracts only: an explicitly nullable field may be None.
     nullable: bool = False
+    #: String parameters only: the maximum length accepted at the gate, so an
+    #: oversized write (a whole file in a proposal, say) is refused *before*
+    #: execution rather than by the handler after approval.
+    max_length: int | None = None
 
     @classmethod
     def output(cls, name: str, kind: str, required: bool = True, nullable: bool = False) -> "Param":
@@ -68,6 +72,8 @@ class Param:
             schema["description"] = self.description
         if self.nullable:
             schema["nullable"] = True
+        if self.max_length is not None:
+            schema["maxLength"] = self.max_length
         return schema
 
 
@@ -166,6 +172,11 @@ def validate_arguments(spec: ToolSpec, arguments: Mapping[str, Any]) -> dict[str
                     "TOOL_ARGUMENTS_INVALID",
                     f"{param.name!r} must be one of {list(param.enum)}",
                 )
+            if param.max_length is not None and len(value) > param.max_length:
+                raise AgentError(
+                    "TOOL_ARGUMENTS_INVALID",
+                    f"{param.name!r} exceeds {param.max_length} characters",
+                )
         elif param.kind == "array":
             if not isinstance(value, (list, tuple)) or any(
                 not isinstance(item, str) or not item for item in value
@@ -186,6 +197,13 @@ def validate_arguments(spec: ToolSpec, arguments: Mapping[str, Any]) -> dict[str
                 raise AgentError("TOOL_ARGUMENTS_INVALID", f"{param.name!r} is below {param.minimum}")
             if param.maximum is not None and value > param.maximum:
                 raise AgentError("TOOL_ARGUMENTS_INVALID", f"{param.name!r} is above {param.maximum}")
+        elif param.kind == "boolean":
+            # Same rule as the output contract: a bool is a bool; 0/1 are not.
+            if not isinstance(value, bool):
+                raise AgentError("TOOL_ARGUMENTS_INVALID", f"{param.name!r} must be a boolean")
+        elif param.kind == "number":
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise AgentError("TOOL_ARGUMENTS_INVALID", f"{param.name!r} must be a number")
         else:  # pragma: no cover - guards a programming error, not user input
             raise AgentError("TOOL_SCHEMA_INVALID", f"unknown parameter kind {param.kind!r}")
         normalised[param.name] = value

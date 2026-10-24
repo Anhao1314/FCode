@@ -108,6 +108,11 @@ class RenderedOutputTest(unittest.TestCase):
         from flowagent.demo.fixtures import SCENARIOS
 
         for key, scenario in SCENARIOS.items():
+            if scenario.module != "finance-research":
+                # general-research needs operator-provided sources (spec)
+                # and would hit the network; its offline equivalent runs in
+                # test_general_capabilities with an injected fake fetcher.
+                continue
             with self.subTest(scenario=key):
                 buffer = io.StringIO()
                 with contextlib.redirect_stdout(buffer):

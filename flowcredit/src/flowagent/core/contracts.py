@@ -85,7 +85,12 @@ MODEL_TRANSITIONS: dict[str, tuple[str, ...]] = {
 
 _STEP_ID = re.compile(r"^[a-z][a-z0-9_-]{0,39}$")
 _TOOL_NAME = re.compile(r"^[a-z][a-z0-9_.]{0,63}$")
-_MAX_STEP_ARGUMENT_BYTES = 1024
+#: Proposals stay bounded so a plan event is small and hashable. The original
+#: 1 KiB ceiling assumed read-only tools with identifier-sized arguments; the
+#: governed general capabilities (write_file) carry authored content, so the
+#: bound is re-bounded — not removed — at 96 KiB. The tool schema still caps
+#: any single content parameter far below this (see Param.max_length).
+_MAX_STEP_ARGUMENT_BYTES = 96 * 1024
 
 
 class AgentError(Exception):
@@ -217,7 +222,7 @@ def validate_plan(value: Any) -> Plan:
         from .hashing import canonical_json
 
         if len(canonical_json(arguments).encode("utf-8")) > _MAX_STEP_ARGUMENT_BYTES:
-            raise AgentError("PLAN_SCHEMA_INVALID", "step arguments exceed 1 KiB")
+            raise AgentError("PLAN_SCHEMA_INVALID", "step arguments exceed 96 KiB")
         seen.add(step_id)
         validated.append(Step(id=step_id, tool=tool, arguments=dict(arguments)))
     return Plan(version=PLAN_VERSION, steps=tuple(validated))

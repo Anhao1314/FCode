@@ -31,12 +31,12 @@ from flowagent.tools.registry import ToolRegistry  # noqa: E402
 
 
 class DomainModuleTests(unittest.TestCase):
-    def test_registry_exposes_finance_and_credit_modules(self) -> None:
+    def test_registry_exposes_finance_credit_and_general_modules(self) -> None:
         self.assertIs(get_domain("finance-research"), FINANCE_DOMAIN)
         self.assertIs(get_domain("credit-due-diligence"), CREDIT_DOMAIN)
         self.assertEqual(
             {module.key for module in list_domains()},
-            {"finance-research", "credit-due-diligence"},
+            {"finance-research", "credit-due-diligence", "general-work"},
         )
         with self.assertRaises(KeyError):
             get_domain("audit")

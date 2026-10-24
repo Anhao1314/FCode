@@ -208,6 +208,9 @@ const attach = {
   loadedTemplate: "",
   scope: new Set(),
   budget: null,          // null = 未改，用当前模型/模板的服务端草案
+  sources: [],           // 通用委托：fetch_url 可访问的 URL 清单（spec.sources）
+  sourcesDraft: "",
+  mcp: { servers: [], loaded: false },  // MCP 导入的真实可用性
 };
 let scenesOpen = localStorage.getItem("fa.scenesOpen"); // null | "1" | "0"
 
@@ -242,6 +245,8 @@ const MODE_ENTRY = {
   intake: () => renderIntake(),
   ledger: () => openLedger(),
   settings: () => openSettingsPage(),
+  reviews: () => renderReviews(),
+  scheduled: () => renderScheduledPage(),
 };
 
 function renderMode(mode, payload = {}) {
@@ -338,7 +343,34 @@ let ledgerConfirmId = null;
 function renderNav() {
   const desk = document.getElementById("desk-btn");
   if (desk) desk.classList.toggle("active", ledgerOpen);
+  renderProjects();
   renderRuns();
+}
+
+/* ================= Projects（运行分组，v1 单设备存储） ================= */
+let projects = JSON.parse(localStorage.getItem("fa.projects") || "[]");
+let runProjects = JSON.parse(localStorage.getItem("fa.runProjects") || "{}");
+let projectFilter = null;
+const saveProjects = () => {
+  localStorage.setItem("fa.projects", JSON.stringify(projects));
+  localStorage.setItem("fa.runProjects", JSON.stringify(runProjects));
+};
+
+function renderProjects() {
+  const nav = document.getElementById("project-nav");
+  if (!nav) return;
+  const count = pid => Object.values(runProjects).filter(x => x === pid).length;
+  nav.innerHTML = projects.map(prj => '<button class="session proj-row' + (projectFilter === prj.id ? " active" : "") + '" data-proj="' + esc(prj.id) + '"><span class="slabel">' + esc(prj.name) + '</span><span class="smeta">' + (count(prj.id) || "") + '</span></button>').join("")
+    + '<button class="proj-add" id="proj-add">＋ 新建项目</button>';
+  const cnt = document.getElementById("proj-count");
+  if (cnt) cnt.textContent = String(projects.length);
+}
+
+function clearNavActive() {
+  for (const id of ["desk-btn", "nav-reviews", "nav-scheduled"]) {
+    const el = document.getElementById(id);
+    if (el) el.classList.remove("active");
+  }
 }
 
 /* ------------------ MIXED — trace 成本回填逻辑（不改）+ 账本渲染模板 */
@@ -521,6 +553,7 @@ function runRowHtml(run) {
     <div class="row-menu" data-menu="${esc(run.id)}" hidden>
       <button data-row-act="pin">${run.pinned ? "取消固定" : "固定"}</button>
       <button data-row-act="rename">重命名</button>
+      <button data-row-act="project">移动到项目…</button>
       <button data-row-act="delete">删除</button>
     </div>
   </div>`;
@@ -528,6 +561,103 @@ function runRowHtml(run) {
 
 function closeRowMenus() {
   for (const menu of document.querySelectorAll(".row-menu")) menu.hidden = true;
+}
+
+/* ================= 判断记录（My Kimi 对应：操作者判断聚合） ================= */
+async function renderReviews() {
+  clearNavActive();
+  const nav = document.getElementById("nav-reviews");
+  if (nav) nav.classList.add("active");
+  document.getElementById("tb-title").textContent = "判断记录";
+  document.getElementById("tb-chips").innerHTML = "";
+  renderMain('<div class="empty">读取判断记录…</div>', { mode: "reviews" });
+  let d;
+  try {
+    const r = await fetch("/api/review-profile", { cache: "no-store" });
+    d = await r.json();
+  } catch (e) {
+    renderMain('<div class="empty">无法加载判断记录：' + esc(e.message) + '</div>', { mode: "reviews" });
+    return;
+  }
+  const cards = [
+    ["接受判断", d.counts.accept], ["需要补材料", d.counts.needs_evidence],
+    ["保留意见", d.counts.qualified], ["退回重做", d.counts.redo],
+  ];
+  const rows = (d.recent || []).map(item => '<div class="rev-row">'
+    + '<span class="rev-dec">' + esc(item.decision || item.decision_label || "—") + '</span>'
+    + '<span class="rev-what">' + esc(item.reason || item.note || item.objective || "") + '</span>'
+    + '<span class="rev-at">' + esc(item.at || item.created || "") + '</span></div>').join("");
+  renderMain(
+    '<section class="page-head"><p class="eyebrow">REVIEW PROFILE</p>'
+    + '<h1 class="page-title">判断记录</h1>'
+    + '<p class="page-meta">你在各次委托判断面里做出的选择，按时间聚合。判断以标签随签名链记录，此处只作汇总展示。</p></section>'
+    + '<div class="rev-cards">'
+    + cards.map(pair => '<div class="rev-card"><span class="rev-num">' + (pair[1] ?? 0) + '</span><span class="rev-k">' + pair[0] + '</span></div>').join("")
+    + '</div>'
+    + ((d.recent || []).length ? '<div class="rev-list">' + rows + '</div>'
+      : '<div class="empty">还没有判断记录——在任一运行的「判断面」里做出选择后，这里会开始积累。</div>'),
+    { mode: "reviews" });
+}
+
+/* ================= 定时任务（Scheduled，v1 前端骨架） ================= */
+function scheduledList() {
+  return JSON.parse(localStorage.getItem("fa.scheduled") || "[]");
+}
+
+function renderScheduledPage() {
+  clearNavActive();
+  const nav = document.getElementById("nav-scheduled");
+  if (nav) nav.classList.add("active");
+  document.getElementById("tb-title").textContent = "定时任务";
+  document.getElementById("tb-chips").innerHTML = "";
+  const list = scheduledList();
+  const rows = list.map((t, i) => '<div class="sch-row">'
+    + '<div class="sch-main"><b>' + esc(t.objective || "（未命名）") + '</b>'
+    + '<span class="sch-meta">' + esc(t.template || "full") + ' · ' + esc(t.approval || "consequential") + ' · ' + esc(t.frequency) + ' ' + esc(t.time || "") + '</span></div>'
+    + '<span class="sch-badge">' + esc(t.status || "等待调度器") + '</span>'
+    + '<button class="row-more sch-del" data-sch-del="' + i + '" title="删除">×</button></div>').join("");
+  renderMain(
+    '<section class="page-head"><p class="eyebrow">SCHEDULED</p>'
+    + '<h1 class="page-title">定时任务</h1>'
+    + '<p class="page-meta">把重复的委托排上日程。调度器属于运行时侧——接入前任务不会自动触发，草稿保存在本机。</p></section>'
+    + '<div class="sch-form">'
+    + '<label>目标<textarea id="sch-objective" rows="2" placeholder="例如：每天早上核对昨日新增的口径变更"></textarea></label>'
+    + '<div class="sch-grid">'
+    + '<label>模板<select id="sch-template">' + SCENARIOS.map(pair => '<option value="' + pair[0] + '">' + pair[1] + '</option>').join("") + '</select></label>'
+    + '<label>审批档位<select id="sch-approval"><option value="consequential">关键审批</option><option value="all">逐步审批</option><option value="off">自动</option></select></label>'
+    + '<label>频率<select id="sch-frequency"><option>每天</option><option>每周</option><option>工作日</option></select></label>'
+    + '<label>时间<input id="sch-time" type="time" value="09:00"></label>'
+    + '</div><div class="sch-actions">'
+    + '<span class="sch-honest">调度器待运行时侧接入——创建的条目保存在本机，不会自动触发</span>'
+    + '<button id="sch-save">保存草稿</button></div></div>'
+    + '<div class="sch-list">' + (rows || '<div class="empty">还没有定时任务草稿。</div>') + '</div>',
+    { mode: "scheduled" });
+  const save = document.getElementById("sch-save");
+  if (save) save.addEventListener("click", () => {
+    const objective = document.getElementById("sch-objective").value.trim();
+    if (!objective) { toast("先描述定时任务的目标"); return; }
+    const list2 = scheduledList();
+    list2.push({
+      objective,
+      template: document.getElementById("sch-template").value,
+      approval: document.getElementById("sch-approval").value,
+      frequency: document.getElementById("sch-frequency").value,
+      time: document.getElementById("sch-time").value,
+      status: "等待调度器",
+      created: new Date().toISOString(),
+    });
+    localStorage.setItem("fa.scheduled", JSON.stringify(list2));
+    toast("草稿已保存（本机）");
+    renderScheduledPage();
+  });
+  for (const btn of document.querySelectorAll("[data-sch-del]")) {
+    btn.addEventListener("click", () => {
+      const list2 = scheduledList();
+      list2.splice(Number(btn.dataset.schDel), 1);
+      localStorage.setItem("fa.scheduled", JSON.stringify(list2));
+      renderScheduledPage();
+    });
+  }
 }
 
 function updateRunCounts() {
@@ -543,9 +673,12 @@ function renderRuns() {
   if (!runNav) return;
   updateRunCounts();
   const query = runFilter.trim().toLowerCase();
-  const runs = runHistory
-    .filter(run => !query || `${run.name || ""} ${run.objective} ${run.id}`.toLowerCase().includes(query))
-    .slice()
+  let runs = runHistory
+    .filter(run => !query || `${run.name || ""} ${run.objective} ${run.id}`.toLowerCase().includes(query));
+  if (projectFilter) {
+    runs = runs.filter(run => runProjects[run.id] === projectFilter);
+  }
+  runs = runs.slice()
     .sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
 
   if (!runs.length) {
@@ -2480,10 +2613,15 @@ const APPROVAL_VERBS = {
 };
 
 /* 有状态变更的写入类工具：审批默认展开影响区（对照官方 diff 自动展开） */
-const WRITE_TOOLS = new Set(["working_paper_append", "collect_source", "write_document"]);
+const WRITE_TOOLS = new Set(["working_paper_append", "collect_source", "write_document", "write_file"]);
+
+/* MCP 导入工具默认 consequential：未经主机标注 readonly 的都按写入对待 */
+function isWriteLike(tool) {
+  return WRITE_TOOLS.has(tool) || String(tool).startsWith("mcp__");
+}
 
 function approvalVerb(tool) {
-  if (WRITE_TOOLS.has(tool)) return "写入";
+  if (isWriteLike(tool)) return "写入";
   return APPROVAL_VERBS[tool] || "";
 }
 
@@ -2497,7 +2635,10 @@ function renderApproval(pending, deciding) {
   if (!pending) return "";
   const argsObj = pending.arguments || {};
   const args = Object.keys(argsObj).length
-    ? "(" + Object.entries(argsObj).map(([k, v]) => `${k}=${v}`).join(", ") + ")"
+    ? "(" + Object.entries(argsObj).map(([k, v]) => {
+        const text = String(v);
+        return `${k}=${text.length > 72 ? text.slice(0, 72) + "…" : text}`;
+      }).join(", ") + ")"
     : "";
   const why = pending.policy === "every-step"
     ? "逐步审批：本次运行的每次工具调用都需要你确认。"
@@ -2505,10 +2646,14 @@ function renderApproval(pending, deciding) {
   const busy = deciding
     ? `<span class="apv-count">${deciding.allow ? "已允许 · 等待 Runtime 继续…" : "已拒绝 · 运行将终止…"}</span>`
     : `<span class="apv-count" data-countdown>${fmtCountdown(pending.expiresIn)}</span>`;
-  const write = WRITE_TOOLS.has(pending.tool);
+  const write = isWriteLike(pending.tool);
   const model = (activeSession()?.trace?.model) || {};
   const sender = `${model.provider || "provider"} · ${model.model || "model"} · 第 ${esc(pending.round)} 轮发起`;
-  const impact = write ? approvalImpactHtml(argsObj) : "";
+  const impact = write
+    ? (pending.preview && (pending.preview.diff !== undefined || pending.preview.error)
+        ? approvalDiffHtml(pending.preview)
+        : approvalImpactHtml(argsObj))
+    : "";
   return `<div class="card approval${write ? " approval-write" : ""}" data-approval="${esc(pending.id)}">
     <div class="card-head">
       <span class="card-title">${doodleSvg("key", true)} ${esc(approvalActionTitle(pending.tool))}</span>
@@ -2541,6 +2686,25 @@ function renderApproval(pending, deciding) {
       </div>
       <div class="apv-sender">${esc(sender)}</div>
     </div>
+  </div>`;
+}
+
+/* write_file 审批：主機在执行前算好的真实 git diff，默认展开（对照官方 diff 自动展开） */
+function approvalDiffHtml(preview) {
+  if (preview.error) {
+    return `<div class="apv-impact">
+      <div class="apv-impact-head">写入影响 · 预览被沙箱拒绝</div>
+      <div class="apv-diff"><div class="diff-line err">${esc(preview.error)}</div></div>
+    </div>`;
+  }
+  const lines = String(preview.diff || "").split("\n").map(line => {
+    const cls = line.startsWith("+") ? "add" : line.startsWith("-") ? "del" : line.startsWith("@@") ? "hunk" : "ctx";
+    return `<div class="diff-line ${cls}">${esc(line) || "&nbsp;"}</div>`;
+  }).join("");
+  const stat = `${preview.created ? "新建文件" : "修改文件"} · +${preview.additions} / −${preview.removals}${preview.truncated ? " · 已截断（完整 diff 在收据链上）" : ""}`;
+  return `<div class="apv-impact">
+    <div class="apv-impact-head">写入影响 · 真实 diff（${esc(stat)}）</div>
+    <div class="apv-diff">${lines || '<div class="diff-line ctx">（无内容变化）</div>'}</div>
   </div>`;
 }
 
@@ -3195,6 +3359,7 @@ async function intakeRequest(message, choice) {
         choice,
         spec: intake.spec,
         history: intake.messages.slice(-16),
+        template: tplKey || "",
       }),
     });
     if (!response.ok) {
@@ -3261,6 +3426,10 @@ function intakeBack() {
 async function startIntakeRun() {
   if (!intake.active || !intake.readyTask) return;
   const task = intake.readyTask;
+  if (String(task.template) === tplKey && isGeneralTemplate() && !attach.sources.length) {
+    toast("通用委托至少需要 1 个来源 URL：点 + 添加");
+    return;
+  }
   const button = document.querySelector("[data-intake-start]");
   if (button) { button.disabled = true; button.textContent = "提交中…"; }
   try {
@@ -3285,6 +3454,9 @@ async function startIntakeRun() {
     intakeSavePrefs(task.spec);
     attach.scope.clear();
     attach.budget = null;
+    attach.sources = [];
+    attach.sourcesDraft = "";
+    attach.mcp = { servers: attach.mcp.servers, loaded: false };
     renderAttachPanel();
     intake.active = false;
     document.getElementById("app").classList.remove("intake-mode");
@@ -3670,6 +3842,12 @@ function paintModelBadge() {
 
 /* ---------- “+”附加面板：真实委托输入，非装饰入口 ---------- */
 
+/* 通用委托模板（general-work）：附加面板换成“来源 URL”，不显示财务语料 */
+function isGeneralTemplate() {
+  const tpl = templates.find(t => t.key === tplKey);
+  return !!(tpl && tpl.module && tpl.module !== "finance-research");
+}
+
 function effectiveDraftBudget() {
   const template = templates.find(t => t.key === tplKey) || {};
   const entry = (modelBudget.models || []).find(m => m.key === modelChoice.key);
@@ -3715,6 +3893,41 @@ function renderAttachPanel() {
     || budget.maxReads > (limits.max_reads || 0)
     || budget.maxCostMicrousd > (limits.max_cost_microusd || 0)
   );
+  const general = isGeneralTemplate();
+  const sourceRows = attach.sources.map((url, index) => `
+    <div class="attach-source">
+      <span class="src-index">${index + 1}</span>
+      <span class="src-url">${esc(url)}</span>
+      <button class="src-remove" data-attach-source-remove="${index}" title="移除此来源">×</button>
+    </div>`).join("");
+  const sourcesGroup = `
+    <section class="attach-group">
+      <header><span>资料来源（URL）</span><span class="attach-note">${attach.sources.length}/5 · fetch_url 仅访问这些地址</span></header>
+      ${sourceRows || '<div class="attach-empty">尚未添加来源；至少 1 个才能创建通用委托</div>'}
+      ${attach.sources.length < 5 ? `
+      <div class="attach-source-add">
+        <input type="url" placeholder="https://example.com/page" data-attach-source-input value="${esc(attach.sourcesDraft)}">
+        <button data-attach-source-add>添加</button>
+      </div>` : ""}
+      <div class="attach-rule">SSRF 防护在工具实现内强制：私网/环回地址一律拒绝，解析后校验实际连接 IP</div>
+    </section>`;
+  const mcpServers = attach.mcp.servers || [];
+  const mcpGroup = mcpServers.length ? `
+    <section class="attach-group">
+      <header><span>MCP 导入</span><span class="attach-note">${mcpServers.filter(x => x.connected).length}/${mcpServers.length} 个 server 在线</span></header>
+      ${mcpServers.map(server => `
+        <div class="attach-tool">
+          <div class="tool-line">
+            <span class="name">${esc(server.server)}</span>
+            <span class="effect">${server.connected ? `${server.tools.length} 工具` : "不可用"}</span>
+          </div>
+          <div class="summary">${server.connected
+            ? esc(server.tools.join("  ·  ") || "无已导入工具")
+            : esc(server.reason || "未连接")}</div>
+          ${(server.refused || []).length ? `<div class="params">拒收 ${server.refused.length} 个：${esc(server.refused.map(r => r.tool).join(", "))}</div>` : ""}
+        </div>`).join("")}
+      <div class="attach-rule">导入即注册：门控/预算/收据同等生效；未标 readonly 的都过审批</div>
+    </section>` : "";
   const docs = attach.corpus.map(doc => `
     <label class="attach-doc${attach.scope.has(doc.id) ? " checked" : ""}">
       <input type="checkbox" data-attach-doc="${esc(doc.id)}"${attach.scope.has(doc.id) ? " checked" : ""}>
@@ -3735,11 +3948,13 @@ function renderAttachPanel() {
   }).join("");
   panel.innerHTML = `
     <div class="attach-caption">委托附加面</div>
+    ${general ? sourcesGroup : `
     <section class="attach-group">
       <header><span>资料选择</span><span class="attach-note">不选 = 全语料（默认）</span></header>
       <div class="attach-docs">${docs || '<div class="attach-empty">正在读取语料库…</div>'}</div>
       ${attach.scope.size ? `<div class="attach-selected">已限定 ${attach.scope.size} 份：任务创建后读取范围真实受限</div>` : ""}
-    </section>
+    </section>`}
+    ${general ? mcpGroup : ""}
     <section class="attach-group">
       <header><span>工具注册表</span><span class="attach-note">${attach.tools.length} 个已注册工具</span></header>
       <div class="attach-tools">${tools || '<div class="attach-empty">正在读取注册表…</div>'}</div>
@@ -3783,6 +3998,14 @@ async function refreshAttachData() {
       attach.loadedTemplate = key;
     }));
   }
+  const generalNow = templates.find(t => t.key === key);
+  if (generalNow && generalNow.module && generalNow.module !== "finance-research" && !attach.mcp.loaded) {
+    jobs.push(fetch("/api/mcp", { cache: "no-store" })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (data && Array.isArray(data.servers)) attach.mcp = { servers: data.servers, loaded: true };
+      }).catch(() => { attach.mcp.loaded = true; }));
+  }
   await Promise.all(jobs);
   renderAttachPanel();
   if (intake.active) renderIntake();
@@ -3813,9 +4036,13 @@ function readAttachBudgetInputs() {
 
 function delegationSpecExtras() {
   const spec = {};
-  const allIds = new Set(attach.corpus.map(doc => doc.id));
-  if (attach.scope.size && attach.scope.size !== allIds.size) {
-    spec.scope = [...attach.scope];
+  if (isGeneralTemplate()) {
+    if (attach.sources.length) spec.sources = [...attach.sources];
+  } else {
+    const allIds = new Set(attach.corpus.map(doc => doc.id));
+    if (attach.scope.size && attach.scope.size !== allIds.size) {
+      spec.scope = [...attach.scope];
+    }
   }
   if (attach.budget) spec.budget = { ...attach.budget };
   return spec;
@@ -4963,10 +5190,46 @@ function bind() {
       if (intake.active) renderIntake();
       return;
     }
+    const addBtn = event.target.closest("[data-attach-source-add]");
+    if (addBtn) {
+      event.stopPropagation();
+      const input = attachPanel.querySelector("[data-attach-source-input]");
+      const url = String(input ? input.value : "").trim();
+      if (!/^https?:\/\/.+\./.test(url)) { toast("来源必须是合法的 http(s) URL"); return; }
+      if (attach.sources.includes(url)) { toast("该来源已添加"); return; }
+      if (attach.sources.length >= 5) { toast("最多 5 个来源"); return; }
+      attach.sources.push(url);
+      attach.sourcesDraft = "";
+      renderAttachPanel();
+      return;
+    }
+    const removeBtn = event.target.closest("[data-attach-source-remove]");
+    if (removeBtn) {
+      event.stopPropagation();
+      attach.sources.splice(Number(removeBtn.dataset.attachSourceRemove), 1);
+      renderAttachPanel();
+      return;
+    }
     event.stopPropagation(); // 面板内部点击不关闭
   });
   attachPanel.addEventListener("input", event => {
     if (event.target.closest("[data-attach-budget]")) readAttachBudgetInputs();
+    const sourceInput = event.target.closest("[data-attach-source-input]");
+    if (sourceInput) attach.sourcesDraft = sourceInput.value;
+  });
+  attachPanel.addEventListener("keydown", event => {
+    if (event.key !== "Enter") return;
+    const sourceInput = event.target.closest("[data-attach-source-input]");
+    if (!sourceInput) return;
+    event.preventDefault();
+    const url = String(sourceInput.value || "").trim();
+    if (!url) return;
+    if (!/^https?:\/\/.+\./.test(url)) { toast("来源必须是合法的 http(s) URL"); return; }
+    if (attach.sources.includes(url)) { toast("该来源已添加"); return; }
+    if (attach.sources.length >= 5) { toast("最多 5 个来源"); return; }
+    attach.sources.push(url);
+    attach.sourcesDraft = "";
+    renderAttachPanel();
   });
   modelBtn.addEventListener("click", event => {
     event.stopPropagation();
@@ -5015,6 +5278,46 @@ function bind() {
     if (slashMenu && !slashMenu.hidden && composerBox && !composerBox.contains(event.target)) slashMenu.hidden = true;
     if (!event.target.closest(".run-row")) closeRowMenus();
 
+    if (event.target.closest("#proj-add")) {
+      event.stopPropagation();
+      const addBtn = event.target.closest("#proj-add");
+      const input = document.createElement("input");
+      input.className = "proj-new-input";
+      input.placeholder = "项目名称，回车保存";
+      addBtn.replaceWith(input);
+      input.focus();
+      const commit = () => {
+        const name = (input.value || "").trim();
+        if (name) { projects.push({ id: "prj-" + Date.now().toString(36), name }); saveProjects(); }
+        renderProjects();
+      };
+      input.addEventListener("keydown", e => {
+        if (e.key === "Enter") commit();
+        if (e.key === "Escape") renderProjects();
+      });
+      input.addEventListener("blur", commit);
+      return;
+    }
+    const projAssign = event.target.closest("[data-proj-assign]");
+    if (projAssign) {
+      event.stopPropagation();
+      const runRow = projAssign.closest("[data-run]");
+      let pid = projAssign.dataset.projAssign;
+      if (pid === "new") {
+        const name = (prompt("项目名称") || "").trim();
+        if (!name) return;
+        pid = "prj-" + Date.now().toString(36);
+        projects.push({ id: pid, name });
+      }
+      if (runRow) runProjects[runRow.dataset.run] = pid;
+      saveProjects();
+      closeRowMenus();
+      renderProjects();
+      renderRuns();
+      return;
+    }
+    if (event.target.closest("#nav-reviews")) { renderMode("reviews"); return; }
+    if (event.target.closest("#nav-scheduled")) { renderMode("scheduled"); return; }
     if (event.target.closest("#new-run")) {
       // 对齐 kimi 语法：新建委托先回居中舞台，首条消息提交后才进入需求确认。
       const hasRuns = runHistory.length > 0;
@@ -5110,6 +5413,16 @@ function bind() {
         if (rowAct.dataset.confirm === "1") { closeRowMenus(); deleteRun(row.dataset.run); }
         else { rowAct.dataset.confirm = "1"; rowAct.textContent = "确认删除？"; }
       }
+      else if (act === "project") {
+        const pid = runProjects[row.dataset.run];
+        menu.innerHTML = '<div class="row-menu-title">移动到项目</div>'
+          + (projects.length
+            ? projects.map(prj => '<button data-proj-assign="' + esc(prj.id) + '">' + esc(prj.name)
+              + (pid === prj.id ? ' ✓' : '') + '</button>').join("")
+            : '<div class="dim" style="padding:4px 10px">还没有项目</div>')
+          + '<button data-proj-assign="new">＋ 新建项目…</button>';
+        return;
+      }
       return;
     }
     if (event.target.closest("[data-more-older]")) { olderOpen = true; renderRuns(); return; }
@@ -5118,6 +5431,13 @@ function bind() {
     if (!row) return;
     if (event.target.closest(".row-menu") || event.target.closest(".rename-input")) return;
     selectRun(row.dataset.run);
+  });
+  document.getElementById("project-nav").addEventListener("click", event => {
+    const row = event.target.closest("[data-proj]");
+    if (!row) return;
+    projectFilter = projectFilter === row.dataset.proj ? null : row.dataset.proj;
+    renderProjects();
+    renderRuns();
   });
   document.getElementById("run-nav").addEventListener("keydown", event => {
     const row = event.target.closest("[data-run]");

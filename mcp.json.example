@@ -1,0 +1,16 @@
+{
+  "_comment": "复制为 mcp.json 并由主机审阅后才生效。导入哪些 server、哪些工具标 readonly，都是主机决策；server 自述永远不构成分类依据。env 值支持 \"env:VAR_NAME\" 从启动进程环境解析，密钥不必落盘。",
+  "servers": {
+    "example-server": {
+      "command": "python3",
+      "args": ["-m", "your_mcp_server"],
+      "cwd": "",
+      "env": {
+        "API_TOKEN": "env:EXAMPLE_API_TOKEN"
+      },
+      "readonlyTools": ["get_status"],
+      "timeout": 30,
+      "billing": "not-configured"
+    }
+  }
+}

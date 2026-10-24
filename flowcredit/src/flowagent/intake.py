@@ -162,19 +162,60 @@ def _task(spec: dict[str, str], original: str) -> dict[str, Any]:
     }
 
 
+GENERAL_TEMPLATE = "general-research"
+
+
+def _general_turn(message: str, spec: dict[str, Any] | None) -> dict[str, Any]:
+    """The general delegation needs no finance questionnaire.
+
+    The objective is the operator's message; sources and budget come from the
+    attach panel (spec.sources / spec.budget at submission). Intake therefore
+    confirms readiness immediately instead of asking margin questions that do
+    not apply.
+    """
+    base = str(message or "").strip()
+    objective = base[:600] or (
+        "调研指定的公开主题，把来源摘录与结论写成 research.md 放进工作区"
+    )
+    return {
+        "reply": (
+            "通用委托已就绪：来源 URL 与预算在 + 附加面里确认，"
+            "抓取与写入全程过门控、预算与收据。确认后开始。"
+        ),
+        "thought": "通用模板：无需财务问卷，来源在附加面板指定。",
+        "choices": [],
+        "spec": {"original": base[:2000]} if base else {},
+        "ready": True,
+        "task": {
+            "objective": objective,
+            "template": GENERAL_TEMPLATE,
+            "approval": "consequential",
+            "spec": {
+                "version": "fcode.intake/v1",
+                "task": "general-research",
+                "source": "console-intake",
+            },
+        },
+    }
+
+
 def clarify(
     *,
     message: str = "",
     history: list[dict[str, Any]] | None = None,
     spec: dict[str, Any] | None = None,
     choice: dict[str, Any] | None = None,
+    template: str = "",
 ) -> dict[str, Any]:
     """Return one clarifying turn. Pure function; no model call today.
 
     ``history`` is accepted for the model-backed implementation and for future
     audit; the deterministic clarifier only needs the latest message and spec.
+    A general-work template short-circuits the finance questionnaire.
     """
     message = str(message or "").strip()[:2000]
+    if template == GENERAL_TEMPLATE:
+        return _general_turn(message, spec)
     current = _normalise(spec)
     _apply_choice(current, choice)
     if message:

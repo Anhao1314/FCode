@@ -28,16 +28,13 @@ from ..providers.mock import MockProvider
 from ..runtime.budget import BudgetLimits
 from ..runtime.harness import Harness
 from ..runtime.loop import Loop
-from ..tools.finance.fixtures import FinanceWorld
-from ..tools.finance.planner import FinancePlanner
-from ..tools.finance.tools import build_finance_tools
 from ..tools.registry import ToolRegistry
 from ..trajectory.exporter import export_trace, verify_trace
 from ..trajectory.recorder import TraceRecorder
 from .fixtures import SCENARIOS, Scenario, get_scenario
 from .provider_factory import build_provider, provider_start_line
 from .render import Renderer
-from ..domains.finance import FINANCE_DOMAIN, verify_observation as verify_finance
+from ..domains import get_domain
 
 __all__ = ["PROJECT_ROOT", "WORK_DIR", "RunResult", "run_scenario", "run_all"]
 
@@ -81,12 +78,14 @@ class RunResult:
 @dataclass
 class Stack:
     store: TaskStore
-    world: FinanceWorld
+    world: Any
     registry: ToolRegistry
     receipts: ReceiptStore
     provider: Provider
     harness: Harness
-    planner: FinancePlanner
+    planner: Any
+    #: The domain module that assembled this stack (world, tools, verifier).
+    module: Any = None
     issued: dict[str, str] = field(default_factory=dict)
 
 
@@ -149,8 +148,9 @@ def build_stack(
 ) -> Stack:
     """Assemble store, world, registry, provider and harness for one scenario."""
     store = TaskStore(db_path)
-    world = FinanceWorld(partial=scenario.partial_corpus)
-    registry = ToolRegistry(build_finance_tools(world))
+    module = get_domain(scenario.module)
+    world = module.create_world(partial=scenario.partial_corpus)
+    registry = ToolRegistry(module.build_tools(world))
     receipts = ReceiptStore(store)
     issued: dict[str, str] = {}
 
@@ -174,9 +174,9 @@ def build_stack(
         world=world,
         limits=limits or scenario.limits,
         receipts=receipts,
-        verifier=lambda observation: verify_finance(world, observation),
+        verifier=lambda observation: module.verify(world, observation),
     )
-    return Stack(store, world, registry, receipts, provider, harness, FinancePlanner(), issued)
+    return Stack(store, world, registry, receipts, provider, harness, module.make_planner(world), module, issued)
 
 
 def _count(store: TaskStore, task_id: str, event_type: str) -> int:
@@ -349,7 +349,7 @@ def run_scenario(
             planner=stack.planner,
             max_rounds=scenario.max_rounds,
             observer=observer,
-            result_tools=FINANCE_DOMAIN.result_tools,
+            result_tools=stack.module.result_tools,
         ).run(task.id)
 
         if scenario.reconcile and task.status == "recovery_required":
@@ -367,7 +367,7 @@ def run_scenario(
                 planner=stack.planner,
                 max_rounds=scenario.max_rounds,
                 observer=observer,
-                result_tools=FINANCE_DOMAIN.result_tools,
+                result_tools=stack.module.result_tools,
             ).run(task.id)
 
     if (
@@ -495,7 +495,7 @@ def _run_crash(
     memory = Loop(
         stack.harness,
         planner=stack.planner,
-        result_tools=FINANCE_DOMAIN.result_tools,
+        result_tools=stack.module.result_tools,
     ).restore(resumed)
     stack.world.apply_state(memory.state())
     renderer.event(
@@ -510,7 +510,7 @@ def _run_crash(
         planner=stack.planner,
         max_rounds=scenario.max_rounds,
         observer=observer,
-        result_tools=FINANCE_DOMAIN.result_tools,
+        result_tools=stack.module.result_tools,
     ).run(resumed.id)
 
     # The property that matters is not "the counter went up by the right amount"

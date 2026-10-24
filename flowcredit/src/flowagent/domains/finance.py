@@ -21,7 +21,9 @@ __all__ = ["FINANCE_DOMAIN", "verify_observation", "create_world", "build_tools"
 APPROVAL_TOOLS = ("reconcile_basis", "report_blocked", "working_paper_append")
 
 
-def create_world(partial: bool = False) -> FinanceWorld:
+def create_world(partial: bool = False, spec: dict | None = None, **kwargs: Any) -> FinanceWorld:
+    # ``spec``/``sandbox`` are interface parity with the general module; the
+    # finance world is fixture-built and delegation-spec independent.
     return FinanceWorld(partial=partial)
 
 
@@ -37,7 +39,7 @@ def build_tools(
     return build_finance_tools(world, evidence, artifacts, connectors, cases, facts)
 
 
-def make_planner() -> FinancePlanner:
+def make_planner(world: Any = None, **kwargs: Any) -> FinancePlanner:
     return FinancePlanner()
 
 

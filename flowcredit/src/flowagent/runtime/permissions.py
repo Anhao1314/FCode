@@ -16,13 +16,17 @@ the very next call, which is impossible if only the task body is consulted.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Mapping
+from typing import Any, Iterable, Mapping
 
 from ..core.contracts import AgentError
-from ..tools.base import EFFECT_READ, validate_arguments
+from ..tools.base import EFFECT_NETWORK, EFFECT_READ, EFFECT_WRITE, validate_arguments
 from ..tools.registry import ToolRegistry
 
-__all__ = ["GateDecision", "Permissions"]
+__all__ = ["GateDecision", "Permissions", "GRANTABLE_EFFECTS"]
+
+#: The effect classes a host grant may name. Anything else in a grant is a
+#: configuration error, refused loudly rather than narrowed silently.
+GRANTABLE_EFFECTS = (EFFECT_READ, EFFECT_WRITE, EFFECT_NETWORK)
 
 
 @dataclass(frozen=True)
@@ -39,17 +43,38 @@ class GateDecision:
 
 
 class Permissions:
-    """Evaluates proposals against the registry, the task scope and the grant."""
+    """Evaluates proposals against the registry, the task scope and the grant.
+
+    The default policy is still the Phase 1 promise: only read effects run.
+    Write and network effects execute solely when the *host grant* names them
+    in ``allowed_effects`` — the same authority that lists allowed tools. A
+    task that never asks for the wider class keeps the narrower refusal, so
+    adding write tools to the registry does not widen any existing task.
+    """
 
     def __init__(
         self,
         registry: ToolRegistry,
         allowed_tools: list[str],
         grant: Mapping[str, Any],
+        allowed_effects: Iterable[str] | None = None,
     ) -> None:
         self._registry = registry
         self._allowed_tools = list(allowed_tools)
         self._grant = dict(grant)
+        # The effect classes come from the grant itself unless a caller
+        # (a test, or a narrower policy) names them explicitly. A grant
+        # without ``allowed_effects`` keeps the Phase 1 read-only promise.
+        if allowed_effects is None:
+            allowed_effects = self._grant.get("allowed_effects") or (EFFECT_READ,)
+        effects = tuple(allowed_effects) or (EFFECT_READ,)
+        unknown = [effect for effect in effects if effect not in GRANTABLE_EFFECTS]
+        if unknown:
+            raise AgentError(
+                "GRANT_EFFECTS_INVALID",
+                f"allowed_effects names unknown classes {unknown}; valid: {list(GRANTABLE_EFFECTS)}",
+            )
+        self._allowed_effects = effects
 
     def gate(self, tool: str, arguments: Mapping[str, Any]) -> GateDecision:
         """Return a decision; never raises for an ordinary denial."""
@@ -72,11 +97,11 @@ class Permissions:
             )
 
         spec = self._registry.get(tool)
-        if spec.effect != EFFECT_READ:
+        if spec.effect not in self._allowed_effects:
             return GateDecision(
                 False,
                 "TOOL_EFFECT_DENIED",
-                f"{tool!r} has effect {spec.effect!r}; only read effects are permitted",
+                f"{tool!r} has effect {spec.effect!r}; this grant permits only {list(self._allowed_effects)}",
                 tool,
             )
 

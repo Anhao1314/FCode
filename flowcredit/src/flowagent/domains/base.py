@@ -32,8 +32,9 @@ class DomainModule:
     create_world: Callable[..., Any]
     #: Build the module's own tools bound to a world.
     build_tools: Callable[..., list[ToolSpec]]
-    #: A fresh planner instance (decompose/advance).
-    make_planner: Callable[[], Any]
+    #: A fresh planner instance (decompose/advance). Receives the module's
+    #: world when the caller built one; modules that don't need it ignore it.
+    make_planner: Callable[..., Any]
     #: (world, observation) -> {"verified": True, "verification": ..., "result": ...}
     verify: Callable[[Any, Observation], dict[str, Any]]
     #: Tools whose verified observations are the domain's answer.

@@ -19,7 +19,7 @@ from ..core.contracts import AgentError, Task, validate_plan
 from ..core.receipts import ReceiptStore
 from ..core.store import TaskStore
 from ..providers.base import Proposal, Provider
-from ..tools.base import Observation
+from ..tools.base import EFFECT_READ, Observation
 from ..tools.registry import ToolRegistry
 from .budget import Budget, BudgetLimits
 from .permissions import GateDecision, Permissions
@@ -106,7 +106,14 @@ class Harness:
         return Budget(self.store, f"task:{task.id}", self.limits)
 
     def permissions(self, task: Task) -> Permissions:
-        return Permissions(self.registry, task.allowed_tools, task.model_grant)
+        """The gate for this task: effects come from the grant, not the tool.
+
+        A grant without ``allowed_effects`` keeps the Phase 1 read-only promise;
+        naming wider classes there is a host decision recorded in the task
+        binding and visible in every trace.
+        """
+        effects = task.model_grant.get("allowed_effects") or (EFFECT_READ,)
+        return Permissions(self.registry, task.allowed_tools, task.model_grant, effects)
 
     # -------------------------------------------------------------- mechanics
 
@@ -338,6 +345,14 @@ class Harness:
         The full result is written into the event payload, not just its hash.
         Without that, a process that dies mid-task could not rebuild what it had
         already learned, and resuming would repeat every read.
+
+        A tool that raises with ``details={"outcome": "unknown"}`` was
+        dispatched and never answered. That is not a confirmed failure: the
+        same discipline as a model-side unknown applies — the read stays
+        charged, the step is never re-sent, and the task ends in a state whose
+        code says *unknown*, so no downstream reader mistakes it for a clean
+        refusal. Reconciliation for tool-side unknowns (a signed out-of-band
+        result, as model receipts do) is deliberately not invented here.
         """
         if task.status == "planned":
             task = self._commit(task, task.advance("running"), "execution_started", {})
@@ -352,6 +367,25 @@ class Harness:
         try:
             observation = self.registry.execute(step["tool"], step.get("arguments") or {})
         except AgentError as error:
+            if error.details.get("outcome") == "unknown":
+                task = self._commit(task, task, "tool_unknown", {
+                    "tool": step["tool"],
+                    "code": error.code,
+                    "message": error.message,
+                    "round": round_no,
+                })
+                failed = task
+                failed.failure = {
+                    "code": "TOOL_OUTCOME_UNKNOWN",
+                    "cause": error.code,
+                    "retryable": False,
+                    "intent_round": round_no,
+                }
+                self._commit(task, failed.advance("failed"), "task_failed", {
+                    "code": "TOOL_OUTCOME_UNKNOWN",
+                    "cause": error.code,
+                })
+                raise
             failed = task
             failed.failure = error.to_dict()
             failed = self._commit(failed, failed, "tool_failed", {"code": error.code})
