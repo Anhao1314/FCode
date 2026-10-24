@@ -142,7 +142,6 @@ body { margin: 0; }
 }
 .app.side-collapsed .sidebar-frame { width:var(--sidebar-rail-w); }
 .app.side-collapsed .sidebar { width:var(--sidebar-rail-w); }
-.app.side-collapsed .sidebar:hover,
 .app.side-collapsed .sidebar:focus-within {
   width:var(--sidebar-w);
   box-shadow:24px 0 56px rgba(0,0,0,.42);
@@ -164,29 +163,19 @@ body { margin: 0; }
 .app.side-collapsed .sidebar .session .slabel,
 .app.side-collapsed .sidebar .session .smeta,
 .app.side-collapsed .sidebar .foot-text { display:none; }
-.app.side-collapsed .sidebar:hover .side-brand,
 .app.side-collapsed .sidebar:focus-within .side-brand,
-.app.side-collapsed .sidebar:hover .brand-mark,
 .app.side-collapsed .sidebar:focus-within .brand-mark,
-.app.side-collapsed .sidebar:hover .kbtn,
 .app.side-collapsed .sidebar:focus-within .kbtn,
-.app.side-collapsed .sidebar:hover .side-new > span:last-child,
 .app.side-collapsed .sidebar:focus-within .side-new > span:last-child,
-.app.side-collapsed .sidebar:hover .side-desk > span:nth-child(2),
 .app.side-collapsed .sidebar:focus-within .side-desk > span:nth-child(2),
-.app.side-collapsed .sidebar:hover .side-count,
 .app.side-collapsed .sidebar:focus-within .side-count,
-.app.side-collapsed .sidebar:hover .side-section span,
 .app.side-collapsed .sidebar:focus-within .side-section span,
-.app.side-collapsed .sidebar:hover .session .slabel,
 .app.side-collapsed .sidebar:focus-within .session .slabel,
-.app.side-collapsed .sidebar:hover .session .smeta,
 .app.side-collapsed .sidebar:focus-within .session .smeta,
-.app.side-collapsed .sidebar:hover .foot-text,
 .app.side-collapsed .sidebar:focus-within .foot-text { display:block; }
 .app.side-collapsed .sidebar .side-search { padding:5px 7px; }
 .app.side-collapsed .sidebar .side-search input { display:none; }
-.app.side-collapsed .sidebar:hover .side-search input,
+
 .app.side-collapsed .sidebar:focus-within .side-search input { display:block; }
 
 /* ============================================================== workspace */
