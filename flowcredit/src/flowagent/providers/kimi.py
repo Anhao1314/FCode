@@ -36,6 +36,7 @@ __all__ = [
     "KIMI_PRICE_SOURCE_ENV",
     "KIMI_TIMEOUT_ENV",
     "KIMI_MAX_COMPLETION_TOKENS_ENV",
+    "KIMI_TEMPERATURE_ENV",
     "KimiPriceSnapshot",
     "KimiCalibration",
     "KimiSettings",
@@ -52,6 +53,7 @@ KIMI_PRICE_AS_OF_ENV = "KIMI_PRICE_AS_OF"
 KIMI_PRICE_SOURCE_ENV = "KIMI_PRICE_SOURCE"
 KIMI_TIMEOUT_ENV = "KIMI_TIMEOUT_SECONDS"
 KIMI_MAX_COMPLETION_TOKENS_ENV = "KIMI_MAX_COMPLETION_TOKENS"
+KIMI_TEMPERATURE_ENV = "KIMI_TEMPERATURE"
 
 _DEFAULT_BASE_URL = "https://api.moonshot.cn/v1"
 _DEFAULT_MODEL = "kimi-k3.1-pro"
@@ -191,6 +193,7 @@ class KimiSettings:
     timeout: float = _DEFAULT_TIMEOUT
     max_completion_tokens: int = _DEFAULT_MAX_COMPLETION_TOKENS
     reasoning_effort: str = _DEFAULT_REASONING_EFFORT
+    temperature: float | None = None
 
     def redacted(self) -> dict[str, Any]:
         return {
@@ -201,6 +204,7 @@ class KimiSettings:
             "timeoutSeconds": self.timeout,
             "maxCompletionTokens": self.max_completion_tokens,
             "reasoningEffort": self.reasoning_effort,
+            "temperature": self.temperature,
             "price": {
                 "inputMicrousdPerMtok": self.price.input_microusd_per_mtok,
                 "outputMicrousdPerMtok": self.price.output_microusd_per_mtok,
@@ -227,6 +231,16 @@ def _optional_int(env: Mapping[str, str], name: str) -> int | None:
         raise ValueError(f"{name} must be an integer") from error
 
 
+def _optional_float(env: Mapping[str, str], name: str) -> float | None:
+    value = env.get(name)
+    if value is None or not value.strip():
+        return None
+    try:
+        return float(value)
+    except ValueError as error:
+        raise ValueError(f"{name} must be a number") from error
+
+
 def load_kimi_settings(
     *,
     env: Mapping[str, str] | None = None,
@@ -235,6 +249,7 @@ def load_kimi_settings(
     timeout: float | None = None,
     max_completion_tokens: int | None = None,
     reasoning_effort: str | None = None,
+    temperature: float | None = None,
     input_price: int | None = None,
     output_price: int | None = None,
     price_as_of: str | None = None,
@@ -278,6 +293,10 @@ def load_kimi_settings(
     if resolved_max <= 0:
         raise ValueError("max_completion_tokens must be positive")
 
+    resolved_temperature = temperature
+    if resolved_temperature is None:
+        resolved_temperature = _optional_float(source, KIMI_TEMPERATURE_ENV)
+
     resolved_model = model or source.get(KIMI_MODEL_ENV, "").strip() or _DEFAULT_MODEL
     resolved_base = (
         base_url or source.get(KIMI_BASE_URL_ENV, "").strip() or _DEFAULT_BASE_URL
@@ -302,6 +321,7 @@ def load_kimi_settings(
         timeout=resolved_timeout,
         max_completion_tokens=resolved_max,
         reasoning_effort=reasoning_effort or _DEFAULT_REASONING_EFFORT,
+        temperature=resolved_temperature,
     )
 
 
@@ -315,6 +335,7 @@ class _KimiClient:
         timeout: float,
         max_completion_tokens: int,
         reasoning_effort: str,
+        temperature: float | None = None,
     ) -> None:
         if not isinstance(api_key, str) or not api_key.strip():
             raise ValueError("Kimi API key is missing")
@@ -322,12 +343,15 @@ class _KimiClient:
             raise ValueError("Kimi base_url must use https")
         if max_completion_tokens <= 0:
             raise ValueError("max_completion_tokens must be positive")
+        if temperature is not None and not 0 <= temperature <= 2:
+            raise ValueError("temperature must be within [0, 2] when provided")
         self.api_key = api_key.strip()
         self.base_url = base_url.rstrip("/")
         self.model = model
         self.timeout = timeout
         self.max_completion_tokens = max_completion_tokens
         self.reasoning_effort = reasoning_effort
+        self.temperature = temperature
 
     def chat(self, system: str, user: str) -> tuple[str, dict[str, Any], str]:
         body: dict[str, Any] = {
@@ -336,11 +360,14 @@ class _KimiClient:
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
             ],
-            "temperature": 0,
             "max_completion_tokens": self.max_completion_tokens,
             "stream": False,
             "response_format": {"type": "json_object"},
         }
+        # K2/K3 chat models reject every temperature except 1; omitting the
+        # field applies the server default unless the host pins one explicitly.
+        if self.temperature is not None:
+            body["temperature"] = self.temperature
         if self.reasoning_effort:
             body["reasoning_effort"] = self.reasoning_effort
         request = urllib.request.Request(
@@ -404,6 +431,7 @@ class KimiProvider:
         timeout: float = _DEFAULT_TIMEOUT,
         max_completion_tokens: int = _DEFAULT_MAX_COMPLETION_TOKENS,
         reasoning_effort: str = _DEFAULT_REASONING_EFFORT,
+        temperature: float | None = None,
         calibration_path: Path | None = None,
         issue_receipt: IssueReceipt | None = None,
         raw_sink: RawSink | None = None,
@@ -415,11 +443,13 @@ class KimiProvider:
             timeout=timeout,
             max_completion_tokens=max_completion_tokens,
             reasoning_effort=reasoning_effort,
+            temperature=temperature,
         )
         self.model = model
         self.price = price
         self.max_completion_tokens = max_completion_tokens
         self.reasoning_effort = reasoning_effort
+        self.temperature = temperature
         self.calibration = KimiCalibration.load(calibration_path)
         self.issue_receipt = issue_receipt
         self.raw_sink = raw_sink
@@ -442,6 +472,7 @@ class KimiProvider:
             timeout=settings.timeout,
             max_completion_tokens=settings.max_completion_tokens,
             reasoning_effort=settings.reasoning_effort,
+            temperature=settings.temperature,
             calibration_path=calibration_path,
             issue_receipt=issue_receipt,
             raw_sink=raw_sink,
@@ -505,6 +536,7 @@ class KimiProvider:
             "price_as_of": self.price.as_of,
             "price_source": self.price.source,
             "reasoning_effort": self.reasoning_effort,
+            "temperature": self.temperature,
             "reserved_prompt_tokens": reserved_prompt_tokens,
             "usage_prompt_tokens": prompt_tokens,
             "cached_tokens": _cached_tokens(usage),

@@ -108,6 +108,15 @@ class KimiProviderTests(unittest.TestCase):
 
         return seen, fake_urlopen
 
+    def test_temperature_env_is_optional_and_parsed(self) -> None:
+        unset = load_kimi_settings(env=_env())
+        self.assertIsNone(unset.temperature)
+        self.assertIsNone(unset.redacted()["temperature"])
+        settings = load_kimi_settings(env=_env(KIMI_TEMPERATURE="1"))
+        self.assertEqual(settings.temperature, 1.0)
+        with self.assertRaisesRegex(ValueError, "KIMI_TEMPERATURE"):
+            load_kimi_settings(env=_env(KIMI_TEMPERATURE="hot"))
+
     def test_request_cost_calibration_and_hmac_receipt(self) -> None:
         seen, fake = self._fake(
             {
@@ -149,6 +158,7 @@ class KimiProviderTests(unittest.TestCase):
         self.assertEqual(body["reasoning_effort"], "low")
         self.assertEqual(body["response_format"], {"type": "json_object"})
         self.assertNotIn("max_tokens", body)
+        self.assertNotIn("temperature", body)
 
         # Cache hits are metadata only in v1: all 10000 input tokens use input price.
         self.assertEqual(proposal.cost_microusd, 10200)
@@ -180,6 +190,28 @@ class KimiProviderTests(unittest.TestCase):
             provider.calibration.save()
             tokens_after, _ = provider.reserve({"objective": "test", "round": 1})
         self.assertGreater(tokens_after, tokens_before)
+
+    def test_temperature_sent_only_when_host_pins_it(self) -> None:
+        # K2/K3 chat models reject every temperature except 1; without a host
+        # override the field is omitted so the server default applies.
+        seen, fake = self._fake(
+            {
+                "id": "kimi-temp-1",
+                "choices": [{"message": {"content": PLAN_TEXT}}],
+                "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
+            }
+        )
+        provider = KimiProvider(
+            api_key="sk-kimi-test-not-real",
+            price=_price(),
+            temperature=1,
+        )
+        with mock.patch("flowagent.providers.kimi.urllib.request.urlopen", fake):
+            proposal = provider.propose(
+                {"objective": "test", "round": 1, "intent": {"task_id": "t", "round": 1}}
+            )
+        self.assertEqual(seen["body"]["temperature"], 1)
+        self.assertEqual(proposal.metadata["temperature"], 1)
 
     def test_auth_failure_is_not_retried_or_fallback(self) -> None:
         calls = {"n": 0}

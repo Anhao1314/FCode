@@ -30,6 +30,12 @@ mock fallback：超时可能是已计费的未知结果，静默重发会破坏�
 | `KIMI_PRICE_SOURCE` | 否 | `host` |
 | `KIMI_TIMEOUT_SECONDS` | 否 | `180` |
 | `KIMI_MAX_COMPLETION_TOKENS` | 否 | `512` |
+| `KIMI_TEMPERATURE` | 否 | 不发送该字段（用服务端默认） |
+
+`KIMI_TEMPERATURE` 说明：Kimi K2/K3 系列对话模型当前只接受 `temperature=1`，
+请求体携带其他值会被 400 拒绝。因此 provider 默认**不发送**该字段；
+只有当主机显式设置 `KIMI_TEMPERATURE` 时才随请求携带（取值范围 [0, 2]，
+是否被当前模型接受由服务端判定）。
 
 缺 key、缺输入/输出价格、缺价格日期，或 base URL 不是 HTTPS，都会在发出
 请求前失败。key 只存在进程环境中，不写入事件、trace、报告、测试或仓库。
