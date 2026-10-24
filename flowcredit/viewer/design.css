@@ -609,6 +609,31 @@ details.raw pre {
 .rf-error { margin-top: 8px; color: var(--bad); font-size: 11px; }
 .approval-menu { width: min(400px, calc(100% - 20px)); }
 
+/* 模型选择器菜单：锚在 composer 右侧徽章上方 */
+.model-menu { left: auto; right: 10px; width: min(360px, calc(100% - 20px)); }
+.model-item .check { color: var(--ok); font-size: 11px; margin-left: 6px; }
+.model-item.disabled { opacity: .55; cursor: default; }
+.model-item.disabled:hover { background: none; }
+#model-btn.readonly { opacity: .8; cursor: default; }
+.model-effort {
+  display: flex; align-items: center; gap: 8px;
+  margin: 4px 6px 2px; padding: 7px 9px;
+  border: 1px solid var(--line); border-radius: 7px; background: var(--inset);
+}
+.me-head {
+  flex: none; font: 600 10px var(--font-mono); letter-spacing: .08em;
+  text-transform: uppercase; color: var(--text-3);
+}
+.me-opts { display: flex; gap: 4px; }
+.me-opt {
+  min-width: 34px; border: 1px solid var(--line); border-radius: var(--radius-pill);
+  background: none; color: var(--text-2); font-size: 11px; padding: 2.5px 10px; cursor: pointer;
+  transition: background-color var(--t) ease, color var(--t) ease;
+}
+.me-opt:hover { color: var(--text-1); border-color: var(--line-strong); }
+.me-opt.active { background: var(--text-1); border-color: transparent; color: var(--canvas); font-weight: 600; }
+.me-note { margin-left: auto; color: var(--text-3); font-size: 10px; }
+
 .empty { color: var(--text-3); padding: 72px 0; text-align: center; line-height: 2; font-size: var(--fs-3); }
 .empty code {
   font-family: var(--font-mono); color: var(--text-2); background: var(--canvas);

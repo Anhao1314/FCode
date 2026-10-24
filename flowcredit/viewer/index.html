@@ -7,7 +7,7 @@
 <title>Fcode · flowcredit console</title>
 <link rel="icon" type="image/svg+xml" href="brand/favicon.svg">
 <link rel="stylesheet" href="app.css?v=59">
-<link rel="stylesheet" href="design.css?v=65">
+<link rel="stylesheet" href="design.css?v=66">
 </head>
 <body>
 <div class="shell app rail-hidden" id="app">
@@ -87,6 +87,7 @@
             <div class="composer-box" id="composer-box">
               <div class="tpl-menu approval-menu" id="approval-menu" hidden></div>
               <div class="tpl-menu" id="tpl-menu" hidden></div>
+              <div class="tpl-menu model-menu" id="model-menu" hidden></div>
               <textarea class="composer-ta" id="composer-ta" rows="1"
                 placeholder="给 agent 派一个任务：判断 2024 与 2025 两期合并毛利率是否可比…"></textarea>
               <div class="composer-bar">
@@ -116,10 +117,11 @@
                   </svg>
                   <span id="run-chip-text" aria-live="polite">运行中</span>
                 </button>
-                <span class="c-btn static" title="离线确定性 mock 模型">
+                <button class="c-btn" id="model-btn" title="选择模型与思考强度">
                   <span data-doodle="cube"></span>
-                  offline-mock
-                </span>
+                  <span id="model-label">offline-mock</span>
+                  <svg class="i" viewBox="0 0 24 24" style="width:12px;height:12px"><path d="m6 9 6 6 6-6"/></svg>
+                </button>
                 <button class="send" id="send" title="发送任务" disabled>
                   <span data-doodle="arrow-up"></span>
                 </button>
@@ -328,6 +330,6 @@
 
 <script src="report.js?v=54"></script>
 <script src="icons-doodle.js?v=54"></script>
-<script src="app.js?v=66" type="module"></script>
+<script src="app.js?v=67" type="module"></script>
 </body>
 </html>

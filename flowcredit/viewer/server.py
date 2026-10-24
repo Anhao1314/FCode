@@ -55,6 +55,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
+import urllib.request
 
 __all__ = ["main"]
 
@@ -72,6 +73,81 @@ TERMINAL_STATUS = ("succeeded", "failed", "denied", "recovery_required")
 #: Run statuses a review may be recorded against. ``stopped`` and ``error`` are
 #: terminal in the console even though the task itself ends as ``failed``.
 REVIEWABLE_STATUS = ("succeeded", "failed", "denied", "stopped", "error")
+
+
+# ---------------------------------------------------------------- model catalog
+
+#: Effort levels accepted for providers that expose reasoning effort.
+EFFORT_LEVELS = ("low", "medium", "high")
+EFFORT_LABELS = {"low": "低", "medium": "中", "high": "高"}
+#: Local-endpoint probes are cheap but not free; cache the answer for 60s.
+LOCAL_PROBE_TIMEOUT = 0.5
+LOCAL_PROBE_TTL = 60.0
+_local_probe_cache: dict[str, tuple[float, bool]] = {}
+
+
+def _probe_local_endpoint(endpoint: str) -> bool:
+    """Probe an Ollama-compatible endpoint once, caching the result for 60s."""
+    now = time.monotonic()
+    cached = _local_probe_cache.get(endpoint)
+    if cached is not None and now - cached[0] < LOCAL_PROBE_TTL:
+        return cached[1]
+    root = endpoint.rstrip("/")
+    if root.endswith("/v1"):
+        root = root[: -len("/v1")]
+    ok = False
+    for path in ("/api/tags", "/v1/models"):
+        try:
+            req = urllib.request.Request(root + path, method="GET")
+            with urllib.request.urlopen(req, timeout=LOCAL_PROBE_TIMEOUT) as resp:
+                ok = resp.status == 200
+                break
+        except Exception:  # noqa: BLE001 — any probe failure means "not reachable now"
+            ok = False
+    _local_probe_cache[endpoint] = (now, ok)
+    return ok
+
+
+def _kimi_env_ready() -> bool:
+    return all(
+        os.environ.get(name, "").strip()
+        for name in ("KIMI_API_KEY", "KIMI_INPUT_PRICE_MICROUSD_PER_MTOK", "KIMI_OUTPUT_PRICE_MICROUSD_PER_MTOK")
+    )
+
+
+def model_catalog(local_endpoint: str | None) -> list[dict]:
+    """The selectable-model list, judged live at request time.
+
+    An unavailable model is reported with its reason and must never be shown
+    as selectable; creation re-checks the same facts and fails closed.
+    """
+    kimi_model = os.environ.get("KIMI_MODEL", "").strip() or "kimi-k2.6"
+    catalog: list[dict] = [
+        {
+            "key": "mock", "label": "offline-mock", "model": "offline-deterministic-mock-v1",
+            "supportsEffort": False, "available": True, "reason": "",
+        }
+    ]
+    if local_endpoint:
+        probed = _probe_local_endpoint(local_endpoint)
+        catalog.append({
+            "key": "local", "label": "本地 Qwen", "model": "fcode-qwen3-4b",
+            "supportsEffort": False, "available": probed,
+            "reason": "" if probed else "本地推理端点探活失败",
+        })
+    else:
+        catalog.append({
+            "key": "local", "label": "本地 Qwen", "model": "fcode-qwen3-4b",
+            "supportsEffort": False, "available": False,
+            "reason": "未配置本地推理端点",
+        })
+    kimi_ready = _kimi_env_ready()
+    catalog.append({
+        "key": "kimi", "label": "Kimi 云端", "model": kimi_model,
+        "supportsEffort": True, "available": kimi_ready,
+        "reason": "" if kimi_ready else "Host 未配置 KIMI_API_KEY/价格",
+    })
+    return catalog
 
 
 class StopRequested(Exception):
@@ -218,6 +294,8 @@ class Run:
     name: str = ""
     pinned: bool = False
     approval: str = "consequential"  # off | consequential | all
+    model: str = "mock"              # operator-selected provider key for this run
+    effort: str = ""                 # reasoning effort (kimi only); mock ignores it
     pending: dict | None = None
     queue: list | None = None
     cost: dict | None = None
@@ -256,6 +334,8 @@ class Run:
             out["error"] = self.error
             out["pending"] = self.pending
             out["queue"] = self.queue or []
+            out["model"] = self.model
+            out["effort"] = self.effort
         return out
 
 
@@ -277,11 +357,19 @@ def _budget_summary(trace: dict) -> dict | None:
 
 
 class RunManager:
-    def __init__(self, runtime: Runtime | None, runtime_error: str, pace: float, approval_timeout: float = 300.0) -> None:
+    def __init__(
+        self,
+        runtime: Runtime | None,
+        runtime_error: str,
+        pace: float,
+        approval_timeout: float = 300.0,
+        local_endpoint: str | None = None,
+    ) -> None:
         self.runtime = runtime
         self.runtime_error = runtime_error
         self.pace = pace
         self.approval_timeout = approval_timeout
+        self.local_endpoint = local_endpoint
         self.runs: dict[str, Run] = {}
         self.order: list[str] = []
         self.case_index = runtime.CaseIndex() if runtime is not None else None
@@ -290,6 +378,29 @@ class RunManager:
         self._seq = 0
         RUNS_DIR.mkdir(exist_ok=True)
         self._load_history()
+
+    def resolve_model(self, model_key: str | None, effort: str | None) -> tuple[str, str]:
+        """Fail-closed model resolution for run creation.
+
+        An unavailable or unknown selection raises with the same reason the
+        catalog shows — creation never silently falls back to the mock.
+        """
+        if model_key in (None, "", "mock"):
+            if effort not in (None, ""):
+                raise ValueError("mock 模型不支持思考强度选择")
+            return "mock", ""
+        entry = next((m for m in model_catalog(self.local_endpoint) if m["key"] == model_key), None)
+        if entry is None:
+            raise ValueError(f"未知模型 {model_key!r}")
+        if not entry["available"]:
+            raise ValueError(entry["reason"] or f"模型 {model_key} 当前不可用")
+        if not entry["supportsEffort"]:
+            if effort not in (None, ""):
+                raise ValueError(f"模型 {model_key} 不支持思考强度选择")
+            return model_key, ""
+        if effort not in (None, "", *EFFORT_LEVELS):
+            raise ValueError("思考强度必须是 low、medium 或 high")
+        return model_key, effort or "medium"
 
     # ------------------------------------------------------------- persistence
 
@@ -409,7 +520,15 @@ class RunManager:
                 traces.append((trace_path.parent.name, trace))
         return builder(traces, module=module, template=template, outcome=outcome)
 
-    def create(self, objective: str, template: str, approval: str = "consequential", spec: dict | None = None) -> Run:
+    def create(
+        self,
+        objective: str,
+        template: str,
+        approval: str = "consequential",
+        spec: dict | None = None,
+        model_key: str = "mock",
+        effort: str = "",
+    ) -> Run:
         with self._lock:
             self._seq += 1
             stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
@@ -422,6 +541,8 @@ class RunManager:
                 pace=self.pace,
                 approval=approval,
                 spec=spec,
+                model=model_key,
+                effort=effort,
             )
             self.runs[run_id] = run
             self.order.insert(0, run_id)
@@ -557,6 +678,31 @@ class RunManager:
 
     # ------------------------------------------------------------- run driver
 
+    def _build_provider(self, rt: Runtime, run: Run, scenario, receipts, issue):
+        """Construct this run's proposal source from the operator's selection.
+
+        mock keeps the console's own wiring (scenario policy + fault-injection
+        receipts); every other provider goes through the demo factory so env
+        validation, price snapshots, pacing and fault disclosure stay identical
+        to the CLI path. Gating, budgets and auditing live in the runtime and
+        are untouched by this choice.
+        """
+        if (run.model or "mock") == "mock":
+            return rt.MockProvider(
+                policy=scenario.policy,
+                fail_at_call=scenario.fail_at_call,
+                issue_receipt=issue if scenario.fail_at_call else None,
+            )
+        from flowagent.demo.provider_factory import build_provider
+
+        return build_provider(
+            run.model,
+            scenario=scenario,
+            receipts=receipts,
+            endpoint=self.local_endpoint if run.model == "local" else None,
+            reasoning_effort=run.effort or None if run.model == "kimi" else None,
+        )
+
     def _run_thread(self, run: Run, *, resume_limits: dict | None = None, extra_rounds: int = 6) -> None:
         rt = self.runtime
         assert rt is not None
@@ -589,11 +735,7 @@ class RunManager:
                 issued["ref"] = ref
                 return ref
 
-            provider = rt.MockProvider(
-                policy=scenario.policy,
-                fail_at_call=scenario.fail_at_call,
-                issue_receipt=issue if scenario.fail_at_call else None,
-            )
+            provider = self._build_provider(rt, run, scenario, receipts, issue)
             harness = rt.Harness(
                 store=store,
                 registry=registry,
@@ -1421,6 +1563,8 @@ class Handler(SimpleHTTPRequestHandler):
             if mgr.runtime is None:
                 return self._json({"error": mgr.runtime_error}, 503)
             return self._json(mgr.runtime.templates())
+        if path == "/api/models":
+            return self._json({"default": "mock", "models": model_catalog(mgr.local_endpoint)})
         if path == "/api/modules":
             if mgr.runtime is None:
                 return self._json({"error": mgr.runtime_error}, 503)
@@ -1611,7 +1755,17 @@ class Handler(SimpleHTTPRequestHandler):
                     return self._json({"error": "spec must be an object"}, 400)
                 if len(json.dumps(spec, ensure_ascii=False).encode("utf-8")) > 4096:
                     return self._json({"error": "spec is too large"}, 400)
-            run = mgr.create(objective, template, approval, spec)
+            model_field = body.get("model")
+            effort_field = body.get("effort")
+            try:
+                model_key, effort = mgr.resolve_model(
+                    model_field if isinstance(model_field, str) else None,
+                    effort_field if isinstance(effort_field, str) else None,
+                )
+            except ValueError as exc:
+                # fail-closed：创建时环境不满足就是 400，绝不静默回退 mock
+                return self._json({"error": str(exc)}, 400)
+            run = mgr.create(objective, template, approval, spec, model_key=model_key, effort=effort)
             return self._json(run.to_json(detail=True), 202)
         if path.startswith("/api/runs/") and path.endswith("/review"):
             if mgr.runtime is None:
@@ -1858,6 +2012,11 @@ def main(argv: list[str] | None = None) -> int:
         help="seconds a paused approval waits for a human before denying (default 300)",
     )
     parser.add_argument(
+        "--local-endpoint",
+        default=os.environ.get("FCODE_LOCAL_ENDPOINT", ""),
+        help="Ollama-compatible base URL for the local provider (enables the 本地 Qwen model entry)",
+    )
+    parser.add_argument(
         "--token",
         default="",
         help="require this token (cookie bootstrap via /?token=…); desktop mode uses it",
@@ -1874,7 +2033,10 @@ def main(argv: list[str] | None = None) -> int:
     else:
         runtime_error = "no --repo given; set it to the FCode checkout to enable live runs"
 
-    manager = RunManager(runtime, runtime_error, args.pace, args.approval_timeout)
+    manager = RunManager(
+        runtime, runtime_error, args.pace, args.approval_timeout,
+        local_endpoint=args.local_endpoint.strip() or None,
+    )
     Handler.manager = manager
     Handler.token = args.token or None
     httpd = ThreadingHTTPServer((args.host, args.port), Handler)

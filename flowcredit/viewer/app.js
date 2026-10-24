@@ -114,6 +114,7 @@ function setStatusline(leftHtml, rightText) {
 }
 
 function updateStatusline() {
+  paintModelBadge();
   if (ledgerOpen) {
     const finished = runHistory.filter(r => r.status !== "running");
     const succeeded = finished.filter(r => r.status === "succeeded").length;
@@ -182,6 +183,19 @@ let runFilter = "";     // 运行记录搜索词
 let toolContracts = null; // /api/tools，工具契约（含版本与 effect）
 let modules = [];         // /api/modules，域模块（金融研究 / 审计 / 量化…）
 let olderOpen = false;  // 「更早」分组是否展开
+
+/* 模型与思考强度选择（对齐 kimi.com composer 的模型徽章形态）。
+   选择只作用于“下一个新委托”；运行中的徽章只读展示该 run 实际模型。 */
+const EFFORT_LEVELS = ["low", "medium", "high"];
+const EFFORT_LABEL = { low: "低", medium: "中", high: "高" };
+let modelCatalog = [];  // /api/models
+let modelChoice = (() => {
+  try { return JSON.parse(localStorage.getItem("fa.model") || "") || {}; } catch { return {}; }
+})();
+modelChoice = {
+  key: typeof modelChoice.key === "string" ? modelChoice.key : "mock",
+  effort: EFFORT_LEVELS.includes(modelChoice.effort) ? modelChoice.effort : "medium",
+};
 let scenesOpen = localStorage.getItem("fa.scenesOpen"); // null | "1" | "0"
 
 /* 多会话：每个 run 一个会话对象；后台会话保持 SSE 流，只是不渲染 */
@@ -3207,6 +3221,9 @@ async function startIntakeRun() {
         template: task.template,
         approval: task.approval,
         spec: task.spec,
+        ...(modelChoice.key !== "mock"
+          ? { model: modelChoice.key, effort: modelChoice.effort || "medium" }
+          : {}),
       }),
     });
     if (!response.ok) {
@@ -3549,6 +3566,73 @@ function renderTemplateMenu() {
   ).join("") + `<div class="tpl-note">离线 mock：任意目标都会执行同一套研究蓝图（作用于合成语料）；模块决定工具与验证，模板决定授权、预算与故障注入。</div>`;
 }
 
+/* ---------- 模型与思考强度选择器（composer 徽章） ---------- */
+
+function saveModelChoice() {
+  localStorage.setItem("fa.model", JSON.stringify(modelChoice));
+}
+
+function liveRunEffortLabel(trace) {
+  const rounds = (trace || {}).rounds || [];
+  for (let i = rounds.length - 1; i >= 0; i--) {
+    const effort = ((rounds[i].receipt || {}).metadata || {}).reasoning_effort;
+    if (effort && EFFORT_LABEL[effort]) return EFFORT_LABEL[effort];
+  }
+  return "";
+}
+
+function paintModelBadge() {
+  const labelEl = document.getElementById("model-label");
+  const btn = document.getElementById("model-btn");
+  if (!labelEl || !btn) return;
+  const s = activeSession();
+  if (s && s.running && !s.finished) {
+    const model = (s.trace && s.trace.model) || {};
+    const effort = liveRunEffortLabel(s.trace);
+    labelEl.textContent = `${model.model || model.provider || "运行中"}${effort ? " · " + effort : ""}`;
+    btn.classList.add("readonly");
+    btn.title = "当前运行实际使用的模型（只读）；选择器只对新委托生效";
+    return;
+  }
+  btn.classList.remove("readonly");
+  if (!health || !health.live) {
+    labelEl.textContent = "未连接 runtime";
+    btn.title = "静态回放模式：composer 已整体禁用";
+    return;
+  }
+  if (modelChoice.key !== "mock" && !modelCatalog.some(m => m.key === modelChoice.key && m.available)) {
+    // 记忆的选择已不可用：回到 mock（菜单里保留 reason 供查看）
+    modelChoice.key = "mock";
+    saveModelChoice();
+  }
+  const entry = modelCatalog.find(m => m.key === modelChoice.key);
+  labelEl.textContent = !entry || entry.key === "mock"
+    ? "offline-mock"
+    : `${entry.model}${entry.supportsEffort ? " · " + (EFFORT_LABEL[modelChoice.effort] || "中") : ""}`;
+  btn.title = "选择模型与思考强度";
+}
+
+function renderModelMenu() {
+  const menu = document.getElementById("model-menu");
+  if (!menu) return;
+  const items = modelCatalog.map(m => {
+    const current = m.available && m.key === modelChoice.key;
+    return `<button class="tpl-item model-item${current ? " active" : ""}${m.available ? "" : " disabled"}" data-model-pick="${esc(m.key)}"${m.available ? "" : " disabled"}>
+      <span class="t"><span>${esc(m.label)}${current ? '<span class="check">✓</span>' : ""}</span><span class="m">${esc(m.model)}</span></span>
+      <span class="d">${m.available ? (m.key === "mock" ? "离线确定性 mock · 演示与回归" : m.supportsEffort ? "云端模型 · 支持思考强度" : "本地推理") : esc(m.reason)}</span>
+    </button>`;
+  }).join("");
+  const kimi = modelCatalog.find(m => m.key === "kimi");
+  const effortBlock = kimi && kimi.available ? `<div class="model-effort">
+    <span class="me-head">思考强度</span>
+    <div class="me-opts">${EFFORT_LEVELS.map(level =>
+      `<button class="me-opt${modelChoice.key === "kimi" && modelChoice.effort === level ? " active" : ""}" data-effort-pick="${level}">${EFFORT_LABEL[level]}</button>`
+    ).join("")}</div>
+    <span class="me-note">默认中；以你选择的档位发送</span>
+  </div>` : "";
+  menu.innerHTML = items + effortBlock + `<div class="tpl-note">模型由操作者选择；门控 / 预算 / 审计对任何模型同等生效</div>`;
+}
+
 async function initLive() {
   setApprovalMode(approvalMode);
   try {
@@ -3570,18 +3654,28 @@ async function initLive() {
     }
     if (!templates.length) health.live = false;
     renderStageChips();
+    try {
+      const data = await fetch("/api/models", { cache: "no-store" }).then(r => r.ok ? r.json() : null);
+      modelCatalog = data && Array.isArray(data.models) ? data.models : [];
+    } catch {
+      modelCatalog = [];
+    }
   }
   if (!health.live) {
     const ta = document.getElementById("composer-ta");
     ta.placeholder = "静态回放模式 — 用 python3 server.py --repo … 启动控制台即可真实运行任务";
     document.getElementById("template-btn").disabled = true;
     document.getElementById("approval-btn").disabled = true;
+    const modelBtn = document.getElementById("model-btn");
+    if (modelBtn) modelBtn.disabled = true;
     document.getElementById("send").disabled = true;
     setFoot("offline-mock · 只读回放", "");
+    paintModelBadge();
     return;
   }
   setTemplate(templates.some(t => t.key === "full") ? "full" : templates[0].key);
   setComposerRunning(false);
+  paintModelBadge();
   updateStatusline();
   fetch("/api/tools", { cache: "no-store" }).then(r => r.ok ? r.json() : null).then(data => {
     if (!data || !Array.isArray(data.tools)) return;
@@ -4625,19 +4719,54 @@ function bind() {
   const tplMenu = document.getElementById("tpl-menu");
   const apvBtn = document.getElementById("approval-btn");
   const apvMenu = document.getElementById("approval-menu");
+  const modelBtn = document.getElementById("model-btn");
+  const modelMenu = document.getElementById("model-menu");
   tplBtn.addEventListener("click", event => {
     event.stopPropagation();
     apvMenu.hidden = true;
+    modelMenu.hidden = true;
     tplMenu.hidden = !tplMenu.hidden;
   });
   apvBtn.addEventListener("click", event => {
     event.stopPropagation();
     tplMenu.hidden = true;
+    modelMenu.hidden = true;
     apvMenu.hidden = !apvMenu.hidden;
+  });
+  modelBtn.addEventListener("click", event => {
+    event.stopPropagation();
+    if (modelBtn.classList.contains("readonly")) {
+      toast("运行中使用当前模型；选择器只对新委托生效");
+      return;
+    }
+    tplMenu.hidden = true;
+    apvMenu.hidden = true;
+    if (modelMenu.hidden) renderModelMenu();
+    modelMenu.hidden = !modelMenu.hidden;
+  });
+  modelMenu.addEventListener("click", event => {
+    const pick = event.target.closest("[data-model-pick]");
+    if (pick && !pick.disabled) {
+      modelChoice.key = pick.dataset.modelPick;
+      saveModelChoice();
+      renderModelMenu();
+      paintModelBadge();
+      modelMenu.hidden = true;
+      return;
+    }
+    const effort = event.target.closest("[data-effort-pick]");
+    if (effort) {
+      modelChoice.key = "kimi";
+      modelChoice.effort = effort.dataset.effortPick;
+      saveModelChoice();
+      renderModelMenu();
+      paintModelBadge();
+    }
   });
   document.addEventListener("click", event => {
     if (!tplMenu.hidden && !tplBtn.contains(event.target) && !tplMenu.contains(event.target)) tplMenu.hidden = true;
     if (!apvMenu.hidden && !apvBtn.contains(event.target) && !apvMenu.contains(event.target)) apvMenu.hidden = true;
+    if (!modelMenu.hidden && !modelBtn.contains(event.target) && !modelMenu.contains(event.target)) modelMenu.hidden = true;
     const slashMenu = document.getElementById("slash-menu");
     const composerBox = document.getElementById("composer-box");
     if (slashMenu && !slashMenu.hidden && composerBox && !composerBox.contains(event.target)) slashMenu.hidden = true;
@@ -5042,6 +5171,8 @@ function bind() {
       if (menu && !menu.hidden) { menu.hidden = true; return; }
       const approval = document.getElementById("approval-menu");
       if (approval && !approval.hidden) { approval.hidden = true; return; }
+      const modelMenu = document.getElementById("model-menu");
+      if (modelMenu && !modelMenu.hidden) { modelMenu.hidden = true; return; }
       if (settingsOpen) { closeSettingsPage(true); return; }
       if (!typing && innerWidth <= 1100 && railOpen) {
         railOpen = false;
