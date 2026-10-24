@@ -415,7 +415,7 @@ body.reduce-motion .side-gear .d-icon { transition: none; }
 .out .yel { color: var(--warn); }
 .out .red { color: var(--bad); }
 
-/* 工具结果的结构化展示 */
+/* 执行结果的结构化展示 */
 .t-detail { margin-top: 10px; }
 .doc-row {
   display: flex; align-items: center; gap: 10px; padding: 5px 2px;
@@ -1475,4 +1475,161 @@ body.reduce-motion *, body.reduce-motion *::before, body.reduce-motion *::after 
   .guide { padding: 28px 18px 60px; }
   .guide-title { font-size: 26px; }
   .guide-grid, .guide-principles, .guide-dodont { grid-template-columns: 1fr; }
+}
+
+/* ================================================== 结构舞台 v2（布局语法层）
+   只复用上方 token；这里补齐阅读列、turn 叙事块、证据浮层与空状态舞台。 */
+
+/* 侧栏折叠按钮与分组语法 */
+.side-fold {
+  display:inline-flex; align-items:center; justify-content:center;
+  width:28px; height:28px; flex:none; border:1px solid var(--line);
+  border-radius:var(--radius); background:transparent; color:var(--text-3); cursor:pointer;
+}
+.side-fold:hover { color:var(--text-1); border-color:var(--line-strong); background:var(--raised); }
+.app.side-collapsed .side-fold svg { transform:rotate(180deg); }
+.side-section span:first-child {
+  font:600 11px var(--font-ui); letter-spacing:.09em; text-transform:uppercase; color:var(--text-3);
+}
+.session, .side-new, .side-desk, .scene-toggle { border-radius:var(--radius); }
+.session:hover, .side-new:hover, .side-desk:hover, .scene-toggle:hover { background:var(--raised); }
+
+/* 会话头：阅读列的第一块，不再使用通栏 banner */
+.session-head { margin:18px 0 22px; animation:turnIn var(--t-fade) var(--ease) both; }
+.session-kicker { margin:0 0 6px; font:600 10px var(--font-mono); letter-spacing:.10em; color:var(--text-3); }
+.session-title { margin:0; font:600 var(--fs-5)/1.35 var(--font-ui); color:var(--text-1); letter-spacing:-.01em; }
+.session-meta {
+  display:flex; align-items:center; gap:10px; min-width:0; margin-top:9px;
+  color:var(--text-3); font:11px var(--font-mono); line-height:1.5;
+}
+.session-meta > span:first-child { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.meta-button {
+  flex:none; border:1px solid var(--line-strong); border-radius:var(--radius-pill);
+  background:var(--raised); color:var(--text-2); font-size:11px; padding:3px 10px; cursor:pointer;
+}
+.meta-button:hover { color:var(--text-1); }
+
+/* 计划与预算：轻量过程块，不再是“思考链”容器 */
+.process-details {
+  margin:0 0 14px; border:1px solid var(--line); border-radius:var(--radius); background:var(--panel);
+}
+.process-head {
+  display:flex; align-items:center; gap:10px; min-height:38px; padding:7px 12px;
+  color:var(--text-2); font-size:var(--fs-2); cursor:pointer; user-select:none; list-style:none;
+}
+.process-head::-webkit-details-marker { display:none; }
+.process-head .thought-meta { font:10.5px var(--font-mono); color:var(--text-3); }
+.process-body { padding:0 12px 12px; display:grid; gap:10px; }
+.live-note { margin:0 0 12px; color:var(--text-3); font-size:var(--fs-2); }
+
+/* 叙事时间轴 */
+.turns { position:relative; display:grid; gap:18px; padding:2px 0 8px; }
+.turns::before {
+  content:""; position:absolute; left:7px; top:6px; bottom:8px; width:1px; background:var(--line);
+}
+.round.turn {
+  position:relative; margin:0; padding:0 0 0 24px; border:0; background:transparent;
+  animation:turnIn var(--t-fade) var(--ease) both;
+}
+.round.turn::before {
+  content:""; position:absolute; left:3px; top:20px; width:9px; height:9px; border-radius:50%;
+  background:var(--panel); border:1px solid var(--line-strong);
+}
+.round.turn.live::before { border-color:var(--accent-line); background:var(--accent-soft); }
+.turn-head {
+  display:flex; align-items:baseline; gap:10px; margin:0 0 8px;
+  color:var(--text-3); font:10.5px var(--font-mono);
+}
+.turn-no { color:var(--text-2); font-weight:600; letter-spacing:.04em; }
+.turn-budget { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+.proposal-card {
+  border:1px solid var(--line-strong); border-radius:var(--radius); background:var(--panel);
+  padding:10px 12px; margin-bottom:8px;
+}
+.proposal-card.muted { border-color:var(--line); }
+.proposal-label { margin-bottom:5px; font:600 10px var(--font-mono); letter-spacing:.08em; color:var(--text-3); }
+.proposal-main { display:flex; align-items:center; gap:9px; min-width:0; }
+.proposal-main .tool { font-family:var(--font-mono); font-size:var(--fs-2); color:var(--text-1); }
+.proposal-main .args {
+  min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  font-family:var(--font-mono); font-size:11px; color:var(--text-3);
+}
+.proposal-args { margin-top:6px; color:var(--text-3); font-size:var(--fs-2); line-height:1.65; }
+
+.gate-line {
+  display:flex; align-items:center; gap:7px; margin:0 0 8px;
+  color:var(--text-2); font-size:var(--fs-2); line-height:1.5;
+}
+.gate-line.pass { color:var(--ok); }
+.gate-line.denied { color:var(--bad); }
+.gate-line.pending { color:var(--text-3); }
+
+.tool-result { border:1px solid var(--line); border-radius:var(--radius); background:var(--panel); overflow:hidden; }
+.tool-result-head {
+  display:grid; grid-template-columns:minmax(70px,max-content) minmax(0,1fr) 16px;
+  align-items:center; gap:9px; width:100%; min-height:40px; padding:8px 11px;
+  border:0; background:transparent; color:var(--text-2); text-align:left; cursor:pointer;
+}
+.tool-result-head:hover { background:var(--raised); }
+.tool-result-head .chev { grid-column:3; }
+.round.turn[data-open="true"] .tool-result-summary { display:none; }
+.tool-result-title { font:600 11px var(--font-mono); color:var(--text-2); }
+.tool-result-summary {
+  min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  color:var(--text-3); font-size:11px;
+}
+.tool-result-body { padding:0 11px 11px; border-top:1px solid var(--line); }
+.round.turn[data-open="false"] .tool-result-body { display:none; }
+.round.turn[data-open="true"] .tool-result-body { display:block; animation:turnIn var(--t-fade) var(--ease) both; }
+.round.turn[data-open="false"] .tool-result-head .chev { transform:rotate(-90deg); }
+
+.turn-receipt {
+  display:flex; align-items:center; gap:8px; min-width:0; margin-top:7px;
+  color:var(--text-3); font:10.5px var(--font-mono);
+}
+.turn-receipt code {
+  min-width:0; max-width:38%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+}
+.receipt-meta { min-width:0; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.copy-mini {
+  flex:none; border:1px solid var(--line-strong); border-radius:5px; background:var(--raised);
+  color:var(--text-2); font-size:10px; padding:1.5px 6px; cursor:pointer;
+}
+.copy-mini:hover { color:var(--text-1); }
+
+/* 空状态舞台 */
+.stage-empty {
+  min-height:52vh; display:flex; flex-direction:column; align-items:center; justify-content:center;
+  text-align:center; animation:turnIn var(--t-fade) var(--ease) both;
+}
+.stage-mark { font:700 46px/1 var(--font-ui); letter-spacing:-.03em; color:var(--text-1); }
+.stage-note { margin:14px 0 0; color:var(--text-3); font-size:var(--fs-3); }
+.stage-chips {
+  display:flex; gap:8px; max-width:calc(var(--reading-w) - 20px); margin-top:22px;
+  overflow-x:auto; scrollbar-width:none; padding:2px 0 4px;
+}
+.stage-chips::-webkit-scrollbar { display:none; }
+.stage-chip {
+  flex:none; border:1px solid var(--line-strong); border-radius:var(--radius-pill);
+  background:var(--panel); color:var(--text-2); text-decoration:none;
+  padding:6px 14px; font-size:var(--fs-2); cursor:pointer;
+}
+.stage-chip:hover { background:var(--raised); color:var(--text-1); }
+
+/* 证据浮层：raised 面板 + 常驻关闭口，遮罩只在面板外可点 */
+.rail { background:var(--raised); }
+.rail-close {
+  flex:none; width:22px; height:22px; margin-left:8px;
+  border:1px solid var(--line); border-radius:6px; background:transparent;
+  color:var(--text-3); font:14px/1 var(--font-ui); cursor:pointer;
+}
+.rail-close:hover { color:var(--text-1); border-color:var(--line-strong); background:var(--panel); }
+
+@keyframes turnIn {
+  from { opacity:0; transform:translateY(4px); }
+  to { opacity:1; transform:translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .round.turn, .session-head, .stage-empty, .tool-result-body { animation:none; }
 }

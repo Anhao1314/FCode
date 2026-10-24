@@ -4,7 +4,14 @@ import {
   canonical, sha256Hex, verifyChain, esc, pct, pp, num, shortHash, stripTags,
 } from "./core/format.js";
 
-/* ------------------------------------------------------------------- data */
+/* =================================================================== 边界声明
+   本轮结构重构只允许改“生成 DOM 的渲染函数”。
+   - 不可改：core/format.js 的链验证；store/sessions 状态机；SSE apply/attach；
+     预算比较与提交；审批/插话/报告/设置等 API 调用；data-* 事件契约。
+   - 可改：下面标成 RENDER LAYER 的模板函数，以及混合函数里的模板字符串。
+   - 混合函数（render/liveApply/syncLiveRounds 等）只允许更换模板与插槽
+     包装，不允许改比较时机、缓存字段或调用顺序。
+   ------------------------------------------------------------------- data */
 
 const SCENARIOS = [
   ["full",          "完整研究"],
@@ -95,7 +102,7 @@ window.addEventListener("pywebviewready", () => {
   document.body.classList.add("desktop");
 });
 
-/* ------------------------------------------------------------- 状态行 */
+/* ------------------------------------- MIXED — 统计计算（不改）+ 状态行渲染 */
 /* Codex TUI 的底栏：当前模型、轮次、预算用量与快捷键，常驻不占正文。 */
 function setStatusline(leftHtml, rightText) {
   const el = document.getElementById("statusline");
@@ -134,7 +141,7 @@ function updateStatusline() {
 }
 
 const cache = new Map();
-/* 单一 UI 状态源：视图键、激活会话、静态 trace、链校验与主区模式；sessions 仍只是会话注册表。 */
+/* LOGIC LAYER — 单一 UI 状态源：视图键、激活会话、静态 trace、链校验与主区模式；sessions 仍只是会话注册表。 */
 const store = {
   key: null,        // 当前视图键
   sessionId: null,  // 当前激活会话 id
@@ -152,7 +159,8 @@ function shownTrace() {
   return (s && s.trace) || store.trace;
 }
 let railTab = "events";
-let railOpen = window.innerWidth > 1100;
+/* 证据面板是浮层，默认收起；打开动作只改变 CSS 状态，不影响任何运行数据。 */
+let railOpen = false;
 let railFilter = localStorage.getItem("fa.railFilter") || "key";
 if (!["all", "human", "key"].includes(railFilter)) railFilter = "key";
 const evExpanded = new Set();
@@ -178,6 +186,7 @@ const sessions = new Map();
 
 /* ---------------------------------------------------------------- helpers */
 
+/* RENDER LAYER — 主区唯一 DOM 入口；innerHTML/dataset/scroll 可调，状态赋值只保留 mode。 */
 function renderMain(html, { mode = "run", scroll = null } = {}) {
   const main = document.getElementById("main");
   if (!main) return;
@@ -228,7 +237,7 @@ function lastPlan(trace) {
   return null;
 }
 
-/* --------------------------------------------------------------- describe */
+/* ------------------------------------------------ RENDER LAYER — 工具摘要 */
 
 function describe(observation) {
   const tool = observation.tool;
@@ -258,7 +267,7 @@ function describe(observation) {
   }
 }
 
-/* ---------------------------------------------------------------- sidebar */
+/* ------------------------------------------------ RENDER LAYER — 侧栏导航 */
 
 const labelOf = key => (SCENARIOS.find(s => s[0] === key) || [key, key])[1];
 const tplTitle = key => {
@@ -294,7 +303,7 @@ function renderNav() {
   renderRuns();
 }
 
-/* ------------------------------------------------------------- 工作台账本 */
+/* ------------------ MIXED — trace 成本回填逻辑（不改）+ 账本渲染模板 */
 
 function openLedger() {
   if (intake.active) closeIntake(false);
@@ -579,7 +588,7 @@ function renderRuns() {
   runNav.innerHTML = html;
 }
 
-/* ------------------------------------------------------------------ rail */
+/* ------------------------------- RENDER LAYER — 证据面板内容与事件列表 */
 
 const MACHINE_EVENTS = new Set([
   "model_started", "plan_validated", "plan_updated", "execution_started",
@@ -843,7 +852,7 @@ function summariseEvent(e) {
   return esc(JSON.stringify(d).slice(0, 120));
 }
 
-/* ------------------------------------------------------------ main render */
+/* ------------- MIXED — render() 内链验证/状态赋值不可改；阅读列模板可改 */
 
 function renderPlan(plan, opts = {}) {
   if (!plan || !plan.todos || !plan.todos.length) return "";
@@ -1070,55 +1079,53 @@ function outcomeText(round, ann) {
   return describe(round.observation).map(stripTags).join(" · ");
 }
 
+function turnBudgetDelta(round) {
+  const before = round.budget_before || {};
+  const after = round.budget_after || {};
+  const delta = (key) => Number(after[key] ?? 0) - Number(before[key] ?? 0);
+  const parts = [];
+  const calls = delta("calls_used");
+  const reads = delta("reads_used");
+  const cost = delta("cost_used_microusd");
+  if (calls) parts.push(`calls +${calls}`);
+  if (reads) parts.push(`reads +${reads}`);
+  if (cost) parts.push(`${num(cost)} µUSD`);
+  return parts.join(" · ");
+}
+
 function renderRound(round, index, ann = {}) {
   const empty = !round.proposal && !round.decision && !round.observation && !round.receipt;
   if (empty && ann.terminal) {
-    return `<div class="card round" data-open="false">
-      <div class="card-head click" data-toggle>
-        <span class="rno">#${round.index}</span>
-        ${ICON.circle}
-        <span class="tool">未完成的轮次</span>
-        <span class="grow"></span>
-        <span class="badge warn"><span class="dot"></span>TERMINATED</span>
-        <span class="chev">▾</span>
+    return `<article class="round turn terminal" data-open="false">
+      <header class="turn-head"><span class="turn-no">第 ${round.index} 轮</span><span class="turn-budget">TERMINATED</span></header>
+      <div class="proposal-card muted">
+        <div class="proposal-label">模型提议</div>
+        <div class="proposal-tool">未完成的轮次</div>
+        <div class="proposal-args">任务在此终结（${esc(ann.terminal)}）——没有提议落进签名链</div>
       </div>
-      <div class="preview">任务在此终结（${esc(ann.terminal)}）——没有提议落进签名链</div>
-      <div class="card-body"></div>
-    </div>`;
+    </article>`;
   }
   if (empty && !ann.unknown) {
-    return `<div class="card round live" data-open="true">
-      <div class="card-head click" data-toggle>
-        <span class="rno">#${round.index}</span>
-        ${ICON.circle}
-        <span class="tool">模型思考中</span>
-        <span class="grow"></span>
-        <span class="badge run"><span class="dot"></span>RUNNING</span>
-        <span class="chev">▾</span>
+    return `<article class="round turn live" data-open="true">
+      <header class="turn-head"><span class="turn-no">第 ${round.index} 轮</span><span class="turn-budget">运行中</span></header>
+      <div class="proposal-card muted">
+        <div class="proposal-label">模型提议</div>
+        <div class="proposal-tool">等待提议…</div>
       </div>
-      <div class="preview">已进入第 ${round.index} 轮，等待提议…</div>
-      <div class="card-body"></div>
-    </div>`;
+      <div class="gate-line pending"><span class="ev-dot info"></span><span>等待模型返回</span></div>
+    </article>`;
   }
   if (empty) {
     const cause = ann.unknown || "UNKNOWN";
-    return `<div class="card round" data-open="true">
-      <div class="card-head click" data-toggle>
-        <span class="rno">#${round.index}</span>
-        ${ICON.alert}
-        <span class="tool">模型调用未知</span>
-        <span class="grow"></span>
-        <span class="badge warn"><span class="dot"></span>UNKNOWN</span>
-        <span class="chev">▾</span>
+    return `<article class="round turn unknown" data-open="true">
+      <header class="turn-head"><span class="turn-no">第 ${round.index} 轮</span><span class="turn-budget">UNKNOWN</span></header>
+      <div class="proposal-card muted">
+        <div class="proposal-label">模型调用</div>
+        <div class="proposal-tool">${esc(cause)}</div>
+        <div class="proposal-args">未知不等于失败；不自动重发、不退费、不换供应商。</div>
       </div>
-      <div class="preview">${esc(cause)}</div>
-      <div class="card-body">
-        <div class="alert warn">
-          <div class="a-title">未知不等于失败</div>
-          <div class="a-sub">不自动重发、不自动退费、不换供应商；预算与租约保留，只接受匹配的签名收据显式对账。</div>
-        </div>
-      </div>
-    </div>`;
+      <div class="gate-line pending"><span class="ev-dot warn"></span><span>等待匹配的签名收据显式对账</span></div>
+    </article>`;
   }
 
   const obs = round.observation || {};
@@ -1128,57 +1135,65 @@ function renderRound(round, index, ann = {}) {
   const tool = obs.tool || decision.tool || (step && step.tool) || "—";
   const argsObj = obs.arguments || (step && step.arguments) || {};
   const args = Object.keys(argsObj).length
-    ? "(" + Object.entries(argsObj).map(([k, v]) => `${k}=${v}`).join(", ") + ")"
+    ? Object.entries(argsObj).map(([k, v]) => `${esc(k)}=${esc(v)}`).join("  ")
     : "";
-
-  const verdict = denied
-    ? `<span class="badge deny"><span class="dot"></span>DENIED</span>`
-    : !round.observation
-      ? `<span class="badge run"><span class="dot"></span>RUNNING</span>`
-      : `<span class="badge pass"><span class="dot"></span>PASS</span>`;
-
-  const chips = [];
-  if (ann.reconciled) chips.push(`<span class="mini hi">已对账 · receipt ${esc(shortHash(ann.reconciled))}…</span>`);
-  const r = round.receipt;
-  if (r) {
-    if (r.todo_id) chips.push(`todo ${esc(r.todo_id)}`);
-    if (r.tokens !== undefined) chips.push(`tokens ${num(r.tokens)}`);
-    if (r.cost_microusd !== undefined) chips.push(`${num(r.cost_microusd)} µUSD`);
-    if (r.latency_ms !== undefined) chips.push(`${r.latency_ms} ms`);
-    if (r.external_billing) chips.push(`账单 ${esc(r.external_billing)}`);
-  }
-  const b = round.budget_after || {};
-  if (b.calls_used !== undefined) chips.push(`calls ${b.calls_used}/${b.limits ? b.limits.max_calls : "?"}`);
-  if (b.reads_used !== undefined) chips.push(`reads ${b.reads_used}/${b.limits ? b.limits.max_reads : "?"}`);
-
-  const raw = { proposal: round.proposal, decision: round.decision, receipt: round.receipt, observation: round.observation };
-  const lines = obs.result ? describe(obs).map(line => `<span class="grn">⎿</span>  ${line}`) : [];
   const icon = (!round.observation && !denied && TOOL_DOODLE[tool])
     ? TOOL_DOODLE[tool]
     : (TOOL_ICON[tool] || ICON.term);
+  const gateClass = denied ? "denied" : round.observation ? "pass" : "pending";
+  const gateText = denied
+    ? `主机门控 DENIED · ${decision.code || ""}${decision.reason ? " · " + decision.reason : ""}`
+    : !round.observation
+      ? "主机门控 · 等待执行"
+      : `主机门控 PASS · ${decision.reason || "schema, scope and grant all agree"}`;
+  const hash = obs.result_hash || "";
+  const raw = { proposal: round.proposal, decision: round.decision, receipt: round.receipt, observation: round.observation };
+  const receiptMeta = [
+    round.receipt && round.receipt.tokens !== undefined ? `tokens ${num(round.receipt.tokens)}` : "",
+    round.receipt && round.receipt.cost_microusd !== undefined ? `${num(round.receipt.cost_microusd)} µUSD` : "",
+    round.receipt && round.receipt.latency_ms !== undefined ? `${round.receipt.latency_ms} ms` : "",
+    ann.reconciled ? `receipt ${esc(shortHash(ann.reconciled))}…` : "",
+  ].filter(Boolean).join(" · ");
 
-  return `<div class="card round${!round.observation && !denied ? " live" : ""}" data-open="${denied ? "true" : "false"}">
-    <div class="card-head click" data-toggle>
-      <span class="rno">#${round.index}</span>
-      <span class="t-ic">${icon}</span>
-      <span class="tool">${esc(tool)}</span>
-      ${args ? `<span class="args">${esc(args)}</span>` : ""}
-      ${round.receipt && (round.receipt.latency_ms !== undefined || round.receipt.cost_microusd !== undefined)
-        ? `<span class="rstat">${round.receipt.latency_ms !== undefined ? round.receipt.latency_ms + " ms" : ""}${round.receipt.latency_ms !== undefined && round.receipt.cost_microusd !== undefined ? " · " : ""}${round.receipt.cost_microusd !== undefined ? num(round.receipt.cost_microusd) + " µ" : ""}</span>`
-        : ""}
-      <span class="grow"></span>
-      ${verdict}
-      <span class="chev">▾</span>
+  return `<article class="round turn${!round.observation && !denied ? " live" : ""}" data-open="${denied ? "true" : "false"}">
+    <header class="turn-head">
+      <span class="turn-no">第 ${round.index} 轮</span>
+      <span class="turn-budget">${esc(turnBudgetDelta(round))}</span>
+    </header>
+
+    <div class="proposal-card">
+      <div class="proposal-label">模型提议</div>
+      <div class="proposal-main">
+        <span class="t-ic">${icon}</span>
+        <span class="tool">${esc(tool)}</span>
+        ${args ? `<code class="args">${args}</code>` : '<code class="args dim">无参数</code>'}
+      </div>
     </div>
-    <div class="preview">${esc(outcomeText(round, ann)).slice(0, 150)}</div>
-    <div class="card-body">
-      ${lines.length ? `<div class="out">${lines.join("\n")}</div>` : ""}
-      ${renderToolDetail(obs)}
-      ${denied ? `<div class="alert bad" style="margin-top:10px"><div class="a-title">${esc(decision.code || "DENIED")}</div><div class="a-sub">${esc(decision.reason || "")}</div></div>` : ""}
-      ${chips.length ? `<div class="chips">${chips.map(c => `<span class="mini">${c}</span>`).join("")}</div>` : ""}
-      <details class="raw"><summary>原始数据</summary><pre>${esc(JSON.stringify(raw, null, 2))}</pre></details>
+
+    <div class="gate-line ${gateClass}">
+      <span class="ev-dot ${denied ? "bad" : round.observation ? "ok" : "info"}"></span>
+      <span>${esc(gateText)}</span>
     </div>
-  </div>`;
+
+    ${round.observation ? `
+    <div class="tool-result">
+      <button class="tool-result-head" type="button" data-toggle>
+        <span class="tool-result-title">执行结果 · ${esc(tool)}</span>
+        <span class="tool-result-summary">${esc(outcomeText(round, ann)).slice(0, 132)}</span>
+        <span class="chev">▾</span>
+      </button>
+      <div class="tool-result-body">
+        ${renderToolDetail(obs)}
+        <details class="raw"><summary>完整返回与收据</summary><pre>${esc(JSON.stringify(raw, null, 2))}</pre></details>
+      </div>
+    </div>` : ""}
+
+    <footer class="turn-receipt">
+      <code>${hash ? esc(hash) : "result hash pending"}</code>
+      <span class="receipt-meta">${esc(receiptMeta)}</span>
+      ${hash ? `<button class="copy-mini" type="button" data-copy="${esc(hash)}">复制</button>` : ""}
+    </footer>
+  </article>`;
 }
 
 function resultConclusion(result) {
@@ -1195,7 +1210,7 @@ function failureConclusion(failure) {
   return `未能给出结论：${reason}。`;
 }
 
-/* --------------------------------------------------------------- 判断面 */
+/* ----------------------- RENDER LAYER — 判断面 / 结论后的结构化块 */
 
 function resultUnit(result) {
   if (result.unit) return result.unit;
@@ -1728,7 +1743,6 @@ function renderResult(trace) {
         <span class="proof-sep">·</span>
         <span>${(trace.events || []).length} 个事件</span>
       </div>
-      ${judgmentSurfaceHtml(trace, result)}
       <div class="result-foot">
         <div class="chips" style="margin-top:2px">
           <span class="mini">口径 ${esc(result.basis)} · ${esc(result.consolidation)}</span>
@@ -1737,7 +1751,8 @@ function renderResult(trace) {
         </div>
         ${runActionsHtml(trace)}
       </div>
-    </div>`;
+    </div>
+    ${judgmentSurfaceHtml(trace, result)}`;
   }
 
   if (terminal.status === "succeeded") {
@@ -1766,9 +1781,9 @@ function renderResult(trace) {
       <span class="code">${esc(failure.code || "—")}</span>
       <span class="msg">${esc(failure.message || "")}</span>
     </div>
-    ${failureJudgmentHtml(trace, terminal)}
     <div class="result-foot">${runActionsHtml(trace)}</div>
-  </div>`;
+  </div>
+  ${failureJudgmentHtml(trace, terminal)}`;
 }
 
 function annotateRounds(trace) {
@@ -1808,20 +1823,48 @@ function annotateRounds(trace) {
 
 function renderHead(trace, title) {
   const task = trace.task || {};
-  const binding = task.binding || {};
-  document.getElementById("tb-title").textContent = title || task.id || "—";
+  document.getElementById("tb-title").textContent = "FCode";
   const bridge = desktopBridge();
   if (bridge && bridge.set_title) bridge.set_title(title || task.id || "FCode");
+  document.getElementById("tb-chips").innerHTML = "";
+}
+
+/* RENDER LAYER — 舞台式空状态：字标、提示与示例能力 chips。 */
+function stageEmptyHtml() {
+  return `<section class="stage-empty" aria-label="空状态">
+    <div class="stage-mark">FCode</div>
+    <p class="stage-note">还没有运行记录</p>
+    <div class="stage-chips" aria-label="示例场景">
+      ${SCENARIOS.map(([key, label]) => `<a class="stage-chip" href="?trace=traces/${esc(key)}.trace.json">${esc(label)}</a>`).join("")}
+    </div>
+  </section>`;
+}
+
+/* RENDER LAYER — 阅读列会话头：标题下方一行 meta；证据面板按需打开。 */
+function sessionHeadHtml(trace, title, note = "") {
+  const task = trace.task || {};
+  const binding = task.binding || {};
+  const grant = task.model_grant || {};
   const moduleKey = binding.module || "";
   const moduleTitle = moduleKey
     ? ((modules.find(item => item.key === moduleKey) || {}).title || moduleKey)
     : "";
-  document.getElementById("tb-chips").innerHTML = `
-    ${moduleTitle ? `<span class="chip">${ICON.thought}${esc(moduleTitle)}</span>` : ""}
-    <span class="chip">${ICON.folder}${esc(binding.corpus || "—")}</span>
-    <span class="chip">${ICON.branch}${esc(task.id || "—")}</span>
-    <span class="chip chip-grant">${ICON.key}${esc((task.model_grant || {}).grant_id || "—")} · r${esc((task.model_grant || {}).revision || "")}</span>
-  `;
+  const meta = [
+    moduleTitle,
+    binding.corpus,
+    task.id,
+    grant.grant_id ? `${grant.grant_id} · r${grant.revision ?? ""}` : "",
+    note,
+  ].filter(Boolean).map(item => esc(item)).join(" · ");
+  return `<header class="session-head">
+    <p class="session-kicker">${esc(title || task.id || "运行")}</p>
+    <h1 class="session-title">${esc(task.objective || "未命名委托")}</h1>
+    <div class="session-meta">
+      <span>${meta}</span>
+      <span class="grow"></span>
+      <button class="meta-button" type="button" data-rail-open>事件 / 链验证</button>
+    </div>
+  </header>`;
 }
 
 function setChainBadge(check) {
@@ -1832,6 +1875,26 @@ function setChainBadge(check) {
   badge.innerHTML = check.ok
     ? `${shield}<span>链验证通过 · ${check.events} events</span>`
     : `<span class="dot"></span><span>链断裂 · ${esc(check.reason)}</span>`;
+}
+
+/* RENDER LAYER — 纯 UI 开关：侧栏折叠与证据浮层不接触运行状态。 */
+function setChromeState({ sidebar = null, rail = null } = {}) {
+  const app = document.getElementById("app");
+  if (!app) return;
+  if (sidebar !== null) {
+    app.classList.toggle("side-collapsed", sidebar);
+    const sideToggle = document.getElementById("sidebar-toggle");
+    if (sideToggle) {
+      const label = sidebar ? "展开侧栏" : "折叠侧栏";
+      sideToggle.title = label;
+      sideToggle.setAttribute("aria-label", label);
+    }
+  }
+  if (rail !== null) {
+    railOpen = rail;
+    app.classList.toggle("rail-open", rail);
+    app.classList.toggle("rail-hidden", !rail);
+  }
 }
 
 function bindToggles(root) {
@@ -1857,26 +1920,24 @@ async function render(trace, title) {
   const note = `Fcode · ${rounds.length} 轮 · ${events} 个事件 · ${check.ok ? "全链验证通过" : "链验证失败"}${started ? " · " + started + "Z" : ""}`;
 
   renderMain(`
-    <section class="prompt">
-      <div class="prompt-kicker"><span class="kicker-label">CASE FILE</span><span>${esc(task.principal || "console-operator")}</span></div>
-      <p class="prompt-text">${esc(task.objective || "")}</p>
-      <p class="prompt-note">${esc(note)}</p>
-    </section>
+    ${sessionHeadHtml(trace, title, note)}
     <div id="approval-slot"></div>
-    <details class="thought" id="thought">
-      <summary class="thought-head">
-        <span class="thought-title">${ICON.thought} 思考链</span>
+    <div id="queued-slot"></div>
+    <details class="process-details" id="thought">
+      <summary class="process-head">
+        <span>计划与预算</span>
         <span class="thought-meta">${thoughtMeta(trace)}</span>
         <span class="grow"></span>
-        <span class="thought-hint">计划、工具调用与证据</span>
         <span class="chev">▾</span>
       </summary>
-      <div class="thought-body">
+      <div class="process-body">
         <div id="plan-slot">${renderPlan(lastPlan(trace))}</div>
         <div id="budget-slot">${renderMeters(trace)}</div>
-        <div id="rounds-slot">${rounds.map((r, i) => roundWrapHtml(messagesByRound(trace), r, anns[i])).join("")}</div>
       </div>
     </details>
+    <section class="turns" id="turns" aria-label="运行时间轴">
+      <div id="rounds-slot">${rounds.map((r, i) => roundWrapHtml(messagesByRound(trace), r, anns[i])).join("")}</div>
+    </section>
     <div id="result-slot">${terminal && terminal.status ? renderResult(trace) : ""}</div>
   `, { mode: "run" });
 
@@ -1889,7 +1950,7 @@ async function render(trace, title) {
   updateStatusline();
 }
 
-/* ------------------------------------------------------------------- live */
+/* -- LOGIC LAYER + RENDER SLOT — SSE/差异渲染状态机不可改；仅模板字符串可改 */
 
 function nearMainBottom() {
   const el = document.querySelector(".main");
@@ -1908,27 +1969,25 @@ function autosize(ta) {
 function liveShell(trace) {
   const task = trace.task || {};
   renderMain(`
-    <section class="prompt">
-      <div class="prompt-kicker"><span class="kicker-label">CASE FILE</span><span>${esc(task.principal || "console-operator")}</span></div>
-      <p class="prompt-text">${esc(task.objective || "")}</p>
-      <p class="prompt-note" id="live-note" aria-live="polite">已提交，等待 Runtime 启动…</p>
-    </section>
+    ${sessionHeadHtml(trace, "运行 · " + tplTitle(trace.task && trace.task.binding ? trace.task.binding.scenario : ""), "已提交，等待 Runtime 启动…")}
     <div id="approval-slot"></div>
     <div id="queued-slot"></div>
-    <details class="thought" id="thought" open>
-      <summary class="thought-head">
-        <span class="thought-title">${ICON.thought} 思考链</span>
+    <p class="live-note" id="live-note" aria-live="polite">已提交，等待 Runtime 启动…</p>
+    <details class="process-details" id="thought" open>
+      <summary class="process-head">
+        <span>计划与预算</span>
         <span class="thought-meta" id="thought-meta">启动中</span>
         <span class="grow"></span>
-        <span class="thought-hint">计划、工具调用与证据</span>
         <span class="chev">▾</span>
       </summary>
-      <div class="thought-body">
+      <div class="process-body">
         <div id="plan-slot"></div>
         <div id="budget-slot"></div>
-        <div id="rounds-slot"></div>
       </div>
     </details>
+    <section class="turns" id="turns" aria-label="运行时间轴">
+      <div id="rounds-slot"></div>
+    </section>
     <div id="result-slot"></div>`, { mode: "run" });
   const summary = document.querySelector("#thought > summary");
   if (summary) summary.addEventListener("click", () => { const s = activeSession(); if (s) s.thoughtPinned = true; });
@@ -2206,7 +2265,7 @@ function setComposerRunning(running) {
   );
 }
 
-/* ------------------------------------------------------------- 审批 */
+/* ------------------------ MIXED — 审批状态逻辑（不改）+ 审批卡渲染 */
 
 function fmtCountdown(seconds) {
   const total = Math.max(0, Math.round(seconds));
@@ -2283,7 +2342,7 @@ async function decideApproval(allow) {
   }
 }
 
-/* ------------------------------------------------------- 计划与预算指令 */
+/* ------------------------------------- LOGIC LAYER — 计划/预算指令与 API */
 
 function paintPlan() {
   const slot = document.getElementById("plan-slot");
@@ -2822,15 +2881,9 @@ function closeIntake(restore = true) {
   if (restore && intake.returnKey) {
     select(intake.returnKey, intake.returnLabel);
   } else if (restore) {
-    renderMain(`<div class="empty empty-doodle">
-      <span class="empty-doodle-icon" data-doodle="book-open" data-doodle-anim="1"></span>
-      <p>给 agent 派一个工作委托，或从左侧打开运行记录。</p>
-      <p class="dim">每个数字有来源，每次计算被复算，每份底稿不可篡改。</p>
-      <button class="a-btn strong" data-intake-open style="margin-top:14px">创建第一个委托</button>
-    </div>`, { mode: "empty" });
-    document.getElementById("tb-title").textContent = "—";
+    renderMain(stageEmptyHtml(), { mode: "empty" });
+    document.getElementById("tb-title").textContent = "FCode";
     document.getElementById("tb-chips").innerHTML = "";
-    hydrateDoodles(document.getElementById("main"));
   }
 }
 
@@ -3174,7 +3227,7 @@ async function selectRun(id) {
   }
 }
 
-/* ------------------------------------------------------------------- load */
+/* ------------------------------------- LOGIC LAYER — trace 加载与视图状态 */
 
 const TRACE_CANDIDATES = key => [
   `traces/${key}.trace.json`,
@@ -3219,7 +3272,7 @@ async function select(key, label) {
   renderNav();
 }
 
-/* --------------------------------------------------------------- handlers */
+/* ----------------- LOGIC LAYER — 哈希验证 / 复制 / 导出 / 指令绑定入口 */
 
 async function reverify() {
   const trace = shownTrace();
@@ -3245,7 +3298,7 @@ function exportTrace() {
   toast("已导出 trace JSON");
 }
 
-/* ------------------------------------------------------------ 运行操作 */
+/* -------------------------------------- LOGIC LAYER — 运行创建 / 恢复 / 重试 */
 
 function currentRun() {
   if (store.key && store.key.startsWith("run:")) {
@@ -3347,7 +3400,7 @@ function runActionsHtml(trace) {
   return `<div class="chips">${costChipsHtml(trace)}</div><div class="actions">${resume}${retry}${report}<button class="a-btn" data-act="diag">复制诊断</button></div>`;
 }
 
-/* ------------------------------------------------------------- 报告签发 */
+/* ---------------- MIXED — 报告构建/链验证逻辑（不改）+ 浮层 DOM 操作 */
 
 let lastReportHtml = null;
 let lastReportName = "fcode-report.html";
@@ -3574,7 +3627,7 @@ async function copyDiagnostics() {
   toast(ok ? "诊断信息已复制" : "复制失败");
 }
 
-/* --------------------------------------------------------------- 通知 */
+/* ------------------------------------------------ LOGIC LAYER — 通知授权 */
 
 const NOTIFY_KEY = "fa.notify";
 let notifyOn = localStorage.getItem(NOTIFY_KEY) === "1";
@@ -3610,7 +3663,7 @@ async function toggleNotify() {
   toast("完成通知已开启");
 }
 
-/* --------------------------------------------------------------- 设置 */
+/* --------------- MIXED — 本机偏好状态（不改）+ 设置页 DOM 同步与渲染 */
 
 let settingsOpen = false;
 let settingsSection = "appearance";
@@ -3861,7 +3914,7 @@ function notify(title, body) {
   } catch { /* 通知失败不影响运行 */ }
 }
 
-/* ---------------------------------------------------------------- toast */
+/* --------------------------------------------------- RENDER LAYER — toast */
 
 let toastTimer = null;
 function toast(message) {
@@ -3877,7 +3930,7 @@ function toast(message) {
   }, 1700);
 }
 
-/* -------------------------------------------------------------- palette */
+/* ------------------- MIXED — 命令动作闭包（不改）+ 命令面板渲染 */
 
 let palItems = [];
 let palActive = 0;
@@ -4011,7 +4064,7 @@ function runPaletteItem(index) {
   }, 0);
 }
 
-/* ----------------------------------------------------------- slash 命令 */
+/* -------------------- MIXED — 命令匹配/执行（不改）+ 菜单渲染 */
 /* Codex 式入口：输入框以 / 开头弹出命令面板，↑↓ 选择，Tab 补全，Enter 执行。 */
 const SLASH_COMMANDS = [
   { cmd: "/new", desc: "新建委托 · 需求确认", run: () => startIntake("") },
@@ -4199,6 +4252,7 @@ function bind() {
     if (event.target.closest("#run-chip")) { stopRun(); return; }
     if (event.target.closest("#desk-btn")) { renderMode("ledger"); return; }
     if (event.target.closest("#chain-badge")) { reverify(); return; }
+    if (event.target.closest("[data-rail-close]")) { setChromeState({ rail: false }); return; }
     if (event.target.closest("#report-close") || event.target.closest("[data-report-close]")) { closeReport(); return; }
     if (event.target.closest("#report-print")) { printReport(); return; }
     if (event.target.closest("#report-download")) { downloadReport(); return; }
@@ -4366,7 +4420,17 @@ function bind() {
       if (trace) renderRail(trace, store.check || { ok: false, reason: "" });
     }
   });
-  document.getElementById("main").addEventListener("click", event => {
+  document.getElementById("main").addEventListener("click", async event => {
+    const railOpenButton = event.target.closest("[data-rail-open]");
+    if (railOpenButton) { setChromeState({ rail: true }); return; }
+    const railCloseButton = event.target.closest("[data-rail-close]");
+    if (railCloseButton) { setChromeState({ rail: false }); return; }
+    const copy = event.target.closest("[data-copy]");
+    if (copy) {
+      const ok = await copyText(copy.dataset.copy);
+      toast(ok ? "哈希已复制" : "复制失败");
+      return;
+    }
     const intakeChoice = event.target.closest("[data-intake-choice]");
     if (intakeChoice) {
       intakeChoose(intakeChoice.dataset.intakeField, intakeChoice.dataset.intakeValue, intakeChoice.dataset.intakeLabel || "");
@@ -4484,12 +4548,18 @@ function bind() {
     if (panel) syncReviewDraft(panel.dataset.reviewRun, panel, input);
   });
   const app = document.getElementById("app");
-  app.classList.toggle("rail-open", railOpen);
-  app.classList.toggle("rail-hidden", !railOpen);
+  setChromeState({ rail: railOpen });
+  document.getElementById("sidebar-toggle").addEventListener("click", () => {
+    setChromeState({ sidebar: !app.classList.contains("side-collapsed") });
+  });
   document.getElementById("rail-toggle").addEventListener("click", () => {
-    railOpen = !railOpen;
-    app.classList.toggle("rail-hidden", !railOpen);
-    app.classList.toggle("rail-open", railOpen);
+    setChromeState({ rail: !railOpen });
+  });
+  document.querySelectorAll("[data-rail-open]").forEach(button => {
+    button.addEventListener("click", () => setChromeState({ rail: true }));
+  });
+  document.querySelectorAll("[data-rail-close]").forEach(button => {
+    button.addEventListener("click", () => setChromeState({ rail: false }));
   });
 
   document.addEventListener("dragenter", e => e.preventDefault());
