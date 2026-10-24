@@ -44,14 +44,14 @@ svg.i {
 .brand-mark .d-icon { width: 18px; height: 18px; }
 .side-brand { font-size: var(--fs-3); font-weight: 650; letter-spacing: .01em; color: var(--text-1); }
 .side-new {
-  display: flex; align-items: center; gap: 7px; width: calc(100% - 8px); height: 32px;
-  margin: 0 4px 10px; padding: 0 11px; text-align: left;
-  border: 1px solid var(--line); border-radius: var(--radius);
-  background: var(--panel); color: var(--text-1); font-size: var(--fs-3); font-weight: 500;
+  display: flex; align-items: center; gap: 7px; width: calc(100% - 8px); height: 40px;
+  margin: 0 4px 10px; padding: 0 12px; text-align: left;
+  border: 0.5px solid var(--line-strong); border-radius: 12px;
+  background: var(--raised); color: var(--text-1); font-size: var(--fs-3); font-weight: 550;
   cursor: pointer;
-  transition: background-color var(--t) ease, border-color var(--t) ease;
+  transition: background-color var(--t) ease, border-color var(--t) ease, box-shadow var(--t) ease;
 }
-.side-new:hover { background: var(--raised); border-color: var(--line-strong); }
+.side-new:hover { border-color: var(--ink3); box-shadow: 0 1px 4px rgba(0,0,0,.06); }
 .side-new svg, .side-new .d-icon { color: var(--text-3); }
 .kbtn {
   margin-left: auto; border: 1px solid var(--line); background: none;
@@ -63,8 +63,7 @@ svg.i {
 
 .side-section {
   display: flex; align-items: center; gap: 8px;
-  margin: 10px 8px 2px; padding-bottom: 6px;
-  border-bottom: 1px solid var(--line);
+  margin: 12px 8px 4px;
   font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase;
   color: var(--text-3);
 }
@@ -138,13 +137,13 @@ svg.i {
 /* 会话/运行条目：两行条目，状态用小圆点 */
 .session {
   display: flex; align-items: center; gap: 8px; width: 100%;
-  padding: 6px 8px; margin: 1px 0; min-height: 28px;
-  border: 0; border-radius: 6px;
+  padding: 7px 10px; margin: 1px 0; min-height: 34px;
+  border: 0; border-radius: 10px;
   background: none; color: var(--text-1); font-size: var(--fs-2); cursor: pointer; text-align: left;
   transition: background-color var(--t) ease;
 }
 .session:hover { background: var(--active); }
-.session.active { background: var(--active); color: var(--text-1); }
+.session.active { background: var(--raised); box-shadow: 0 1px 3px rgba(0,0,0,.05); }
 .session .sdot { width: 6px; height: 6px; border-radius: 50%; flex: none; background: #3a3a44; }
 .session.active .sdot { background: var(--text-1); }
 .session .sdot.ok { background: var(--ok); }
