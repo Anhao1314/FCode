@@ -1743,6 +1743,7 @@ body.reduce-motion *, body.reduce-motion *::before, body.reduce-motion *::after 
   min-height:52vh; display:flex; flex-direction:column; align-items:center; justify-content:center;
   text-align:center; animation:turnIn var(--t-fade) var(--ease) both;
 }
+.stage-logo { display:block; margin:0 auto 6px; }
 .stage-mark { font:700 46px/1 var(--font-ui); letter-spacing:-.03em; color:var(--text-1); }
 .stage-note { margin:14px 0 0; color:var(--text-3); font-size:var(--fs-3); }
 .stage-chips {
