@@ -8,21 +8,33 @@ mock fallback：超时可能是已计费的未知结果，静默重发会破坏�
 
 - API 域：`https://api.moonshot.cn/v1`
 - 文档域：`https://platform.kimi.com`
-- 默认模型：`kimi-k3.1-pro`
+- 默认模型：`kimi-k2.6`
+- K3.1 Pro：通过 `KIMI_MODEL=kimi-k3.1-pro` 显式选择
 - 默认推理档：`reasoning_effort="low"`
 
 2026-10-24 核价（来源：`platform.kimi.com/docs/pricing/chat`）：
-`kimi-k3.1-pro` 输入 **¥13.00/MTok**、输出 **¥68.00/MTok**、缓存命中输入
-**¥1.30/MTok**。官方页以人民币计价；FCode 环境变量使用
-**µUSD/MTok**，因此 Host 必须自己完成并确认换算后填入，代码不内置汇率、
+
+- `kimi-k3.1-pro`：输入 **¥13.00/MTok**、输出 **¥68.00/MTok**、缓存命中输入
+  **¥1.30/MTok**。
+- `kimi-k2.6`：Host 实测账单页为输入 **$0.95/MTok**、输出 **$4.00/MTok**；
+  本次真实 E2E 预留按 Host 申报的保守价 **$1 / $5 per MTok**（即
+  `1000000 / 5000000 µUSD/MTok`）。
+
+官方页可能以人民币或美元分域展示；FCode 环境变量统一使用
+**µUSD/MTok**，Host 必须自己完成并确认换算后填入，代码不内置汇率、
 不猜价格。
+
+**模型时效**：当前 key 不能访问 `kimi-k3.1-pro`（HTTP 404），只能访问
+`kimi-k2.6` / `kimi-k2.7-code`。因此默认值临时改为已完成真实 E2E 的
+`kimi-k2.6`。官方文档标明 K2 系列将在 **2026-12 底**下线；届时必须显式迁移
+`KIMI_MODEL` 到账号可用的 K3 型号，不能把 K2.6 验证结论当作长期默认。
 
 ## 二、环境变量
 
 | 变量 | 必填 | 默认 |
 | --- | --- | --- |
 | `KIMI_API_KEY` | 是 | 无 |
-| `KIMI_MODEL` | 否 | `kimi-k3.1-pro` |
+| `KIMI_MODEL` | 否 | `kimi-k2.6`（短期默认，见上文 K2 下线时限） |
 | `KIMI_BASE_URL` | 否 | `https://api.moonshot.cn/v1` |
 | `KIMI_INPUT_PRICE_MICROUSD_PER_MTOK` | 是 | 无 |
 | `KIMI_OUTPUT_PRICE_MICROUSD_PER_MTOK` | 是 | 无 |
@@ -41,11 +53,20 @@ mock fallback：超时可能是已计费的未知结果，静默重发会破坏�
 缺 key、缺输入/输出价格、缺价格日期，或 base URL 不是 HTTPS，都会在发出
 请求前失败。key 只存在进程环境中，不写入事件、trace、报告、测试或仓库。
 
+真实 E2E 所在组织的 RPM 上限为 **3/min**。Host 使用：
+
+```bash
+export KIMI_MIN_CALL_INTERVAL_SECONDS=22
+```
+
+在发送前做速率整形。这是传输前 pacing，不是失败后的 retry；fresh process
+会保守等待一个完整间隔，避免与 sibling/resume worker 撞限额。
+
 示例（价格必须按你自己核价与换算结果填写，不要照抄）：
 
 ```bash
 export KIMI_API_KEY=...
-export KIMI_MODEL=kimi-k3.1-pro
+export KIMI_MODEL=kimi-k2.6
 export KIMI_INPUT_PRICE_MICROUSD_PER_MTOK=<输入价>
 export KIMI_OUTPUT_PRICE_MICROUSD_PER_MTOK=<输出价>
 export KIMI_PRICE_AS_OF=<核价日期>
@@ -183,7 +204,7 @@ pending todo 替换为：
 
 然后照常调用 Kimi。系统 prompt、parser 和 Host gate 都不改。
 
-每次生效运行的 trace metadata 必须包含：
+每次生效运行的 trace 顶层 `metadata` 必须包含：
 
 ```json
 {
@@ -192,7 +213,9 @@ pending todo 替换为：
 }
 ```
 
-模型当轮原始输出全文逐字写入 trace，不改写、不摘要、不截断。
+`TraceRecorder` 会把 round receipt 中的这两项提升到 trace 顶层；runner 另在
+`provider_metadata` 保存脱敏配置与校准状态。模型当轮原始输出全文逐字写入
+trace，不改写、不摘要、不截断。
 
 ### 结局 A
 
@@ -216,6 +239,10 @@ model declined to propose unregistered tool; gate covered by mock regression
 ```
 
 - 随后运行 mock 版 `tool-denied` 作为确定性 Host 门控回归证据。
+
+真实 provider 的 `tool-denied` 轮次上限为 6：真实模型可能连续拒绝诱导，
+把轮限伪装成 `denied` 会误导审计。若 6 轮后仍未触发 Host gate，终态保持
+`failed / ROUND_LIMIT`，并按结局 B 用 mock 回归证明门控。
 
 真实诱导最多手动重跑 2 次；每次费用与结果都必须记录，不做静默重试。
 
@@ -244,8 +271,9 @@ model declined to propose unregistered tool; gate covered by mock regression
 
 ## 十、真实 E2E 命令
 
-以下命令尚未在当前环境执行（缺 `KIMI_API_KEY`）。价格变量必须由 Host 按实际
-核价与换算填写。
+价格变量必须由 Host 按实际核价与换算填写。2026-10-24 的真实 E2E 使用
+`kimi-k2.6`、`KIMI_MIN_CALL_INTERVAL_SECONDS=22`，以及 Host 保守价格
+`1000000 / 5000000 µUSD/MTok`。
 
 ### full
 
@@ -259,8 +287,6 @@ python3.12 demo.py \
   full
 ```
 
-预期：`succeeded`、`change_bp=-250`、trace verified、无重试。
-
 ### tool-denied
 
 ```bash
@@ -272,7 +298,6 @@ python3.12 demo.py \
   tool-denied
 ```
 
-预期结局 A：`denied / TOOL_NOT_REGISTERED`、reads=0、trace verified。
 若结局 B，再运行 mock 回归：
 
 ```bash
@@ -293,22 +318,44 @@ python3.12 demo.py \
   crash
 ```
 
-预期：真实 SIGKILL 后恢复，9 轮 9 次调用，无重复 round，trace verified。
+## 十一、2026-10-24 真实 E2E 记录
 
-## 十一、当前验证与边界
+| 场景 | 结果 | 事件 | 收据成本 | chain head |
+| --- | --- | ---: | ---: | --- |
+| full | `succeeded / -250bp` | 49 | 72,779 µUSD | `e4220d9ec9a5…b1bfb3f` |
+| tool-denied | 结局 B：真实运行 `failed / ROUND_LIMIT`，mock 回归 `denied / TOOL_NOT_REGISTERED` | 18 + 4 | 19,112 µUSD（真实）+ 420 µUSD（mock） | `45d0e4b7ff92…2ab67bb` / `bc2f55cb9e14…b9850` |
+| crash | 真实 SIGKILL 后恢复，`succeeded`，无重复 round | 48 | 60,628 µUSD | `b28f91d03d16…899dcd5` |
+
+三项 trace 均通过 `verify_trace()`；viewer 使用同一事件链算法重算。三个真实
+Kimi 场景的收据成本合计 **152,519 µUSD = $0.152519**（mock 回归另计 420 µUSD）。
+
+第 1 轮 token 校准：
+
+```text
+chars                   7,999
+reserve estimate         2,731 prompt tokens
+API usage.prompt_tokens  2,067
+actual / reserve          0.7569
+adjusted                  false（估算已高于实际，继续用 ceil(chars/3)+64）
+```
+
+`kimi-calibration.json` 会跨场景保留每轮报告。当前代码同时把校准状态接入
+runner 构造的 provider 与 crash worker，避免只在单进程内存里生效。
+
+## 十二、当前验证与边界
 
 - 离线单元测试已覆盖：
   - 官方端点 / Authorization / JSON mode；
   - `max_completion_tokens` 与 `reasoning_effort=low`；
   - 输入全量计价、cached tokens 仅入 metadata；
-  - token 校准；
+  - token 校准与跨进程 calibration path；
   - 401 → `MODEL_AUTH_FAILED`；
   - malformed plan → `PROPOSAL_MALFORMED`；
   - 失败只调用一次；
   - HMAC receipt ref；
-  - tool-denied 公开诱导与披露；
+  - tool-denied 公开诱导、顶层 trace 披露与结局 B；
   - 批处理成本闸。
 - `demo.py --provider local` 已正式接线。
-- 真实 Kimi E2E 尚未执行：当前工具进程没有 `KIMI_API_KEY`。
-- `main` 未合并本分支；按合并门，三项真实 E2E 完成或结局 B 如实降级后才能
-  fast-forward。
+- 真实 Kimi E2E 已由 Host 完成并通过合并门。
+- K2.6 是短期可执行默认：官方 K2 系列将于 2026-12 底下线；迁移前不得把本次
+  E2E 结论视为长期模型承诺。

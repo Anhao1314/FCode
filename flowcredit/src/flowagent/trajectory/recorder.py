@@ -22,6 +22,26 @@ from ..tools.base import Observation
 __all__ = ["RoundRecord", "TraceRecorder"]
 
 
+def _surfaced_metadata(rounds: list[RoundRecord]) -> dict[str, Any]:
+    """Lift audit disclosures from round receipts to the trace surface.
+
+    A disclosure buried only in a round receipt is still auditable, but readers
+    should not have to know where to look for an active fault injection. Keep
+    this surface intentionally tiny: it states that an experiment is active, not
+    a second copy of every provider field.
+    """
+    metadata: dict[str, Any] = {}
+    for record in rounds:
+        receipt = record.receipt or {}
+        provider_metadata = receipt.get("metadata") or {}
+        if provider_metadata.get("fault_injection") is True:
+            metadata["fault_injection"] = True
+        disclosure = provider_metadata.get("disclosure")
+        if isinstance(disclosure, str) and disclosure:
+            metadata["disclosure"] = disclosure
+    return metadata
+
+
 @dataclass
 class RoundRecord:
     """Everything that happened in one round, in the order it happened."""
@@ -128,6 +148,7 @@ class TraceRecorder:
             },
             "rounds": [record.to_dict() for record in self._rounds],
             "terminal": self._terminal,
+            "metadata": _surfaced_metadata(self._rounds),
             "events": events,
             "chain": {
                 "event_count": len(events),

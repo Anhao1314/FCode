@@ -96,7 +96,10 @@ SCENARIOS: dict[str, Scenario] = {
         allowed_tools=_ALL_TOOLS,
         grant=_grant(),
         limits=BudgetLimits(12, 20, 20_000, 20_000),
-        max_rounds=3,
+        # A real provider may decline the injected off-tool more than once
+        # before the host-gate evidence is conclusive. Six rounds leaves room
+        # for that without pretending a round-limit refusal is a gate denial.
+        max_rounds=6,
         policy="escalate",
         expected_status="denied",
     ),

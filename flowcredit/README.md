@@ -90,7 +90,7 @@ python viewer/server.py --repo ..   # 打开 http://127.0.0.1:8642/
 python -m unittest discover -s tests -v
 ```
 
-277 项，覆盖计划层与权限门控（未注册 / 越权 / 超 grant / 参数非法）、预算三个维度、状态机非法迁移、并发写 CAS、事件篡改、收据伪造、独立重算拒绝伪造观测、trace 篡改、审批放行与拒绝、计划跳过 / 提前、预算追加、失败续跑、运行中操作员消息入链，Kimi/DeepSeek/local provider 纪律，以及七个场景的端到端断言（其中崩溃场景用真实 SIGKILL，断言"没有任何一轮被重复提议"）。
+287 项，覆盖计划层与权限门控（未注册 / 越权 / 超 grant / 参数非法）、预算三个维度、状态机非法迁移、并发写 CAS、事件篡改、收据伪造、独立重算拒绝伪造观测、trace 篡改、审批放行与拒绝、计划跳过 / 提前、预算追加、失败续跑、运行中操作员消息入链，Kimi/DeepSeek/local provider 纪律，以及七个场景的端到端断言（其中崩溃场景用真实 SIGKILL，断言"没有任何一轮被重复提议"）。
 
 CI 在 Ubuntu 与 macOS 上跑 Python 3.11 与 3.13，包含 `python demo.py all` 与零配置入口冒烟。
 
@@ -106,7 +106,7 @@ src/flowagent/
   trajectory/  recorder、exporter（导出与独立重算）
   demo/        CLI、终端渲染、七个场景、崩溃 worker
 viewer/        实时控制台 + Trace 回放（零依赖零构建）
-tests/         277 项 unittest
+tests/         287 项 unittest
 ```
 
 ## 现在还没有的

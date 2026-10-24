@@ -58,7 +58,10 @@ KIMI_TEMPERATURE_ENV = "KIMI_TEMPERATURE"
 KIMI_MIN_CALL_INTERVAL_ENV = "KIMI_MIN_CALL_INTERVAL_SECONDS"
 
 _DEFAULT_BASE_URL = "https://api.moonshot.cn/v1"
-_DEFAULT_MODEL = "kimi-k3.1-pro"
+#: K2.6 is the executable default because this host's key can access it and it
+#: completed the real E2E gate. K3.1 Pro remains an explicit KIMI_MODEL override
+#: for accounts with access.
+_DEFAULT_MODEL = "kimi-k2.6"
 _DEFAULT_TIMEOUT = 180.0
 _DEFAULT_MAX_COMPLETION_TOKENS = 512
 _DEFAULT_REASONING_EFFORT = "low"

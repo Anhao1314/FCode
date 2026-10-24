@@ -26,9 +26,11 @@ from flowagent.demo.provider_factory import (  # noqa: E402
     build_provider,
     provider_start_line,
 )
+from flowagent.demo.render import Renderer  # noqa: E402
 from flowagent.providers.base import Proposal  # noqa: E402
 from flowagent.providers.local import LocalProvider  # noqa: E402
 from flowagent.providers.mock import MockProvider  # noqa: E402
+from flowagent.trajectory.recorder import RoundRecord, _surfaced_metadata  # noqa: E402
 
 
 @dataclass
@@ -108,6 +110,26 @@ class ProviderFactoryTests(unittest.TestCase):
             self.assertEqual(provider.model, "fcode-local")
         self.assertIn("所有外发调用由主机门控与审计", provider_start_line(provider))
 
+    def test_kimi_factory_preserves_the_host_calibration_path(self) -> None:
+        scenario = get_scenario("full")
+        environment = {
+            "KIMI_API_KEY": "sk-kimi-test-not-real",
+            "KIMI_INPUT_PRICE_MICROUSD_PER_MTOK": "1000000",
+            "KIMI_OUTPUT_PRICE_MICROUSD_PER_MTOK": "2000000",
+            "KIMI_PRICE_AS_OF": "2026-10-24",
+        }
+        with tempfile.TemporaryDirectory() as tmp, \
+                mock.patch.dict(os.environ, environment, clear=True):
+            calibration = pathlib.Path(tmp) / "kimi-calibration.json"
+            provider = build_provider(
+                "kimi",
+                scenario=scenario,
+                receipts=self._receipts(tmp),
+                calibration_path=calibration,
+            )
+            target = getattr(provider, "wrapped", provider)
+            self.assertEqual(target.calibration.path, calibration)
+
     def test_kimi_missing_price_fails_before_request(self) -> None:
         scenario = get_scenario("full")
         with tempfile.TemporaryDirectory() as tmp, \
@@ -136,6 +158,58 @@ class ProviderFactoryTests(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertIn("PROVIDER_CONFIG_INVALID", output.getvalue())
         self.assertIn("KIMI_API_KEY", output.getvalue())
+
+
+class ScenarioPolicyTests(unittest.TestCase):
+    def test_tool_denied_has_room_for_a_real_model_to_decline(self) -> None:
+        scenario = get_scenario("tool-denied")
+        self.assertGreaterEqual(scenario.max_rounds, 6)
+
+
+class RendererBannerTests(unittest.TestCase):
+    def _header(self, **kwargs) -> str:
+        stream = io.StringIO()
+        renderer = Renderer(fast=True, stream=stream)
+        renderer.header(
+            "标题",
+            "目标",
+            "背景",
+            "kimi-k2.6",
+            {"calls_used": 0, "calls_remaining": 1},
+            **kwargs,
+        )
+        return stream.getvalue()
+
+    def test_default_banner_remains_offline_and_real_provider_is_explicit(self) -> None:
+        self.assertIn("离线确定性 Mock", self._header())
+        rendered = self._header(provider_note="(显式启用的 provider：外发调用由主机门控与审计)")
+        self.assertIn("显式启用的 provider", rendered)
+        self.assertNotIn("离线确定性 Mock", rendered)
+
+
+class TraceMetadataSurfaceTests(unittest.TestCase):
+    def test_fault_injection_disclosure_is_lifted_to_trace_metadata(self) -> None:
+        records = [
+            RoundRecord(index=1),
+            RoundRecord(
+                index=2,
+                receipt={
+                    "provider": "kimi",
+                    "metadata": {
+                        "fault_injection": True,
+                        "disclosure": "scenario deliberately includes an unregistered tool",
+                        "raw_content": "not duplicated onto the surface",
+                    },
+                },
+            ),
+        ]
+        metadata = _surfaced_metadata(records)
+        self.assertTrue(metadata["fault_injection"])
+        self.assertEqual(
+            metadata["disclosure"],
+            "scenario deliberately includes an unregistered tool",
+        )
+        self.assertNotIn("raw_content", metadata)
 
 
 class BatchCostGuardTests(unittest.TestCase):

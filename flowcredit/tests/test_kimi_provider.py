@@ -83,6 +83,11 @@ class KimiSettingsTests(unittest.TestCase):
         self.assertEqual(redacted["apiKey"], "env:KIMI_API_KEY")
         self.assertNotIn("sk-kimi-test-not-real", repr(redacted))
 
+    def test_default_model_is_the_account_accessible_e2e_model(self) -> None:
+        settings = load_kimi_settings(env=_env())
+        self.assertEqual(settings.model, "kimi-k2.6")
+        self.assertEqual(settings.redacted()["model"], "kimi-k2.6")
+
     def test_prices_and_date_are_required(self) -> None:
         env = _env()
         del env["KIMI_INPUT_PRICE_MICROUSD_PER_MTOK"]
@@ -162,7 +167,7 @@ class KimiProviderTests(unittest.TestCase):
         self.assertEqual(seen["url"], "https://api.moonshot.cn/v1/chat/completions")
         self.assertEqual(seen["auth"], "Bearer sk-kimi-test-not-real")
         body = seen["body"]
-        self.assertEqual(body["model"], "kimi-k3.1-pro")
+        self.assertEqual(body["model"], "kimi-k2.6")
         self.assertEqual(body["max_completion_tokens"], 512)
         self.assertEqual(body["reasoning_effort"], "low")
         self.assertEqual(body["response_format"], {"type": "json_object"})

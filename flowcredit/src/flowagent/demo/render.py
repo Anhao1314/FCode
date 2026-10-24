@@ -63,7 +63,16 @@ class Renderer:
 
     # ------------------------------------------------------------------ frames
 
-    def header(self, scenario_title: str, objective: str, story: str, model: str, budget: dict[str, Any]) -> None:
+    def header(
+        self,
+        scenario_title: str,
+        objective: str,
+        story: str,
+        model: str,
+        budget: dict[str, Any],
+        *,
+        provider_note: str = "(离线确定性 Mock，无网络、无密钥、无付费调用)",
+    ) -> None:
         if self.quiet:
             return
         line = "─" * 72
@@ -73,7 +82,7 @@ class Renderer:
         self._p(self._c(self.DIM, line))
         self._p(f" 目标   {objective}")
         self._p(f" 背景   {story}")
-        self._p(f" 模型   {self._c(self.YELLOW, model)}  {self._c(self.DIM, '(离线确定性 Mock，无网络、无密钥、无付费调用)')}")
+        self._p(f" 模型   {self._c(self.YELLOW, model)}  {self._c(self.DIM, provider_note)}")
         self._p(f" 预算   {self._budget_text(budget)}")
         self._p(self._c(self.DIM, line))
 

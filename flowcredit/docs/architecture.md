@@ -175,5 +175,6 @@ hash_n = sha256(canonical_json({sequence, type, payload, prev_hash, at}))
 | `demo/oracle.py` | LLM 层实验运行器 | 隔离 workdir；不污染控制台记忆 |
 | `viewer/design.css` | Paper & Proof tokens / 组件 | 新样式唯一入口；旧层只留布局 |
 | `viewer/design.html` | 设计系统样式页 | tokens、类型、组件、做与不做 |
+| `trajectory/recorder.py` | Round/收据记录 + 顶层披露 | fault injection / disclosure 从 receipt 提升到 trace metadata |
 | `trajectory/exporter.py` | 导出 + 重算 | 与 viewer 算法一致 |
 | `demo/runner.py` | 装配 | 唯一选择具体实现的地方；批成本闸只在任务间触发 |

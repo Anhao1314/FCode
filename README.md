@@ -213,11 +213,11 @@ python3.12 credit_demo.py --all
 | 模型验收（Ollama → packet eval → 结果/链/修复判定） | 已实现（等待本地 GGUF） |
 | 本地模型供应商（Qwen3-4B LoRA · OpenAI 兼容 · 零依赖） | **demo 可显式启用**（`--provider local`）；默认仍 mock |
 | 真实供应商（DeepSeek API · 价格快照 + 预算预留 + 无重试） | **CLI/lab 已实测**；控制台仍 offline-mock |
-| 真实供应商（Kimi API · 价格快照 + token 校准 + HMAC 收据） | **provider/demo 已实现**；真实 E2E 待 key |
+| 真实供应商（Kimi API · 价格快照 + token 校准 + HMAC 收据） | **kimi-k2.6 真实 E2E 已通过**；K2 系列将于 2026-12 底下线，需按账号迁移 `KIMI_MODEL` |
 
 ## 数字
 
-- **277** 项单元与场景测试，全部离线
+- **287** 项单元与场景测试，全部离线
 - **7** 个可复现场景，其中崩溃场景用真实 `SIGKILL`
 - **0** 个第三方运行时依赖（只用标准库）
 - **9** 轮完成一次完整研究，**4500 µUSD** 合成预算
@@ -237,7 +237,7 @@ flowcredit/          Python Runtime 与 Demo
     trajectory/      记录、导出、独立重算
     demo/            CLI、终端渲染、七个场景、崩溃 worker
   viewer/            实时控制台 + Trace 回放（零依赖零构建）
-  tests/             277 项 unittest
+  tests/             287 项 unittest
   docs/              架构、设计决策、框架对照、JD 映射
 archive/             v1：Node.js 研究原型（保留，不参与 CI）
 ```

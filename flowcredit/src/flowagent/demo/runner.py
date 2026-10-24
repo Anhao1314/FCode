@@ -311,7 +311,19 @@ def run_scenario(
     recorder = TraceRecorder(stack.store, provider_name=stack.provider.name, model_name=stack.provider.model)
     observer = _Tee(renderer, recorder)
     task = _create_task(stack, scenario)
-    renderer.header(scenario.title, scenario.objective, scenario.story, stack.provider.model, stack.harness.budget(task).snapshot())
+    provider_note = (
+        "(离线确定性 Mock，无网络、无密钥、无付费调用)"
+        if provider_name == "mock"
+        else "(显式启用的 provider：外发调用由主机门控与审计)"
+    )
+    renderer.header(
+        scenario.title,
+        scenario.objective,
+        scenario.story,
+        stack.provider.model,
+        stack.harness.budget(task).snapshot(),
+        provider_note=provider_note,
+    )
 
     recovered = False
     reconciled = False
