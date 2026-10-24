@@ -196,6 +196,9 @@ modelChoice = {
   key: typeof modelChoice.key === "string" ? modelChoice.key : "mock",
   effort: EFFORT_LEVELS.includes(modelChoice.effort) ? modelChoice.effort : "medium",
 };
+/* 草稿预览的预算联动：/api/models?template= 返回各模型在该模板下真实生效的
+   预算顶（服务端是缩放的单一事实源），按模板缓存，选择器变更即失效。 */
+let modelBudget = { template: "", models: null };
 let scenesOpen = localStorage.getItem("fa.scenesOpen"); // null | "1" | "0"
 
 /* 多会话：每个 run 一个会话对象；后台会话保持 SSE 流，只是不渲染 */
@@ -2999,16 +3002,23 @@ function intakeDraftHtml() {
   const intent = intake.spec.intent ? INTAKE_INTENTS[intake.spec.intent].label : "待选择";
   const output = intake.spec.output ? INTAKE_OUTPUTS[intake.spec.output].short : "待选择";
   const approval = intake.spec.approval ? approvalTitle(intake.spec.approval) : "待选择";
+  const entry = (modelBudget.models || []).find(m => m.key === modelChoice.key);
+  const scaled = entry && entry.budget ? entry.budget : null;
+  const rescaled = scaled && (scaled.max_cost_microusd !== limits.max_cost_microusd
+    || scaled.max_tokens !== limits.max_tokens);
   const budget = limits.max_calls
-    ? `${num(limits.max_calls)} calls · ${num(limits.max_reads)} reads · ${num(limits.max_cost_microusd)} µUSD`
+    ? `${num(scaled ? scaled.max_calls : limits.max_calls)} calls · ${num(scaled ? scaled.max_reads : limits.max_reads)} reads · ${num(scaled ? scaled.max_cost_microusd : limits.max_cost_microusd)} µUSD`
     : "—";
+  const scaleNote = rescaled && entry
+    ? `<span class="intake-scale-note">已按 ${esc(entry.model)} 价格重算成本顶（上限而非目标）</span>`
+    : "";
   const ready = !!intake.readyTask;
   return `<div class="intake-draft">
     <div class="intake-draft-head"><span>任务草稿</span><span class="intake-draft-tag">内置合成资料 · 恒星智算</span></div>
     <div class="intake-row"><span>问题</span><b>${esc(intent)}</b></div>
     <div class="intake-row"><span>输出</span><b>${esc(output)}</b></div>
     <div class="intake-row"><span>审批</span><b>${esc(approval)}</b></div>
-    <div class="intake-row"><span>预算</span><b>${esc(budget)}</b></div>
+    <div class="intake-row"><span>预算</span><b>${esc(budget)}</b>${scaleNote}</div>
     <div class="intake-actions">
       <button class="a-btn" data-intake-cancel>取消</button>
       ${intake.snapshots.length ? `<button class="a-btn" data-intake-back>上一步</button>` : ""}
@@ -3030,9 +3040,24 @@ function intakeChoicesHtml(choices) {
   }).join("")}</div>`;
 }
 
+function refreshModelBudget() {
+  if (!health || !health.live) return;
+  const key = intakeTemplateKey();
+  if (modelBudget.template === key && modelBudget.models) return;
+  fetch(`/api/models?template=${encodeURIComponent(key)}`, { cache: "no-store" })
+    .then(r => r.ok ? r.json() : null)
+    .then(data => {
+      if (!data || !Array.isArray(data.models)) return;
+      modelBudget = { template: key, models: data.models };
+      if (intake.active) renderIntake();
+    })
+    .catch(() => { /* 预览保持模板草案数字，不影响创建 */ });
+}
+
 function renderIntake() {
   const main = document.getElementById("main");
   if (!intake.active) return;
+  refreshModelBudget();
   const messages = intake.messages.map((message, index) => {
     if (message.role === "user") {
       return `<div class="intake-msg user"><span class="who">你</span><p>${esc(message.text)}</p></div>`;
@@ -4749,6 +4774,7 @@ function bind() {
     if (pick && !pick.disabled) {
       modelChoice.key = pick.dataset.modelPick;
       saveModelChoice();
+      modelBudget.models = null;
       renderModelMenu();
       paintModelBadge();
       modelMenu.hidden = true;
@@ -4759,6 +4785,7 @@ function bind() {
       modelChoice.key = "kimi";
       modelChoice.effort = effort.dataset.effortPick;
       saveModelChoice();
+      modelBudget.models = null;
       renderModelMenu();
       paintModelBadge();
     }

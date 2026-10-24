@@ -115,6 +115,27 @@ def _kimi_env_ready() -> bool:
     )
 
 
+def _scaled_budget_for_prices(limits, price, max_completion_tokens: int) -> dict:
+    """外部计费模型的价格天花板（创建与恢复共用一套算法）。
+
+    scenario 的成本顶按 mock 免费价拟定；换成真实价格后一次预留就会击穿。
+    按 provider 声明的价格快照重算成本顶与 token 顶（调用 / 读取次数沿用
+    场景草案）。上限是天花板不是目标：实际计费仍以收据为准并逐轮展示。
+    """
+    est_prompt_tokens = 6_000
+    per_call_microusd = (
+        est_prompt_tokens * price.input_microusd_per_mtok
+        + max_completion_tokens * price.output_microusd_per_mtok
+        + 999_999
+    ) // 1_000_000
+    return {
+        "max_calls": limits.max_calls,
+        "max_reads": limits.max_reads,
+        "max_cost_microusd": max(limits.max_cost_microusd, per_call_microusd * limits.max_calls),
+        "max_tokens": max(limits.max_tokens, (est_prompt_tokens + max_completion_tokens) * limits.max_calls),
+    }
+
+
 def model_catalog(local_endpoint: str | None) -> list[dict]:
     """The selectable-model list, judged live at request time.
 
@@ -401,6 +422,43 @@ class RunManager:
         if effort not in (None, "", *EFFORT_LEVELS):
             raise ValueError("思考强度必须是 low、medium 或 high")
         return model_key, effort or "medium"
+
+    def model_catalog_with_budget(self, template_key: str | None) -> list[dict]:
+        """模型清单 + 该模板下各自真实生效的预算顶（草稿预览的单一事实源）。"""
+        models = model_catalog(self.local_endpoint)
+        limits = None
+        if template_key and self.runtime is not None:
+            try:
+                limits = self.runtime.get_scenario(template_key).limits
+            except Exception:  # noqa: BLE001 — unknown template: budget stays None
+                limits = None
+        if limits is None:
+            return models
+        out = []
+        for m in models:
+            entry = dict(m)
+            entry["budget"] = self._budget_for_model(m, limits)
+            out.append(entry)
+        return out
+
+    def _budget_for_model(self, m: dict, limits) -> dict | None:
+        if m["key"] == "kimi":
+            if not m["available"]:
+                return None
+            try:
+                from flowagent.providers.kimi import load_kimi_settings
+
+                settings = load_kimi_settings()
+            except Exception:  # noqa: BLE001 — env drifted since the catalog check
+                return None
+            return _scaled_budget_for_prices(limits, settings.price, settings.max_completion_tokens)
+        # mock / local 不产生外部计费，预算顶即模板草案
+        return {
+            "max_calls": limits.max_calls,
+            "max_reads": limits.max_reads,
+            "max_cost_microusd": limits.max_cost_microusd,
+            "max_tokens": limits.max_tokens,
+        }
 
     # ------------------------------------------------------------- persistence
 
@@ -736,31 +794,16 @@ class RunManager:
                 return ref
 
             provider = self._build_provider(rt, run, scenario, receipts, issue)
-            if not resume_limits and run.model != "mock":
+            if run.model != "mock":
                 # scenario 的成本顶按 mock 免费价拟定；外部计费模型换真实价格后
-                # 一次预留就会击穿。按 provider 声明的价格快照重算成本顶与 token
-                # 顶（调用 / 读取次数沿用场景草案），上限是天花板不是目标，实际
-                # 计费仍以收据为准并逐轮展示。
+                # 一次预留就会击穿。创建与恢复都按 provider 声明的价格快照重算
+                # 成本顶与 token 顶（调用 / 读取次数沿用当前草案）——恢复路径
+                # 显式重算，而不是靠“上限只升不降”的旧值兜底。
                 price = getattr(provider, "price", None)
                 max_completion = int(getattr(provider, "max_completion_tokens", 512) or 512)
                 if price is not None:
-                    est_prompt_tokens = 6_000
-                    per_call_microusd = (
-                        est_prompt_tokens * price.input_microusd_per_mtok
-                        + max_completion * price.output_microusd_per_mtok
-                        + 999_999
-                    ) // 1_000_000
-                    limits = rt.BudgetLimits(
-                        max_calls=limits.max_calls,
-                        max_reads=limits.max_reads,
-                        max_cost_microusd=max(
-                            limits.max_cost_microusd, per_call_microusd * limits.max_calls
-                        ),
-                        max_tokens=max(
-                            limits.max_tokens,
-                            (est_prompt_tokens + max_completion) * limits.max_calls,
-                        ),
-                    )
+                    scaled = _scaled_budget_for_prices(limits, price, max_completion)
+                    limits = rt.BudgetLimits(**scaled)
             harness = rt.Harness(
                 store=store,
                 registry=registry,
@@ -1589,7 +1632,13 @@ class Handler(SimpleHTTPRequestHandler):
                 return self._json({"error": mgr.runtime_error}, 503)
             return self._json(mgr.runtime.templates())
         if path == "/api/models":
-            return self._json({"default": "mock", "models": model_catalog(mgr.local_endpoint)})
+            query = parse_qs(urlparse(self.path).query)
+            template_key = (query.get("template") or [""])[0].strip()
+            return self._json({
+                "default": "mock",
+                "template": template_key or None,
+                "models": mgr.model_catalog_with_budget(template_key or None),
+            })
         if path == "/api/modules":
             if mgr.runtime is None:
                 return self._json({"error": mgr.runtime_error}, 503)
