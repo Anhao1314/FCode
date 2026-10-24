@@ -321,7 +321,12 @@ class Harness:
             "retryable": False,
             "intent_round": intent["round"],
         }
-        return self._commit(task, updated.advance("recovery_required"), "model_unknown", {"cause": error.code})
+        return self._commit(
+            task,
+            updated.advance("recovery_required"),
+            "model_unknown",
+            {"cause": error.code, "message": error.message},
+        )
 
     def gate(self, task: Task, step: dict[str, Any]) -> GateDecision:
         """Ask the host gate about one step. Never raises for a denial."""

@@ -7,6 +7,7 @@ import json
 import pathlib
 import sys
 import tempfile
+import time
 import unittest
 import urllib.error
 from unittest import mock
@@ -117,6 +118,14 @@ class KimiProviderTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "KIMI_TEMPERATURE"):
             load_kimi_settings(env=_env(KIMI_TEMPERATURE="hot"))
 
+    def test_min_call_interval_env_is_optional(self) -> None:
+        settings = load_kimi_settings(env=_env())
+        self.assertEqual(settings.min_call_interval_seconds, 0.0)
+        settings = load_kimi_settings(env=_env(KIMI_MIN_CALL_INTERVAL_SECONDS="22"))
+        self.assertEqual(settings.min_call_interval_seconds, 22.0)
+        with self.assertRaisesRegex(ValueError, "KIMI_MIN_CALL_INTERVAL"):
+            load_kimi_settings(env=_env(KIMI_MIN_CALL_INTERVAL_SECONDS="-1"))
+
     def test_request_cost_calibration_and_hmac_receipt(self) -> None:
         seen, fake = self._fake(
             {
@@ -226,6 +235,41 @@ class KimiProviderTests(unittest.TestCase):
             )
         self.assertEqual(seen["body"]["temperature"], 1)
         self.assertEqual(proposal.metadata["temperature"], 1)
+
+    def test_pacing_waits_full_interval_on_first_call(self) -> None:
+        # A fresh process conservatively assumes a sibling or resumed worker
+        # may have just hit the API (org RPM ceilings are shared).
+        _, fake = self._fake(
+            {"id": "kimi-pace-1", "choices": [{"message": {"content": PLAN_TEXT}}], "usage": {}}
+        )
+        provider = KimiProvider(
+            api_key="sk-kimi-test-not-real", price=_price(), min_call_interval_seconds=30
+        )
+        with mock.patch("flowagent.providers.kimi.time.sleep") as fake_sleep:
+            with mock.patch("flowagent.providers.kimi.urllib.request.urlopen", fake):
+                provider.propose(
+                    {"objective": "test", "round": 1, "intent": {"task_id": "t", "round": 1}}
+                )
+        self.assertEqual(fake_sleep.call_args_list[0], mock.call(30))
+
+    def test_pacing_waits_remainder_between_calls(self) -> None:
+        _, fake = self._fake(
+            {"id": "kimi-pace-2", "choices": [{"message": {"content": PLAN_TEXT}}], "usage": {}}
+        )
+        provider = KimiProvider(
+            api_key="sk-kimi-test-not-real", price=_price(), min_call_interval_seconds=30
+        )
+        with mock.patch("flowagent.providers.kimi.time.sleep") as fake_sleep:
+            with mock.patch("flowagent.providers.kimi.urllib.request.urlopen", fake):
+                provider.propose(
+                    {"objective": "test", "round": 1, "intent": {"task_id": "t", "round": 1}}
+                )
+                provider._last_call_at = time.monotonic()
+                provider.propose(
+                    {"objective": "test", "round": 2, "intent": {"task_id": "t", "round": 2}}
+                )
+        remainder = fake_sleep.call_args_list[1].args[0]
+        self.assertGreater(remainder, 29.0)
 
     def test_auth_failure_is_not_retried_or_fallback(self) -> None:
         calls = {"n": 0}

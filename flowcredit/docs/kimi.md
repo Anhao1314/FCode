@@ -31,6 +31,7 @@ mock fallback：超时可能是已计费的未知结果，静默重发会破坏�
 | `KIMI_TIMEOUT_SECONDS` | 否 | `180` |
 | `KIMI_MAX_COMPLETION_TOKENS` | 否 | `512` |
 | `KIMI_TEMPERATURE` | 否 | 不发送该字段（用服务端默认） |
+| `KIMI_MIN_CALL_INTERVAL_SECONDS` | 否 | `0`（不整形） |
 
 `KIMI_TEMPERATURE` 说明：Kimi K2/K3 系列对话模型当前只接受 `temperature=1`，
 请求体携带其他值会被 400 拒绝。因此 provider 默认**不发送**该字段；

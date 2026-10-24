@@ -37,6 +37,7 @@ __all__ = [
     "KIMI_TIMEOUT_ENV",
     "KIMI_MAX_COMPLETION_TOKENS_ENV",
     "KIMI_TEMPERATURE_ENV",
+    "KIMI_MIN_CALL_INTERVAL_ENV",
     "KimiPriceSnapshot",
     "KimiCalibration",
     "KimiSettings",
@@ -54,6 +55,7 @@ KIMI_PRICE_SOURCE_ENV = "KIMI_PRICE_SOURCE"
 KIMI_TIMEOUT_ENV = "KIMI_TIMEOUT_SECONDS"
 KIMI_MAX_COMPLETION_TOKENS_ENV = "KIMI_MAX_COMPLETION_TOKENS"
 KIMI_TEMPERATURE_ENV = "KIMI_TEMPERATURE"
+KIMI_MIN_CALL_INTERVAL_ENV = "KIMI_MIN_CALL_INTERVAL_SECONDS"
 
 _DEFAULT_BASE_URL = "https://api.moonshot.cn/v1"
 _DEFAULT_MODEL = "kimi-k3.1-pro"
@@ -199,6 +201,7 @@ class KimiSettings:
     max_completion_tokens: int = _DEFAULT_MAX_COMPLETION_TOKENS
     reasoning_effort: str = _DEFAULT_REASONING_EFFORT
     temperature: float | None = None
+    min_call_interval_seconds: float = 0.0
 
     def redacted(self) -> dict[str, Any]:
         return {
@@ -210,6 +213,7 @@ class KimiSettings:
             "maxCompletionTokens": self.max_completion_tokens,
             "reasoningEffort": self.reasoning_effort,
             "temperature": self.temperature,
+            "minCallIntervalSeconds": self.min_call_interval_seconds,
             "price": {
                 "inputMicrousdPerMtok": self.price.input_microusd_per_mtok,
                 "outputMicrousdPerMtok": self.price.output_microusd_per_mtok,
@@ -255,6 +259,7 @@ def load_kimi_settings(
     max_completion_tokens: int | None = None,
     reasoning_effort: str | None = None,
     temperature: float | None = None,
+    min_call_interval_seconds: float | None = None,
     input_price: int | None = None,
     output_price: int | None = None,
     price_as_of: str | None = None,
@@ -302,6 +307,14 @@ def load_kimi_settings(
     if resolved_temperature is None:
         resolved_temperature = _optional_float(source, KIMI_TEMPERATURE_ENV)
 
+    resolved_interval = min_call_interval_seconds
+    if resolved_interval is None:
+        resolved_interval = _optional_float(source, KIMI_MIN_CALL_INTERVAL_ENV)
+    if resolved_interval is None:
+        resolved_interval = 0.0
+    if resolved_interval < 0:
+        raise ValueError(f"{KIMI_MIN_CALL_INTERVAL_ENV} must be non-negative")
+
     resolved_model = model or source.get(KIMI_MODEL_ENV, "").strip() or _DEFAULT_MODEL
     resolved_base = (
         base_url or source.get(KIMI_BASE_URL_ENV, "").strip() or _DEFAULT_BASE_URL
@@ -327,6 +340,7 @@ def load_kimi_settings(
         max_completion_tokens=resolved_max,
         reasoning_effort=reasoning_effort or _DEFAULT_REASONING_EFFORT,
         temperature=resolved_temperature,
+        min_call_interval_seconds=resolved_interval,
     )
 
 
@@ -437,6 +451,7 @@ class KimiProvider:
         max_completion_tokens: int = _DEFAULT_MAX_COMPLETION_TOKENS,
         reasoning_effort: str = _DEFAULT_REASONING_EFFORT,
         temperature: float | None = None,
+        min_call_interval_seconds: float = 0.0,
         calibration_path: Path | None = None,
         issue_receipt: IssueReceipt | None = None,
         raw_sink: RawSink | None = None,
@@ -455,6 +470,10 @@ class KimiProvider:
         self.max_completion_tokens = max_completion_tokens
         self.reasoning_effort = reasoning_effort
         self.temperature = temperature
+        if min_call_interval_seconds < 0:
+            raise ValueError("min_call_interval_seconds must be non-negative")
+        self.min_call_interval_seconds = min_call_interval_seconds
+        self._last_call_at: float | None = None
         self.calibration = KimiCalibration.load(calibration_path)
         self.issue_receipt = issue_receipt
         self.raw_sink = raw_sink
@@ -478,6 +497,7 @@ class KimiProvider:
             max_completion_tokens=settings.max_completion_tokens,
             reasoning_effort=settings.reasoning_effort,
             temperature=settings.temperature,
+            min_call_interval_seconds=settings.min_call_interval_seconds,
             calibration_path=calibration_path,
             issue_receipt=issue_receipt,
             raw_sink=raw_sink,
@@ -495,12 +515,36 @@ class KimiProvider:
             ),
         )
 
+    def _pace(self) -> None:
+        """Space dispatches out to respect the host's org-level RPM ceiling.
+
+        This is transport rate shaping before the send, not a retry. A fresh
+        process conservatively assumes a sibling or resumed worker may have
+        just called, so its first dispatch waits a full interval.
+        """
+        if self.min_call_interval_seconds <= 0:
+            return
+        if self._last_call_at is None:
+            time.sleep(self.min_call_interval_seconds)
+            return
+        wait = self.min_call_interval_seconds - (time.monotonic() - self._last_call_at)
+        if wait > 0:
+            time.sleep(wait)
+
+    def _mark_call(self) -> None:
+        if self.min_call_interval_seconds > 0:
+            self._last_call_at = time.monotonic()
+
     def propose(self, context: dict[str, Any]) -> Proposal:
         system, user = render_prompt(context)
         chars = len(system) + len(user)
         reserved_prompt_tokens = self.calibration.estimate(system, user)
+        self._pace()
         started = time.monotonic()
-        content, usage, request_id = self.client.chat(system, user)
+        try:
+            content, usage, request_id = self.client.chat(system, user)
+        finally:
+            self._mark_call()
         latency_ms = int((time.monotonic() - started) * 1000)
 
         if self.raw_sink is not None:
