@@ -7,7 +7,7 @@
 <title>Fcode · flowcredit console</title>
 <link rel="icon" type="image/svg+xml" href="brand/favicon.svg">
 <link rel="stylesheet" href="app.css?v=59">
-<link rel="stylesheet" href="design.css?v=67">
+<link rel="stylesheet" href="design.css?v=68">
 </head>
 <body>
 <div class="shell app rail-hidden" id="app">
@@ -88,11 +88,13 @@
               <div class="tpl-menu approval-menu" id="approval-menu" hidden></div>
               <div class="tpl-menu" id="tpl-menu" hidden></div>
               <div class="tpl-menu model-menu" id="model-menu" hidden></div>
+              <div class="attach-panel" id="attach-panel" hidden></div>
               <textarea class="composer-ta" id="composer-ta" rows="1"
                 placeholder="给 agent 派一个任务：判断 2024 与 2025 两期合并毛利率是否可比…"></textarea>
               <div class="composer-bar">
-                <button class="c-icon" id="composer-open" title="新建委托">
-                  <span data-doodle="plus"></span>
+                <button class="c-icon" id="composer-open" title="资料 / 工具 / 预算" aria-expanded="false">
+                  <span class="plus-glyph" aria-hidden="true">+</span>
+                  <span class="close-glyph" aria-hidden="true">×</span>
                 </button>
                 <button class="c-btn" id="template-btn" title="选择任务模板（决定授权与预算）">
                   <span data-doodle="list-checks"></span>
@@ -330,6 +332,6 @@
 
 <script src="report.js?v=54"></script>
 <script src="icons-doodle.js?v=54"></script>
-<script src="app.js?v=68" type="module"></script>
+<script src="app.js?v=72" type="module"></script>
 </body>
 </html>

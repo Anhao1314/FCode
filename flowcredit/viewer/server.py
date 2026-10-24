@@ -175,6 +175,33 @@ class StopRequested(Exception):
     """Raised inside an observer callback when the operator stops the run."""
 
 
+class ScopedPlanner:
+    """A domain planner narrowed to the operator's document scope.
+
+    The runtime contract is unchanged: decompose() still returns a Plan and
+    advance() still delegates settlement to the domain. Only the initial todos
+    are filtered, so a scoped delegation never asks the model for documents it
+    is not allowed to read. The world is filtered to the same ids, which is what
+    enforces the scope for any provider that proposes outside the plan.
+    """
+
+    def __init__(self, runtime: Runtime, inner, scope: set[str]) -> None:
+        self.runtime = runtime
+        self.inner = inner
+        self.scope = scope
+
+    def decompose(self, goal: str):
+        plan = self.inner.decompose(goal)
+        todos = [
+            todo for todo in plan.todos
+            if not getattr(todo, "arguments", {}).get("doc_id") or todo.arguments["doc_id"] in self.scope
+        ]
+        return self.runtime.Plan(goal=plan.goal, todos=todos, revision=plan.revision)
+
+    def advance(self, plan, observation):
+        return self.inner.advance(plan, observation)
+
+
 # --------------------------------------------------------------------- runtime
 
 
@@ -258,6 +285,24 @@ class Runtime:
         world = module.create_world()
         registry = self.ToolRegistry(module.build_tools(world))
         return [registry.get(tool["name"]).contract() for tool in registry.catalog()]
+
+    def corpus(self, template_key: str | None = None) -> list[dict]:
+        """The document corpus a template will run against (operator-facing)."""
+        module = self.get_domain(DOMAIN_KEY)
+        partial = False
+        if template_key:
+            partial = self.get_scenario(template_key).partial_corpus
+        world = module.create_world(partial=partial)
+        return world.list_documents()["documents"]
+
+    def template_tools(self, template_key: str) -> list[dict]:
+        """This template's closed tool registry, in registration order."""
+        scenario = self.get_scenario(template_key)
+        module = self.get_domain(DOMAIN_KEY)
+        world = module.create_world(partial=scenario.partial_corpus)
+        registry = self.ToolRegistry(module.build_tools(world))
+        allowed = set(scenario.allowed_tools)
+        return [registry.get(name).contract() for name in registry.names if name in allowed]
 
     def modules(self) -> list[dict]:
         """The domain modules this runtime can host, for the console."""
@@ -422,6 +467,43 @@ class RunManager:
         if effort not in (None, "", *EFFORT_LEVELS):
             raise ValueError("思考强度必须是 low、medium 或 high")
         return model_key, effort or "medium"
+
+    def validate_delegation_spec(self, spec: dict | None, scenario) -> dict | None:
+        """Validate operator delegation overrides before a run exists.
+
+        ``scope`` limits which corpus documents this run may read; ``budget`` is
+        the operator-adjusted ceiling (calls / reads / cost). Both are facts in
+        the task binding, consumed by the run thread — not decorative UI state.
+        """
+        if spec is None:
+            return None
+        if not isinstance(spec, dict):
+            raise ValueError("spec must be an object")
+        scope = spec.get("scope")
+        if scope is not None:
+            if not isinstance(scope, list) or not all(isinstance(item, str) for item in scope):
+                raise ValueError("scope must be a list of document ids")
+            if not scope:
+                raise ValueError("scope cannot be empty; omit it to use the full corpus")
+            if len(set(scope)) != len(scope):
+                raise ValueError("scope cannot contain duplicate documents")
+            known = {doc["id"] for doc in self.runtime.corpus(scenario.key)}
+            unknown = [doc for doc in scope if doc not in known]
+            if unknown:
+                raise ValueError(f"scope contains unknown documents: {', '.join(unknown)}")
+        budget = spec.get("budget")
+        if budget is not None:
+            if not isinstance(budget, dict):
+                raise ValueError("budget must be an object")
+            required = ("maxCalls", "maxReads", "maxCostMicrousd")
+            missing = [name for name in required if name not in budget]
+            if missing:
+                raise ValueError(f"budget is missing {', '.join(missing)}")
+            for name in required:
+                value = budget[name]
+                if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+                    raise ValueError(f"budget.{name} must be a positive integer")
+        return spec
 
     def model_catalog_with_budget(self, template_key: str | None) -> list[dict]:
         """模型清单 + 该模板下各自真实生效的预算顶（草稿预览的单一事实源）。"""
@@ -773,6 +855,15 @@ class RunManager:
             store = rt.TaskStore(db)
             module = rt.get_domain(DOMAIN_KEY)
             world = module.create_world(partial=scenario.partial_corpus)
+            # 委托 scope：world 与计划同宽。列表、读取和派生工具都只能看到
+            # 所选文档；缺资料导致的阻塞由域工具如实报告，不静默放宽。
+            scope = list(((run.spec or {}).get("scope") or []))
+            if scope:
+                selected = set(scope)
+                unknown = selected - set(world.documents)
+                if unknown:
+                    raise ValueError(f"scope contains unknown documents: {', '.join(sorted(unknown))}")
+                world.documents = {doc_id: world.documents[doc_id] for doc_id in selected}
             registry = rt.ToolRegistry(module.build_tools(
                 world, cases=self.case_index, facts=self.fact_store,
             ))
@@ -780,6 +871,16 @@ class RunManager:
             issued: dict[str, str] = {}
 
             limits = scenario.limits
+            budget_override = (run.spec or {}).get("budget") if not resume_limits else None
+            if budget_override:
+                # 操作者微调后的治理顶：创建时生效，随任务 binding 入链。
+                # 上调是显式放宽（UI 提示），下调立即收紧；实际计费仍以收据为准。
+                limits = rt.BudgetLimits(
+                    max_calls=int(budget_override["maxCalls"]),
+                    max_reads=int(budget_override["maxReads"]),
+                    max_cost_microusd=int(budget_override["maxCostMicrousd"]),
+                    max_tokens=scenario.limits.max_tokens,
+                )
             if resume_limits:
                 limits = rt.BudgetLimits(
                     max_calls=int(resume_limits["maxCalls"]),
@@ -861,9 +962,13 @@ class RunManager:
             )
             watcher.start()
 
+            planner = (
+                ScopedPlanner(rt, module.make_planner(), set(scope))
+                if scope else module.make_planner()
+            )
             loop = rt.Loop(
                 harness,
-                planner=module.make_planner(),
+                planner=planner,
                 max_rounds=max_rounds,
                 observer=observer,
                 control=control,
@@ -891,7 +996,7 @@ class RunManager:
                     task = harness.reconcile(task, issued.get("ref", ""))
                     task = rt.Loop(
                         harness,
-                        planner=module.make_planner(),
+                        planner=planner,
                         max_rounds=max_rounds,
                         observer=observer,
                         control=control,
@@ -1639,6 +1744,25 @@ class Handler(SimpleHTTPRequestHandler):
                 "template": template_key or None,
                 "models": mgr.model_catalog_with_budget(template_key or None),
             })
+        if path == "/api/corpus":
+            if mgr.runtime is None:
+                return self._json({"error": mgr.runtime_error}, 503)
+            query = parse_qs(urlparse(self.path).query)
+            template_key = (query.get("template") or [""])[0].strip()
+            try:
+                documents = mgr.runtime.corpus(template_key or None)
+            except Exception:  # noqa: BLE001 — unknown template is a 400, not a crash
+                return self._json({"error": "unknown template"}, 400)
+            return self._json({"documents": documents, "default": "full"})
+        if path.startswith("/api/templates/") and path.endswith("/tools"):
+            if mgr.runtime is None:
+                return self._json({"error": mgr.runtime_error}, 503)
+            template_key = path[len("/api/templates/") : -len("/tools")]
+            try:
+                tools = mgr.runtime.template_tools(template_key)
+            except Exception:  # noqa: BLE001
+                return self._json({"error": f"unknown template {template_key!r}"}, 400)
+            return self._json({"template": template_key, "tools": tools})
         if path == "/api/modules":
             if mgr.runtime is None:
                 return self._json({"error": mgr.runtime_error}, 503)
@@ -1829,6 +1953,10 @@ class Handler(SimpleHTTPRequestHandler):
                     return self._json({"error": "spec must be an object"}, 400)
                 if len(json.dumps(spec, ensure_ascii=False).encode("utf-8")) > 4096:
                     return self._json({"error": "spec is too large"}, 400)
+                try:
+                    mgr.validate_delegation_spec(spec, scenario)
+                except ValueError as exc:
+                    return self._json({"error": str(exc)}, 400)
             model_field = body.get("model")
             effort_field = body.get("effort")
             try:

@@ -199,6 +199,16 @@ modelChoice = {
 /* 草稿预览的预算联动：/api/models?template= 返回各模型在该模板下真实生效的
    预算顶（服务端是缩放的单一事实源），按模板缓存，选择器变更即失效。 */
 let modelBudget = { template: "", models: null };
+/* “+”附加面板：资料选择 / 工具注册表 / 预算微调。
+   三项都是真实委托输入：scope 与 budget 随 spec 提交并被 run 线程消费。 */
+const attach = {
+  open: false,
+  corpus: [],
+  tools: [],
+  loadedTemplate: "",
+  scope: new Set(),
+  budget: null,          // null = 未改，用当前模型/模板的服务端草案
+};
 let scenesOpen = localStorage.getItem("fa.scenesOpen"); // null | "1" | "0"
 
 /* 多会话：每个 run 一个会话对象；后台会话保持 SSE 流，只是不渲染 */
@@ -3004,20 +3014,34 @@ function intakeDraftHtml() {
   const approval = intake.spec.approval ? approvalTitle(intake.spec.approval) : "待选择";
   const entry = (modelBudget.models || []).find(m => m.key === modelChoice.key);
   const scaled = entry && entry.budget ? entry.budget : null;
+  const operatorTuned = !!attach.budget;
+  const shown = operatorTuned
+    ? {
+        max_calls: attach.budget.maxCalls,
+        max_reads: attach.budget.maxReads,
+        max_cost_microusd: attach.budget.maxCostMicrousd,
+      }
+    : (scaled || limits);
   const rescaled = scaled && (scaled.max_cost_microusd !== limits.max_cost_microusd
     || scaled.max_tokens !== limits.max_tokens);
   const budget = limits.max_calls
-    ? `${num(scaled ? scaled.max_calls : limits.max_calls)} calls · ${num(scaled ? scaled.max_reads : limits.max_reads)} reads · ${num(scaled ? scaled.max_cost_microusd : limits.max_cost_microusd)} µUSD`
+    ? `${num(shown.max_calls ?? limits.max_calls)} calls · ${num(shown.max_reads ?? limits.max_reads)} reads · ${num(shown.max_cost_microusd ?? limits.max_cost_microusd)} µUSD`
     : "—";
-  const scaleNote = rescaled && entry
-    ? `<span class="intake-scale-note">已按 ${esc(entry.model)} 价格重算成本顶（上限而非目标）</span>`
+  const scopeNote = attach.scope.size && attach.scope.size !== attach.corpus.length
+    ? `<span class="intake-scale-note">读取范围限定 ${attach.scope.size} 份资料</span>`
     : "";
+  const scaleNote = operatorTuned
+    ? `<span class="intake-scale-note">操作者已微调治理上限</span>`
+    : (rescaled && entry
+      ? `<span class="intake-scale-note">已按 ${esc(entry.model)} 价格重算成本顶（上限而非目标）</span>`
+      : "");
   const ready = !!intake.readyTask;
   return `<div class="intake-draft">
     <div class="intake-draft-head"><span>任务草稿</span><span class="intake-draft-tag">内置合成资料 · 恒星智算</span></div>
     <div class="intake-row"><span>问题</span><b>${esc(intent)}</b></div>
     <div class="intake-row"><span>输出</span><b>${esc(output)}</b></div>
     <div class="intake-row"><span>审批</span><b>${esc(approval)}</b></div>
+    <div class="intake-row"><span>资料</span><b>${attach.scope.size && attach.scope.size !== attach.corpus.length ? `限定 ${attach.scope.size} 份` : "全语料"}</b>${scopeNote}</div>
     <div class="intake-row"><span>预算</span><b>${esc(budget)}</b>${scaleNote}</div>
     <div class="intake-actions">
       <button class="a-btn" data-intake-cancel>取消</button>
@@ -3106,6 +3130,8 @@ function startIntake(text = "") {
     return;
   }
   if (settingsOpen) closeSettingsPage(false);
+  attach.open = false;
+  renderAttachPanel();
   intake.active = true;
   intake.messages = [];
   intake.spec = {};
@@ -3245,7 +3271,7 @@ async function startIntakeRun() {
         objective: task.objective,
         template: task.template,
         approval: task.approval,
-        spec: task.spec,
+        spec: { ...task.spec, ...delegationSpecExtras() },
         ...(modelChoice.key !== "mock"
           ? { model: modelChoice.key, effort: modelChoice.effort || "medium" }
           : {}),
@@ -3257,6 +3283,9 @@ async function startIntakeRun() {
     }
     const run = await response.json();
     intakeSavePrefs(task.spec);
+    attach.scope.clear();
+    attach.budget = null;
+    renderAttachPanel();
     intake.active = false;
     document.getElementById("app").classList.remove("intake-mode");
     setComposerRunning(false);
@@ -3553,6 +3582,7 @@ function setTemplate(key) {
   const ta = document.getElementById("composer-ta");
   if (template && ta && !ta.value) ta.placeholder = template.objective;
   renderTemplateMenu();
+  refreshAttachData();
 }
 
 function approvalTitle(mode = approvalMode) {
@@ -3635,6 +3665,144 @@ function paintModelBadge() {
     ? "offline-mock"
     : `${entry.model}${entry.supportsEffort ? " · " + (EFFORT_LABEL[modelChoice.effort] || "中") : ""}`;
   btn.title = "选择模型与思考强度";
+}
+
+
+/* ---------- “+”附加面板：真实委托输入，非装饰入口 ---------- */
+
+function effectiveDraftBudget() {
+  const template = templates.find(t => t.key === tplKey) || {};
+  const entry = (modelBudget.models || []).find(m => m.key === modelChoice.key);
+  return (entry && entry.budget) || template.limits || {};
+}
+
+function renderAttachPanel() {
+  const panel = document.getElementById("attach-panel");
+  if (!panel) return;
+  panel.hidden = !attach.open;
+  const btn = document.getElementById("composer-open");
+  if (btn) {
+    btn.classList.toggle("open", attach.open);
+    btn.setAttribute("aria-expanded", attach.open ? "true" : "false");
+    btn.title = attach.open ? "收起附加面板" : "资料 / 工具 / 预算";
+  }
+  if (!attach.open) return;
+
+  const limits = effectiveDraftBudget();
+  const budget = attach.budget || {
+    maxCalls: limits.max_calls || 0,
+    maxReads: limits.max_reads || 0,
+    maxCostMicrousd: limits.max_cost_microusd || 0,
+  };
+  const raised = attach.budget && (
+    budget.maxCalls > (limits.max_calls || 0)
+    || budget.maxReads > (limits.max_reads || 0)
+    || budget.maxCostMicrousd > (limits.max_cost_microusd || 0)
+  );
+  const docs = attach.corpus.map(doc => `
+    <label class="attach-doc${attach.scope.has(doc.id) ? " checked" : ""}">
+      <input type="checkbox" data-attach-doc="${esc(doc.id)}"${attach.scope.has(doc.id) ? " checked" : ""}>
+      <span class="doc-name">${esc(doc.title)}</span>
+      <span class="doc-kind">${esc(doc.kind)}</span>
+      <span class="doc-period">${esc(doc.period)}</span>
+    </label>`).join("");
+  const tools = attach.tools.map(tool => {
+    const required = Object.entries(tool.parameters || {})
+      .filter(([, schema]) => schema && schema.required)
+      .map(([name]) => name)
+      .join(", ");
+    return `<div class="attach-tool">
+      <div class="tool-line"><span class="name">${esc(tool.name)}</span><span class="effect">${esc(tool.effect)}</span></div>
+      <div class="summary">${esc(tool.summary)}</div>
+      ${required ? `<div class="params">必填：${esc(required)}</div>` : '<div class="params">无必填参数</div>'}
+    </div>`;
+  }).join("");
+  panel.innerHTML = `
+    <div class="attach-caption">委托附加面</div>
+    <section class="attach-group">
+      <header><span>资料选择</span><span class="attach-note">不选 = 全语料（默认）</span></header>
+      <div class="attach-docs">${docs || '<div class="attach-empty">正在读取语料库…</div>'}</div>
+      ${attach.scope.size ? `<div class="attach-selected">已限定 ${attach.scope.size} 份：任务创建后读取范围真实受限</div>` : ""}
+    </section>
+    <section class="attach-group">
+      <header><span>工具注册表</span><span class="attach-note">${attach.tools.length} 个已注册工具</span></header>
+      <div class="attach-tools">${tools || '<div class="attach-empty">正在读取注册表…</div>'}</div>
+      <div class="attach-rule">工具由主机注册；任何调用须经门控与预算</div>
+    </section>
+    <section class="attach-group">
+      <header><span>预算微调</span><span class="attach-note">默认 = 所选模型价格重算后的上限</span></header>
+      <div class="attach-budget">
+        <label>calls <input type="number" min="1" inputmode="numeric" data-attach-budget="maxCalls" value="${Number(budget.maxCalls)}"></label>
+        <label>reads <input type="number" min="1" inputmode="numeric" data-attach-budget="maxReads" value="${Number(budget.maxReads)}"></label>
+        <label>µUSD <input type="number" min="1" inputmode="numeric" data-attach-budget="maxCostMicrousd" value="${Number(budget.maxCostMicrousd)}"></label>
+      </div>
+      <div class="attach-warning${raised ? " on" : ""}">${raised ? "上调将放宽治理上限；实际计费仍以收据为准" : "下调立即收紧；实际计费仍以收据为准"}</div>
+    </section>
+  `;
+}
+
+async function refreshAttachData() {
+  if (!health || !health.live || !tplKey) return;
+  const key = tplKey;
+  const jobs = [];
+  if (modelBudget.template !== key || !modelBudget.models) {
+    jobs.push(fetch(`/api/models?template=${encodeURIComponent(key)}`, { cache: "no-store" })
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (data && Array.isArray(data.models) && tplKey === key) {
+          modelBudget = { template: key, models: data.models };
+        }
+      }).catch(() => {}));
+  }
+  if (attach.loadedTemplate !== key || !attach.corpus.length || !attach.tools.length) {
+    jobs.push(Promise.all([
+      fetch(`/api/corpus?template=${encodeURIComponent(key)}`, { cache: "no-store" }).then(r => r.ok ? r.json() : null).catch(() => null),
+      fetch(`/api/templates/${encodeURIComponent(key)}/tools`, { cache: "no-store" }).then(r => r.ok ? r.json() : null).catch(() => null),
+    ]).then(([corpus, tools]) => {
+      if (tplKey !== key) return;
+      attach.corpus = corpus && Array.isArray(corpus.documents) ? corpus.documents : [];
+      attach.tools = tools && Array.isArray(tools.tools) ? tools.tools : [];
+      const ids = new Set(attach.corpus.map(doc => doc.id));
+      attach.scope = new Set([...attach.scope].filter(id => ids.has(id)));
+      attach.loadedTemplate = key;
+    }));
+  }
+  await Promise.all(jobs);
+  renderAttachPanel();
+  if (intake.active) renderIntake();
+}
+
+function readAttachBudgetInputs() {
+  const values = {};
+  document.querySelectorAll("[data-attach-budget]").forEach(input => {
+    values[input.dataset.attachBudget] = Number(input.value);
+  });
+  if (!values.maxCalls || !values.maxReads || !values.maxCostMicrousd) return;
+  attach.budget = {
+    maxCalls: values.maxCalls,
+    maxReads: values.maxReads,
+    maxCostMicrousd: values.maxCostMicrousd,
+  };
+  const raised = attach.budget.maxCalls > effectiveDraftBudget().max_calls
+    || attach.budget.maxReads > effectiveDraftBudget().max_reads
+    || attach.budget.maxCostMicrousd > effectiveDraftBudget().max_cost_microusd;
+  const warning = document.querySelector(".attach-warning");
+  if (warning) {
+    warning.classList.toggle("on", raised);
+    warning.textContent = raised
+      ? "上调将放宽治理上限；实际计费仍以收据为准"
+      : "下调立即收紧；实际计费仍以收据为准";
+  }
+}
+
+function delegationSpecExtras() {
+  const spec = {};
+  const allIds = new Set(attach.corpus.map(doc => doc.id));
+  if (attach.scope.size && attach.scope.size !== allIds.size) {
+    spec.scope = [...attach.scope];
+  }
+  if (attach.budget) spec.budget = { ...attach.budget };
+  return spec;
 }
 
 function renderModelMenu() {
@@ -4758,6 +4926,32 @@ function bind() {
     modelMenu.hidden = true;
     apvMenu.hidden = !apvMenu.hidden;
   });
+  const plusBtn = document.getElementById("composer-open");
+  const attachPanel = document.getElementById("attach-panel");
+  plusBtn.addEventListener("click", event => {
+    event.stopPropagation();
+    tplMenu.hidden = true;
+    apvMenu.hidden = true;
+    modelMenu.hidden = true;
+    attach.open = !attach.open;
+    renderAttachPanel();
+    if (attach.open) refreshAttachData();
+  });
+  attachPanel.addEventListener("click", event => {
+    const doc = event.target.closest("[data-attach-doc]");
+    if (doc) {
+      event.stopPropagation(); // 重渲会移走原节点；先止泡，避免 document 误判为外部点击
+      if (doc.checked) attach.scope.add(doc.dataset.attachDoc);
+      else attach.scope.delete(doc.dataset.attachDoc);
+      renderAttachPanel();
+      if (intake.active) renderIntake();
+      return;
+    }
+    event.stopPropagation(); // 面板内部点击不关闭
+  });
+  attachPanel.addEventListener("input", event => {
+    if (event.target.closest("[data-attach-budget]")) readAttachBudgetInputs();
+  });
   modelBtn.addEventListener("click", event => {
     event.stopPropagation();
     if (modelBtn.classList.contains("readonly")) {
@@ -4775,6 +4969,7 @@ function bind() {
       modelChoice.key = pick.dataset.modelPick;
       saveModelChoice();
       modelBudget.models = null;
+      attach.budget = null;
       renderModelMenu();
       paintModelBadge();
       modelMenu.hidden = true;
@@ -4786,6 +4981,7 @@ function bind() {
       modelChoice.effort = effort.dataset.effortPick;
       saveModelChoice();
       modelBudget.models = null;
+      attach.budget = null;
       renderModelMenu();
       paintModelBadge();
     }
@@ -4794,12 +4990,16 @@ function bind() {
     if (!tplMenu.hidden && !tplBtn.contains(event.target) && !tplMenu.contains(event.target)) tplMenu.hidden = true;
     if (!apvMenu.hidden && !apvBtn.contains(event.target) && !apvMenu.contains(event.target)) apvMenu.hidden = true;
     if (!modelMenu.hidden && !modelBtn.contains(event.target) && !modelMenu.contains(event.target)) modelMenu.hidden = true;
+    if (attach.open && !plusBtn.contains(event.target) && !attachPanel.contains(event.target)) {
+      attach.open = false;
+      renderAttachPanel();
+    }
     const slashMenu = document.getElementById("slash-menu");
     const composerBox = document.getElementById("composer-box");
     if (slashMenu && !slashMenu.hidden && composerBox && !composerBox.contains(event.target)) slashMenu.hidden = true;
     if (!event.target.closest(".run-row")) closeRowMenus();
 
-    if (event.target.closest("#new-run") || event.target.closest("#composer-open")) {
+    if (event.target.closest("#new-run")) {
       // 对齐 kimi 语法：新建委托先回居中舞台，首条消息提交后才进入需求确认。
       const hasRuns = runHistory.length > 0;
       if (settingsOpen) closeSettingsPage(false);
@@ -5215,6 +5415,7 @@ function bind() {
       if (approval && !approval.hidden) { approval.hidden = true; return; }
       const modelMenu = document.getElementById("model-menu");
       if (modelMenu && !modelMenu.hidden) { modelMenu.hidden = true; return; }
+      if (attach.open) { attach.open = false; renderAttachPanel(); return; }
       if (settingsOpen) { closeSettingsPage(true); return; }
       if (!typing && innerWidth <= 1100 && railOpen) {
         railOpen = false;

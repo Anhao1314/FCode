@@ -609,6 +609,71 @@ details.raw pre {
 .rf-error { margin-top: 8px; color: var(--bad); font-size: 11px; }
 .approval-menu { width: min(400px, calc(100% - 20px)); }
 
+/* “+”附加面板：caption 在上、三组列表在下；全部是真实委托输入 */
+.attach-panel {
+  position: absolute; left: 10px; bottom: calc(100% + 8px); z-index: 40;
+  width: min(560px, calc(100vw - 48px)); max-height: min(68vh, 620px);
+  overflow-y: auto; overscroll-behavior: contain;
+  background: var(--raised); border: 1px solid var(--line-strong); border-radius: 10px;
+  box-shadow: 0 18px 44px rgba(0, 0, 0, .16); padding: 8px;
+  animation: attachIn 150ms var(--ease);
+}
+.attach-panel[hidden] { display: none; }
+@keyframes attachIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+.attach-caption {
+  padding: 7px 10px 8px; color: var(--text-3);
+  font: 600 10px var(--font-mono); letter-spacing: .1em; text-transform: uppercase;
+}
+.attach-group { margin: 0 0 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); overflow: hidden; }
+.attach-group header {
+  display: flex; align-items: baseline; gap: 8px; padding: 8px 10px;
+  border-bottom: 1px solid var(--line); color: var(--text-1); font-size: var(--fs-2); font-weight: 600;
+}
+.attach-note { margin-left: auto; color: var(--text-3); font-size: 10.5px; font-weight: 400; }
+.attach-docs { display: grid; gap: 2px; padding: 6px; max-height: 180px; overflow-y: auto; }
+.attach-doc {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; gap: 8px;
+  padding: 6px 7px; border-radius: 6px; cursor: pointer; color: var(--text-2);
+}
+.attach-doc:hover { background: var(--active); }
+.attach-doc.checked { background: var(--accent-soft); color: var(--text-1); }
+.attach-doc input { accent-color: var(--text-1); margin: 0; }
+.attach-doc .doc-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-2); }
+.attach-doc .doc-kind, .attach-doc .doc-period {
+  font: 10px var(--font-mono); color: var(--text-3); border: 1px solid var(--line); border-radius: 999px; padding: 1px 6px;
+}
+.attach-selected { padding: 6px 10px 8px; color: var(--warn); font-size: 10.5px; border-top: 1px solid var(--line); }
+.attach-tools { display: grid; gap: 4px; padding: 6px; max-height: 210px; overflow-y: auto; }
+.attach-tool { padding: 6px 7px; border-radius: 6px; background: var(--raised); }
+.attach-tool .tool-line { display: flex; align-items: baseline; gap: 8px; }
+.attach-tool .name { font-family: var(--font-mono); font-size: var(--fs-2); color: var(--text-1); }
+.attach-tool .effect { margin-left: auto; font: 10px var(--font-mono); color: var(--text-3); }
+.attach-tool .summary { margin-top: 2px; color: var(--text-2); font-size: 11px; line-height: 1.5; }
+.attach-tool .params { margin-top: 2px; color: var(--text-3); font: 10px var(--font-mono); }
+.attach-rule { padding: 7px 10px 8px; border-top: 1px solid var(--line); color: var(--text-3); font-size: 10.5px; }
+.attach-budget { display: flex; gap: 10px; padding: 9px 10px 4px; flex-wrap: wrap; }
+.attach-budget label {
+  display: grid; gap: 4px; color: var(--text-3); font: 10.5px var(--font-mono); flex: 1; min-width: 96px;
+}
+.attach-budget input {
+  width: 100%; border: 1px solid var(--line); border-radius: 6px; background: var(--canvas);
+  color: var(--text-1); font: var(--fs-2) var(--font-mono); padding: 5px 7px; outline: none;
+  font-variant-numeric: tabular-nums;
+}
+.attach-budget input:focus { border-color: var(--accent-line); }
+.attach-warning { padding: 6px 10px 9px; color: var(--text-3); font-size: 10.5px; }
+.attach-warning.on { color: var(--warn); }
+.attach-empty { padding: 10px; color: var(--text-3); font-size: var(--fs-2); }
+/* “+” 开合形态 */
+#composer-open .plus-glyph, #composer-open .close-glyph { font-size: 20px; line-height: 1; }
+#composer-open .close-glyph { display: none; }
+#composer-open.open .plus-glyph { display: none; }
+#composer-open.open .close-glyph { display: block; }
+@media (max-width: 900px) {
+  .attach-panel { left: 0; right: 0; width: auto; }
+}
+@media (prefers-reduced-motion: reduce) { .attach-panel { animation: none; } }
+
 /* 模型选择器菜单：锚在 composer 右侧徽章上方 */
 .model-menu { left: auto; right: 10px; width: min(360px, calc(100% - 20px)); }
 .model-item .check { color: var(--ok); font-size: 11px; margin-left: 6px; }
