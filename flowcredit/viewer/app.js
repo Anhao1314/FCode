@@ -5335,6 +5335,11 @@ function bind() {
       renderRuns();
       return;
     }
+    if (!document.getElementById("foot-menu").hidden
+        && !event.target.closest("#user-btn") && !event.target.closest("#foot-menu")) {
+      document.getElementById("foot-menu").hidden = true;
+      document.getElementById("user-btn")?.setAttribute("aria-expanded", "false");
+    }
     if (event.target.closest("#nav-reviews")) { renderMode("reviews"); return; }
     if (event.target.closest("#nav-scheduled")) { renderMode("scheduled"); return; }
     if (event.target.closest("#new-run")) {
@@ -5364,7 +5369,7 @@ function bind() {
     if (event.target.closest("#report-print")) { printReport(); return; }
     if (event.target.closest("#report-download")) { downloadReport(); return; }
     if (event.target.closest("#palette-btn")) { openPalette(); return; }
-    if (event.target.closest("#settings-btn")) { toggleSettingsPage(); return; }
+    if (event.target.closest("#settings-btn") || event.target.closest("#foot-settings")) { toggleSettingsPage(); return; }
     if (event.target.closest("#settings-mobile")) { renderMode("settings"); return; }
   });
   document.getElementById("run-search").addEventListener("input", event => {
@@ -5688,6 +5693,24 @@ function bind() {
   setChromeState({ rail: railOpen });
   document.getElementById("sidebar-toggle").addEventListener("click", () => {
     setChromeState({ sidebar: !app.classList.contains("side-collapsed") });
+  });
+  const userBtn = document.getElementById("user-btn");
+  const footMenu = document.getElementById("foot-menu");
+  userBtn.addEventListener("click", event => {
+    event.stopPropagation();
+    const open = footMenu.hidden;
+    footMenu.hidden = !open;
+    userBtn.setAttribute("aria-expanded", open ? "true" : "false");
+  });
+  footMenu.addEventListener("click", event => event.stopPropagation());
+  document.getElementById("foot-settings").addEventListener("click", () => {
+    footMenu.hidden = true;
+    userBtn.setAttribute("aria-expanded", "false");
+    toggleSettingsPage();
+  });
+  document.getElementById("foot-github").addEventListener("click", () => {
+    window.open("https://github.com/Anhao1314/FCode", "_blank", "noopener");
+    footMenu.hidden = true;
   });
   document.getElementById("rail-toggle").addEventListener("click", () => {
     setChromeState({ rail: !railOpen });

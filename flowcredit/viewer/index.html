@@ -56,11 +56,20 @@
     </div>
 
     <div class="side-foot">
-      <span class="fdot" id="foot-dot"></span>
-      <span class="foot-text" id="foot-text">offline-mock · 只读回放</span>
-      <button class="side-gear" id="settings-btn" type="button" title="设置 (⌘,)" aria-label="设置">
-        <span data-doodle="gear"></span>
+      <button class="side-user" id="user-btn" type="button" aria-expanded="false" aria-haspopup="menu">
+        <span class="fdot" id="foot-dot"></span>
+        <span class="foot-text" id="foot-text">offline-mock · 只读回放</span>
+        <span class="side-gear" aria-hidden="true"><span data-doodle="chevron-up"></span></span>
       </button>
+      <div class="foot-menu" id="foot-menu" role="menu" hidden>
+        <button class="foot-item" id="foot-settings" role="menuitem">
+          <span data-doodle="gear"></span><span>设置</span>
+        </button>
+        <button class="foot-item" id="foot-github" role="menuitem">
+          <span data-doodle="code"></span><span>在 GitHub 查看</span>
+        </button>
+        <div class="foot-meta">FCode · 本机运行 · 数据不出设备</div>
+      </div>
     </div>
 
   </aside>

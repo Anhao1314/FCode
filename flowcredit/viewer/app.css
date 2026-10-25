@@ -166,9 +166,45 @@ body { margin: 0; }
 .side-head { display: flex; align-items: center; gap: 8px; padding: 4px 6px 12px; }
 .side-list { flex: 1; min-height: 0; overflow-y: auto; padding: 0 2px; }
 .side-foot {
-  display: flex; align-items: center; gap: 7px;
-  border-top: 1px solid var(--line); margin-top: 8px; padding: 10px 10px 2px;
+  position: relative; display: flex; align-items: center; gap: 7px;
+  border-top: 1px solid var(--line); margin-top: 8px; padding: 6px 6px 2px;
 }
+.side-user {
+  display: flex; align-items: center; gap: 7px; width: 100%;
+  padding: 6px 8px; border: 0; border-radius: 10px;
+  background: none; color: var(--text-2); font-size: var(--fs-2);
+  cursor: pointer; text-align: left;
+  transition: background-color var(--t) ease;
+}
+.side-user:hover { background: var(--active); }
+.side-user[aria-expanded="true"] { background: var(--active); }
+.side-user .side-gear { display: grid; place-items: center; margin-left: auto;
+  width: 22px; height: 22px; color: var(--text-3); }
+.foot-menu {
+  position: absolute; left: 8px; right: 8px; bottom: calc(100% + 8px); z-index: 130;
+  background: var(--raised); border: 1px solid var(--line-strong); border-radius: 12px;
+  box-shadow: 0 8px 28px rgba(0,0,0,.12); padding: 6px;
+  transform-origin: bottom left;
+  animation: footIn 150ms var(--ease);
+}
+@keyframes footIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.foot-item {
+  display: flex; align-items: center; gap: 9px; width: 100%;
+  padding: 8px 10px; border: 0; border-radius: 8px;
+  background: none; color: var(--text-1); font-size: var(--fs-3);
+  cursor: pointer; text-align: left;
+  transition: background-color var(--t) ease;
+}
+.foot-item:hover { background: var(--active); }
+.foot-item svg, .foot-item .d-icon { color: var(--text-3); }
+.foot-meta {
+  padding: 8px 10px 4px; border-top: 1px solid var(--line); margin-top: 4px;
+  font-size: 10.5px; color: var(--text-3);
+}
+/* 折叠态：foot 收成图标，弹窗改从左侧浮出 */
+.app.side-collapsed .side-user { justify-content: center; padding: 6px 4px; }
+.app.side-collapsed .side-user .foot-text { display: none; }
+.app.side-collapsed .foot-menu { left: calc(100% + 10px); bottom: 0; right: auto; width: 224px; }
 /* 图标 rail 只保留可辨识的操作；文字标签在 CSS 层隐藏，DOM 功能不删。 */
 .app.side-collapsed .sidebar .side-brand,
 .app.side-collapsed .sidebar .brand-mark,
