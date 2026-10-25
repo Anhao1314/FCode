@@ -173,6 +173,30 @@ body {
 .side-fold:hover { background: #F5F5F5; color: var(--text-1); border-color: transparent; }
 .side-fold svg { transition: transform .2s var(--ease); }
 
+/* ================================================================ 主功能切换
+   对齐 Kimi 桌面端：侧栏顶部 [工作 | 对话] 分段开关，切换整个侧栏内容；
+   主区 wordmark 随模式挂 WORK 徽章（黑底白字，KIMI WORK 同款）。 */
+.mode-switch { display: flex; gap: 4px; margin: 0 0 10px; }
+.mode-opt {
+  flex: 1; height: 32px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  border: 0.5px solid transparent; border-radius: 10px; background: transparent;
+  color: var(--text-3); font-size: 13px; cursor: pointer;
+  transition: background-color .15s, color .15s, border-color .15s;
+}
+.mode-opt .s-icon, .mode-opt .d-icon { width: 15px; height: 15px; }
+.mode-opt:hover { color: var(--text-1); background: rgba(0, 0, 0, .04); }
+.mode-opt.active { background: #FFFFFF; border-color: rgba(0, 0, 0, .13); color: var(--text-1); }
+
+.stage-mark { display: inline-flex; align-items: flex-start; gap: 10px; }
+.stage-badge {
+  display: inline-flex; margin-top: 8px;
+  padding: 4px 10px; border-radius: 999px;
+  background: #000000; color: #FFFFFF;
+  font: 700 10px/1 var(--font-ui); letter-spacing: .12em;
+}
+.stage-chips[hidden] { display: none !important; }
+
 /* ================================================================ 主区 */
 .topbar { border-bottom: 0; background: transparent; }
 .tabs { border-bottom-color: var(--line-soft); }

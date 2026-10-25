@@ -26,6 +26,7 @@
     "stop": S('<circle cx="12" cy="12" r="8.5"/><rect x="9.2" y="9.2" width="5.6" height="5.6" rx="1.5" fill="currentColor" stroke="none"/>'),
     "gate": S('<path d="M6 20V8.5M18 20V8.5"/><path d="M6 8.5h12"/><circle cx="12" cy="14" r="1.9"/><path d="M4 20h16"/>'),
     "message": S('<path d="M4.5 7A2.5 2.5 0 0 1 7 4.5h10A2.5 2.5 0 0 1 19.5 7v6a2.5 2.5 0 0 1-2.5 2.5h-7L4.5 20z"/>'),
+    "work": S('<rect x="3.5" y="8" width="17" height="11.5" rx="3"/><path d="M9 8V6.5A2.5 2.5 0 0 1 11.5 4h1A2.5 2.5 0 0 1 15 6.5V8M3.5 13h17"/>'),
     "steer": S('<path d="M13.2 3.5 6.8 13.4h4.4L10.8 20.5l6.4-9.9h-4.4z"/>'),
     "pin": S('<path d="M9.5 10V6.8A2.3 2.3 0 0 1 11.8 4.5h.4a2.3 2.3 0 0 1 2.3 2.3V10l2 2.7v1.3h-9v-1.3z"/><path d="M12 14v5.8"/>'),
     "reverify": S('<path d="M19.5 12a7.5 7.5 0 1 1-2.1-5.2"/><path d="M17.7 3.4v3.4h3.4"/><rect x="10.2" y="10.2" width="3.6" height="3.6" rx="1.2" fill="currentColor" stroke="none"/>'),

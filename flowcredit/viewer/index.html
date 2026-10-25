@@ -10,7 +10,7 @@
 <link rel="stylesheet" href="design.css?v=76">
 <link rel="stylesheet" href="desktop.css?v=3">
 <link rel="stylesheet" href="chat.css?v=3">
-<link rel="stylesheet" href="kimi.css?v=6">
+<link rel="stylesheet" href="kimi.css?v=8">
 </head>
 <body>
 <div class="shell app rail-hidden" id="app">
@@ -26,41 +26,47 @@
       <button class="kbtn" id="palette-btn" title="命令面板 (⌘K)">⌘K</button>
     </div>
 
-    <button class="side-new" id="new-run">
-      <span data-doodle="kimi-plus"></span>
-      <span>新对话</span>
-    </button>
-
-    <label class="side-search">
-      <span data-doodle="search"></span>
-      <input id="run-search" placeholder="搜索运行记录…" autocomplete="off" spellcheck="false">
-    </label>
-
-    <button class="side-desk" id="desk-btn" title="委托汇总与成本账本">
-      <span data-doodle="layout-grid"></span>
-      <span>工作台 · 账本</span>
-      <span class="side-count" id="desk-count">0</span>
-    </button>
-
-    <div class="side-nav">
-      <button class="nav-item" id="nav-reviews" title="判断记录">
-        <span data-doodle="clipboard-list"></span><span>判断记录</span>
+    <div class="mode-switch" role="tablist" aria-label="主功能切换">
+      <button class="mode-opt" id="mode-work" type="button" role="tab" aria-selected="false">
+        <span data-doodle="work"></span><span>工作</span>
       </button>
-      <button class="nav-item" id="nav-scheduled" title="定时任务">
-        <span data-doodle="calendar"></span><span>定时任务</span>
-      </button>
-      <button class="nav-item" id="nav-delegate" title="委托运行：受门控的执行">
-        <span data-doodle="clipboard-list"></span><span>委托运行</span>
+      <button class="mode-opt active" id="mode-chat" type="button" role="tab" aria-selected="true">
+        <span data-doodle="message"></span><span>对话</span>
       </button>
     </div>
 
-    <div class="side-list">
-      <div class="side-section"><span>Projects</span><span class="side-count" id="proj-count">0</span></div>
-      <nav id="project-nav"></nav>
+    <button class="side-new" id="new-run" title="新对话">
+      <span data-doodle="kimi-plus"></span>
+      <span id="new-label">新对话</span>
+    </button>
+
+    <div class="side-list" id="pane-chat">
       <div class="side-section"><span>对话</span><span class="side-count" id="chat-count">0</span></div>
       <nav class="nav" id="chat-nav"></nav>
-      <div class="side-section"><span>委托记录</span><span class="side-count" id="run-count">0</span></div>
+    </div>
+
+    <div class="side-list" id="pane-work" hidden>
+      <label class="side-search">
+        <span data-doodle="search"></span>
+        <input id="run-search" placeholder="搜索任务…" autocomplete="off" spellcheck="false">
+      </label>
+      <button class="side-desk" id="desk-btn" title="委托汇总与成本账本">
+        <span data-doodle="layout-grid"></span>
+        <span>看板 · 账本</span>
+        <span class="side-count" id="desk-count">0</span>
+      </button>
+      <div class="side-nav">
+        <button class="nav-item" id="nav-reviews" title="判断记录">
+          <span data-doodle="clipboard-list"></span><span>判断记录</span>
+        </button>
+        <button class="nav-item" id="nav-scheduled" title="定时任务">
+          <span data-doodle="calendar"></span><span>定时任务</span>
+        </button>
+      </div>
+      <div class="side-section"><span>任务</span><span class="side-count" id="run-count">0</span></div>
       <nav class="nav" id="run-nav"></nav>
+      <div class="side-section"><span>Projects</span><span class="side-count" id="proj-count">0</span></div>
+      <nav id="project-nav"></nav>
     </div>
 
     <div class="side-foot">
@@ -361,6 +367,6 @@
 <script src="report.js?v=56"></script>
 <script src="icons-doodle.js?v=54"></script>
   <script src="brand/seal-icons.js"></script>
-<script src="app.js?v=88" type="module"></script>
+<script src="app.js?v=89" type="module"></script>
 </body>
 </html>

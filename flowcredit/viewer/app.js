@@ -2311,13 +2311,14 @@ function renderHead(trace, title) {
 
 /* RENDER LAYER — 舞台式空状态：标识、字标与提示；composer 由 setStageMode
    以单实例 appendChild 搬进 stage-dock，模板 chips 在其下。 */
-function stageEmptyHtml(note = "还没有运行记录") {
+function stageEmptyHtml(note = "还没有运行记录", opts = {}) {
+  const badge = opts.work ? `<span class="stage-badge">WORK</span>` : "";
   return `<section class="stage-empty" aria-label="空状态">
     <img class="stage-logo" src="brand/logo.svg" alt="FCode" width="56" height="56">
-    <div class="stage-mark">FCode</div>
+    <div class="stage-mark">FCode${badge}</div>
     <p class="stage-note">${esc(note)}</p>
     <div class="stage-dock" id="stage-dock"></div>
-    <div class="stage-chips" id="stage-chips" aria-label="按模板开始委托"></div>
+    <div class="stage-chips" id="stage-chips" aria-label="按模板开始委托"${opts.work ? "" : " hidden"}></div>
   </section>`;
 }
 
@@ -5720,6 +5721,118 @@ function renderChatHead() {
   document.getElementById("tb-chips").innerHTML = `<span class="chip">对话</span>`;
 }
 
+const WORK_STAGE_NOTE = "派一个任务：FCode 受门控执行、独立重算、入签名链";
+const WORK_PLACEHOLDER = "给 FCode 派一个任务…";
+let uiMode = (() => {
+  try { return localStorage.getItem("fa.uiMode") === "work" ? "work" : "chat"; }
+  catch { return "chat"; }
+})();
+
+function detachChatChrome() {
+  /* 模式切换用：拆掉对话的界面件，但保留 chat.current，
+     让「对话 ↔ 工作」往返后线程可以从内存恢复。 */
+  if (chat.abort) {
+    try { chat.abort.abort(); } catch { /* already settled */ }
+  }
+  if (chat.paintTimer) { clearTimeout(chat.paintTimer); chat.paintTimer = null; }
+  chat.active = false;
+  chat.streaming = false;
+  chat.abort = null;
+  chat.editing = null;
+  chat.attachments = [];
+  renderChatAttachChips();
+  document.getElementById("app")?.classList.remove("chat-mode");
+  paintChatChrome(false);
+  restoreSendButton();
+}
+
+function openWorkHome() {
+  detachChatChrome();
+  if (intake.active) closeIntake(false);
+  if (settingsOpen) closeSettingsPage(false);
+  ledgerOpen = false;
+  if (activeSession()) detachLive();
+  setChromeState({ rail: false });
+  store.key = null;
+  store.trace = null;
+  chat.active = false;          /* chat.current 保留：切回对话可恢复线程 */
+  chat.streaming = false;
+  chat.editing = null;
+  renderNav();
+  renderMain(stageEmptyHtml(WORK_STAGE_NOTE, { work: true }), { mode: "empty" });
+  paintChatChrome(false);
+  document.getElementById("tb-title").textContent = "FCode";
+  document.getElementById("tb-chips").innerHTML = "";
+  const ta = document.getElementById("composer-ta");
+  if (ta) {
+    ta.value = "";
+    autosize(ta);
+    ta.placeholder = WORK_PLACEHOLDER;
+    ta.focus();
+  }
+  renderChatAttachChips();
+  paintSendState();
+}
+
+function switchToChat() {
+  if (chat.current && (chat.current.messages || []).length) {
+    chat.active = true;
+    chat.streaming = false;
+    chat.editing = null;
+    renderNav();
+    renderChat({ forceBottom: true });
+    paintChatChrome(true);
+    const ta = document.getElementById("composer-ta");
+    if (ta) { ta.value = ""; autosize(ta); ta.placeholder = "给 FCode 发消息…"; }
+    paintSendState();
+  } else {
+    newChat();
+  }
+}
+
+function setUiMode(mode) {
+  if (uiMode !== mode) {
+    uiMode = mode;
+    try { localStorage.setItem("fa.uiMode", mode); } catch { /* quota */ }
+  }
+  const app = document.getElementById("app");
+  app.classList.toggle("mode-chat", mode === "chat");
+  app.classList.toggle("mode-work", mode === "work");
+  const chatTab = document.getElementById("mode-chat");
+  const workTab = document.getElementById("mode-work");
+  if (chatTab) {
+    chatTab.classList.toggle("active", mode === "chat");
+    chatTab.setAttribute("aria-selected", mode === "chat" ? "true" : "false");
+  }
+  if (workTab) {
+    workTab.classList.toggle("active", mode === "work");
+    workTab.setAttribute("aria-selected", mode === "work" ? "true" : "false");
+  }
+  const paneChat = document.getElementById("pane-chat");
+  const paneWork = document.getElementById("pane-work");
+  if (paneChat) paneChat.hidden = mode !== "chat";
+  if (paneWork) paneWork.hidden = mode !== "work";
+  const newLabel = document.getElementById("new-label");
+  if (newLabel) newLabel.textContent = mode === "work" ? "新建工作" : "新对话";
+  const newBtn = document.getElementById("new-run");
+  if (newBtn) newBtn.title = mode === "work" ? "新建工作：受门控的委托运行" : "新对话";
+  if (mode === "chat") {
+    if (chat.active && document.getElementById("main")?.dataset.view === "empty") return;
+    if (chat.current && (chat.current.messages || []).length) switchToChat();
+    else if (!chat.active) newChat();
+  } else {
+    const view = document.getElementById("main")?.dataset.view;
+    if (view === "empty" && !chat.active) {
+      renderMain(stageEmptyHtml(WORK_STAGE_NOTE, { work: true }), { mode: "empty" });
+      const ta = document.getElementById("composer-ta");
+      if (ta) ta.placeholder = WORK_PLACEHOLDER;
+      return;
+    }
+    if (activeSession()) selectRun(activeSession().id);
+    else openWorkHome();
+  }
+}
+
 function newChat() {
   leaveChat();
   if (intake.active) closeIntake(false);
@@ -5735,7 +5848,7 @@ function newChat() {
   chat.editing = null;
   chat.attachments = [];
   renderNav();
-  renderMain(stageEmptyHtml("向 FCode 提问，或让 FCode 帮你整理思路"), { mode: "empty" });
+  renderMain(stageEmptyHtml("向 FCode 提问，或让 FCode 帮你整理思路", { chat: true }), { mode: "empty" });
   paintChatChrome(true);
   document.getElementById("tb-title").textContent = "FCode";
   document.getElementById("tb-chips").innerHTML = "";
@@ -6458,8 +6571,9 @@ function bind() {
       paintSendState();
       return;
     }
-    if (event.target.closest("#new-run")) { newChat(); return; }
-    if (event.target.closest("#nav-delegate")) { startIntake(""); return; }
+    if (event.target.closest("#new-run")) { if (uiMode === "work") openWorkHome(); else newChat(); return; }
+    if (event.target.closest("#mode-chat")) { setUiMode("chat"); return; }
+    if (event.target.closest("#mode-work")) { setUiMode("work"); return; }
     if (event.target.closest("#send")) {
       if (chat.active && chat.streaming) { stopChat(); return; }
       composerSubmit();
@@ -6833,7 +6947,12 @@ function bind() {
     const mod = e.metaKey || e.ctrlKey;
     const s = activeSession();
     if (mod && e.key.toLowerCase() === "k") { e.preventDefault(); togglePalette(); return; }
-    if (mod && e.key.toLowerCase() === "n") { e.preventDefault(); newChat(); return; }
+    if (mod && e.key.toLowerCase() === "n") {
+      e.preventDefault();
+      if (e.shiftKey) { setUiMode("work"); openWorkHome(); }
+      else { setUiMode("chat"); newChat(); }
+      return;
+    }
     if (mod && e.key === ",") { e.preventDefault(); toggleSettingsPage(); return; }
     if (mod && e.key === ".") { e.preventDefault(); if (chat.active && chat.streaming) { stopChat(); return; } if (s && s.running) stopRun(); return; }
     if (mod && s && s.pending && !s.deciding && (e.key === "Enter" || e.key === "Backspace" || e.key === "Delete")) {
@@ -6964,5 +7083,6 @@ document.addEventListener("DOMContentLoaded", async () => {
       });
   } else {
     newChat();
+    setUiMode(uiMode);
   }
 });

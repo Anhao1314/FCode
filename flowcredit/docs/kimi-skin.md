@@ -41,6 +41,23 @@
 对话正文 16/26，编辑器 16/24，消息列 780，输入框 768；这些与 Kimi 的
 `--markdown-B1_Content`、`.chat-editor-content`、`.chat-content-list` 一致。
 
+## 双主功能：工作 / 对话
+
+对齐 Kimi 桌面端（3.2.17 实测）：**一个 shell、两套侧栏、两套 composer 能力**。
+
+- 侧栏顶部 `[工作 | 对话]` 分段开关（32px 行、active 白底 + 0.5px 描边），
+  切换时侧栏内容与主区一起换，外壳框架不动；
+- 对话模式：主按钮「新对话」+ 对话列表；composer 无治理芯片，
+  占位语「给 FCode 发消息…」，空态不显示模板 chips、wordmark 无徽章；
+- 工作模式：主按钮「新建工作」+ 搜索/看板·账本/判断记录/定时任务 +
+  任务列表（状态点）+ Projects；composer 显示审批档位芯片，
+  占位语「给 FCode 派一个任务…」，空态显示 8 个模板 chips、
+  wordmark 挂黑色 `WORK` 徽章（KIMI WORK 同款）；
+- 模式状态存 `fa.uiMode`；⌘N 新对话、⇧⌘N 新建工作；
+- 切换用"软拆离"：拆掉对话界面件但保留 `chat.current`，
+  往返后线程从内存恢复（流式中切换会中止并记录 `chat_cancelled`）；
+- 治理边界不变：对话模式 composer 永不执行工具，桥接只有显式的「转为委托」。
+
 ## 字阶与元素比例
 
 Kimi 的 UI 字阶（`:root` 里的 `--ui-*`）：
