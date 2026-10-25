@@ -69,6 +69,60 @@ VIEWER_DIR = Path(__file__).resolve().parent
 RUNS_DIR = Path(os.environ.get("FCODE_RUNS_DIR") or (VIEWER_DIR / "runs"))
 os.environ.setdefault("FCODE_MEMORY_DB", str(RUNS_DIR.parent / "memory" / "cases.sqlite"))
 
+
+def app_config_dir() -> Path:
+    """User-scoped config that is never under the static root.
+
+    Desktop bundles already run with ``FCODE_RUNS_DIR`` in Application Support;
+    the repo server would otherwise put ``chat-config.json`` next to the served
+    assets, where a plain GET could download an API key.
+    """
+    override = os.environ.get("FCODE_CONFIG_DIR", "").strip()
+    if override:
+        base = Path(override).expanduser()
+    elif sys.platform == "darwin":
+        base = Path.home() / "Library" / "Application Support" / "FCode"
+    elif os.name == "nt":
+        base = Path(os.environ.get("APPDATA") or (Path.home() / "AppData" / "Roaming")) / "FCode"
+    else:
+        base = Path(os.environ.get("XDG_CONFIG_HOME") or (Path.home() / ".config")) / "fcode"
+    base.mkdir(parents=True, exist_ok=True)
+    return base
+
+
+CHAT_CONFIG_PATH = app_config_dir() / "chat-config.json"
+LEGACY_CHAT_CONFIG = VIEWER_DIR / "chat-config.json"
+
+#: Bodies larger than this are refused before reading; no endpoint needs more.
+MAX_REQUEST_BODY = 1_048_576
+
+
+def forbidden_static_path(path: str) -> bool:
+    """Paths the static handler must never serve (configs, databases, temp)."""
+    name = Path(path).name
+    return (
+        name.endswith((".sqlite", ".sqlite-wal", ".sqlite-shm"))
+        or name.startswith("chat-config.json")
+        or name.endswith(".tmp")
+    )
+
+
+def migrate_legacy_chat_config() -> None:
+    """Move an older viewer/chat-config.json out of the static root, once."""
+    if os.environ.get("FCODE_SKIP_LEGACY_CONFIG_MIGRATION") == "1":
+        return
+    if not LEGACY_CHAT_CONFIG.exists():
+        return
+    try:
+        if not CHAT_CONFIG_PATH.exists():
+            CHAT_CONFIG_PATH.write_text(
+                LEGACY_CHAT_CONFIG.read_text(encoding="utf-8"), encoding="utf-8",
+            )
+            os.chmod(CHAT_CONFIG_PATH, 0o600)
+        LEGACY_CHAT_CONFIG.unlink()
+    except OSError as error:
+        print(f"[console] WARNING: could not migrate {LEGACY_CHAT_CONFIG}: {error}")
+
 TERMINAL_STATUS = ("succeeded", "failed", "denied", "recovery_required")
 #: Run statuses a review may be recorded against. ``stopped`` and ``error`` are
 #: terminal in the console even though the task itself ends as ``failed``.
@@ -478,7 +532,7 @@ class RunManager:
                 # including API keys — outside the repository.
                 self.chat = runtime.ChatService(
                     RUNS_DIR.parent / "chat.sqlite",
-                    RUNS_DIR.parent / "chat-config.json",
+                    CHAT_CONFIG_PATH,
                 )
             except Exception:  # noqa: BLE001 — chat must not take the console down
                 traceback.print_exc()
@@ -1915,10 +1969,50 @@ class Handler(SimpleHTTPRequestHandler):
         length = int(self.headers.get("Content-Length") or 0)
         if length <= 0:
             return {}
+        if length > MAX_REQUEST_BODY:
+            # Drain a bounded amount so the client gets a clean 413 instead of
+            # a reset connection, then let the caller reject the request.
+            self.rfile.read(min(length, 65_536))
+            return {}
         try:
             return json.loads(self.rfile.read(length).decode("utf-8"))
         except ValueError:
             return {}
+
+    def _same_origin(self) -> bool:
+        """Refuse browser cross-site writes; non-browser clients have no Origin."""
+        site = (self.headers.get("Sec-Fetch-Site") or "").strip().lower()
+        if site and site not in ("same-origin", "none"):
+            return False
+        origin = (self.headers.get("Origin") or "").strip()
+        if not origin:
+            return True
+        parsed = urlparse(origin)
+        host = (self.headers.get("Host") or "").strip().lower()
+        return bool(host) and parsed.netloc.lower() == host
+
+    def _mutation_guard(self) -> bool:
+        """Return False and write the error response when a write is refused."""
+        if not self._same_origin():
+            self._json({"error": "cross-origin request refused"}, 403)
+            return False
+        length = int(self.headers.get("Content-Length") or 0)
+        if length > MAX_REQUEST_BODY:
+            # Drain a bounded prefix so the client can read the 413 instead of
+            # hitting a broken pipe; anything beyond 8 MiB is not worth reading.
+            try:
+                self.rfile.read(min(length, 8_388_608))
+            except OSError:
+                pass
+            self._json({"error": "request body too large"}, 413)
+            self.close_connection = True
+            return False
+        if length > 0:
+            content_type = (self.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+            if content_type != "application/json":
+                self._json({"error": "content-type must be application/json"}, 415)
+                return False
+        return True
 
     def _sse(self, event: str, payload: dict) -> bool:
         try:
@@ -1954,7 +2048,7 @@ class Handler(SimpleHTTPRequestHandler):
             return self._reject_unauthorized(path)
         if path.startswith("/api/"):
             return self._api_get(path)
-        if path.endswith((".sqlite", ".sqlite-wal", ".sqlite-shm")):
+        if forbidden_static_path(path):
             self.send_error(404)
             return
         return super().do_GET()
@@ -2240,6 +2334,8 @@ class Handler(SimpleHTTPRequestHandler):
             return self.send_error(404)
         if not self._authorized():
             return self._json({"error": "unauthorized"}, 401)
+        if not self._mutation_guard():
+            return
         mgr = self.manager
         if path == "/api/intake":
             if mgr.runtime is None:
@@ -2666,6 +2762,7 @@ def main(argv: list[str] | None = None) -> int:
     else:
         runtime_error = "no --repo given; set it to the FCode checkout to enable live runs"
 
+    migrate_legacy_chat_config()
     manager = RunManager(
         runtime, runtime_error, args.pace, args.approval_timeout,
         local_endpoint=args.local_endpoint.strip() or None,

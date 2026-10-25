@@ -16,6 +16,7 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
 from flowagent.chat import (  # noqa: E402
+    ChatProviderConfig,
     ChatService,
     parse_sse_data,
     resolve_chat_provider,
@@ -207,6 +208,48 @@ class SSEParserTests(unittest.TestCase):
         self.assertEqual(parsed["usage"]["total_tokens"], 3)
 
 
+class ChatFailureAndPayloadTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        patcher = mock.patch.dict(os.environ, {"FCODE_CHAT_MOCK_DELAY": "0"}, clear=False)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.service = ChatService(pathlib.Path(self._tmp.name) / "chat.sqlite")
+        self.addCleanup(self.service.close)
+
+    def test_unexpected_provider_error_is_error_not_cancelled(self) -> None:
+        first = list(self.service.send(thread_id=None, text="第一问", model="mock"))
+        thread_id = first[0]["thread_id"]
+        config = ChatProviderConfig(key="mock", label="Fake", model="fake")
+
+        class BrokenProvider:
+            def stream(self, messages):
+                yield {"delta": "partial "}
+                raise ValueError("malformed chunk")
+
+        with mock.patch.object(self.service, "_provider", return_value=(config, BrokenProvider())):
+            events = list(self.service.send(thread_id=thread_id, text="再试一次", model="mock"))
+        self.assertEqual(events[-1]["type"], "error")
+        self.assertEqual(events[-1]["code"], "CHAT_STREAM_FAILED")
+        thread = self.service.get_thread(thread_id)
+        self.assertEqual(thread["messages"][-1]["status"], "error")
+        self.assertIn("malformed chunk", thread["messages"][-1]["error"]["message"])
+        kinds = [event["type"] for event in self.service.store.events(thread_id)]
+        self.assertIn("chat_error", kinds)
+        self.assertNotIn("chat_cancelled", kinds)
+        self.service.store.verify_chain(thread_id)
+
+    def test_start_event_does_not_resend_the_whole_thread(self) -> None:
+        first = list(self.service.send(thread_id=None, text="第一问", model="mock"))
+        thread_id = first[0]["thread_id"]
+        second = list(self.service.send(thread_id=thread_id, text="第二问", model="mock"))
+        start = second[0]
+        self.assertNotIn("thread", start)
+        self.assertEqual(start["thread_title"], "第一问")
+        self.assertEqual(start["thread_id"], thread_id)
+
+
 class RemoteStreamTests(unittest.TestCase):
     """The OpenAI-compatible SSE client, against a local fake provider."""
 
@@ -357,13 +400,29 @@ class ChatSettingsTests(unittest.TestCase):
             )
         self.assertEqual(config.api_key, "env-key")
 
+    def test_remote_base_url_override_is_rejected(self) -> None:
+        with self.assertRaises(AgentError) as error:
+            self.service.update_config(
+                provider="kimi",
+                values={"base_url": "https://evil.example", "api_key": "k"},
+            )
+        self.assertEqual(error.exception.code, "CHAT_CONFIG_INVALID")
+        self.assertIn("unknown field", error.exception.message)
+        # local endpoints remain editable
+        snapshot = self.service.update_config(
+            provider="local", values={"base_url": "http://127.0.0.1:11434/v1"},
+        )
+        self.assertEqual(
+            snapshot["config"]["providers"]["local"]["base_url"],
+            "http://127.0.0.1:11434/v1",
+        )
+
     def test_validation_fails_closed(self) -> None:
         cases = [
             ({"input_price_microusd_per_mtok": "0"}, "positive"),
             ({"input_price_microusd_per_mtok": "abc"}, "integer"),
             ({"min_interval_seconds": "-1"}, "0..3600"),
             ({"max_completion_tokens": "999999"}, "1..32768"),
-            ({"base_url": "ftp://x"}, "http(s)"),
             ({"nope": "1"}, "unknown field"),
         ]
         for values, needle in cases:
@@ -375,6 +434,9 @@ class ChatSettingsTests(unittest.TestCase):
         with self.assertRaises(AgentError) as error:
             self.service.update_config(provider="mock", values={})
         self.assertEqual(error.exception.code, "CHAT_CONFIG_INVALID")
+        with self.assertRaises(AgentError) as error:
+            self.service.update_config(provider="local", values={"base_url": "ftp://x"})
+        self.assertIn("http(s)", error.exception.message)
 
     def test_corrupt_config_file_reads_as_empty(self) -> None:
         (self.root / "chat-config.json").write_text("{not json", encoding="utf-8")

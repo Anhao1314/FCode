@@ -65,13 +65,18 @@ OpenAI 兼容 SSE；Kimi 使用 `max_completion_tokens`，不发送 `temperature
 
 规则：
 
-- 配置保存在本机 `viewer/chat-config.json`（桌面端在 Application Support），
-  权限 0600，**不进仓库、不进事件链、不出现在任何 API 响应里**（GET 只返回
+- 配置保存在用户配置目录的 `chat-config.json`（macOS: `~/Library/Application Support/FCode/`，
+  可用 `FCODE_CONFIG_DIR` 覆盖；**不在 viewer 静态根下**），权限 0600，
+  **不进仓库、不进事件链、不出现在任何 API 响应里**（GET 只返回
   `api_key_set` 与 `sk-…后四位`）；
 - 优先级：**设置页 > 环境变量 > 默认**；留空保存 = 清除该项回落到环境变量，
   「清除密钥」按钮只清 Key；
 - 价格必填且必须为正整数（fail-closed 计费不放松）；Kimi 用
   `max_completion_tokens`、不发 `temperature`；
+- **写接口只接受 `application/json`，并拒绝跨站 `Origin`/`Sec-Fetch-Site`**；
+  静态服务器对 `chat-config.json` 与 `.sqlite` 一律 404；
+- Kimi/DeepSeek 的 `base_url` 不允许从设置/API 覆盖（只认环境变量或内置域名），
+  避免一次配置写入把已保存的 key 引到别处；本地模型的端点仍可编辑；
 - **当前只作用于对话**；委托运行的 provider 仍由环境变量配置
   （provider 泛化合并后统一）。
 

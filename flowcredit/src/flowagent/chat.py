@@ -344,10 +344,14 @@ def load_chat_config(path: Path | None) -> dict[str, Any]:
             block = providers.get(key)
             if not isinstance(block, dict):
                 continue
-            config["providers"][key] = {
+            clean = {
                 name: value for name, value in block.items()
                 if isinstance(value, (str, int, float)) and str(value).strip() != ""
             }
+            if key in ("kimi", "deepseek"):
+                clean.pop("base_url", None)
+            if clean:
+                config["providers"][key] = clean
     default = raw.get("default_model")
     if default in CHAT_PROVIDER_KEYS:
         config["default_model"] = str(default)
@@ -669,10 +673,16 @@ class ChatService:
         clean: dict[str, str] = {}
         if provider is not None:
             allowed = {
-                "api_key", "model", "base_url",
+                "api_key", "model",
                 "input_price_microusd_per_mtok", "output_price_microusd_per_mtok",
                 "min_interval_seconds", "max_completion_tokens",
             }
+            # Endpoint overrides for the cloud providers are an exfiltration
+            # path (a stolen settings write could redirect the stored key).
+            # Their base URL stays host/env-configured; only local endpoints
+            # are editable from the UI.
+            if provider == "local":
+                allowed.add("base_url")
             if not isinstance(values, dict):
                 raise AgentError("CHAT_CONFIG_INVALID", "values must be an object")
             for name, raw in values.items():
@@ -913,9 +923,8 @@ class ChatService:
 
     def list_threads(self, limit: int = 50) -> list[dict[str, Any]]:
         rows = self.store._conn.execute(
-            "SELECT t.id, t.body, t.updated_at, COUNT(e.sequence) AS events, MIN(e.at) AS created_at"
-            " FROM task t LEFT JOIN event e ON e.task_id = t.id"
-            " WHERE t.id LIKE 'chat-%' GROUP BY t.id ORDER BY t.updated_at DESC LIMIT ?",
+            "SELECT id, body, updated_at FROM task"
+            " WHERE id LIKE 'chat-%' ORDER BY updated_at DESC LIMIT ?",
             (max(1, min(int(limit), 200)),),
         ).fetchall()
         threads = []
@@ -927,9 +936,7 @@ class ChatService:
             threads.append({
                 "id": row["id"],
                 "title": str(body.get("objective") or "新对话"),
-                "created_at": str(row["created_at"] or ""),
                 "updated_at": row["updated_at"],
-                "events": int(row["events"] or 0) - 1,
             })
         return threads
 
@@ -1022,7 +1029,27 @@ class ChatService:
         thread_id = thread.id
         assistant_id = f"a-{secrets.token_hex(6)}"
         started = time.monotonic()
-        config, provider = self._provider(model)
+        try:
+            config, provider = self._provider(model)
+        except Exception as error:  # noqa: BLE001 — configuration errors belong in the chain
+            code = getattr(error, "code", "CHAT_CONFIG_INVALID")
+            message = getattr(error, "message", None) or f"{type(error).__name__}: {error}"
+            thread = self._append(thread, "chat_error", {
+                "assistant_id": assistant_id,
+                "user_id": user_message["id"],
+                "code": code,
+                "message": message,
+                "text": "",
+            })
+            yield {
+                "type": "error",
+                "thread_id": thread_id,
+                "user_id": user_message["id"],
+                "assistant_id": assistant_id,
+                "code": code,
+                "message": message,
+            }
+            return
         messages = self._prompt_messages(thread_id)
 
         prompt_estimate = _estimate_tokens(messages)
@@ -1054,7 +1081,7 @@ class ChatService:
         yield {
             "type": "start",
             "thread_id": thread_id,
-            "thread": self.get_thread(thread_id),
+            "thread_title": thread.objective or "新对话",
             "user": self._public_message(user_message),
             "assistant_id": assistant_id,
             "provider": {"key": config.key, "label": config.label, "model": config.model},
@@ -1159,14 +1186,19 @@ class ChatService:
                 "budget": budget.snapshot(),
                 "thread_id": thread_id,
             }
-        except AgentError as error:
+        except Exception as error:  # noqa: BLE001 — a malformed provider chunk is an error, not a cancel
             text = "".join(text_parts)
             reasoning = "".join(reasoning_parts)
+            code = error.code if isinstance(error, AgentError) else "CHAT_STREAM_FAILED"
+            message = (
+                error.message if isinstance(error, AgentError)
+                else f"{type(error).__name__}: {error}"
+            )
             detail = {
                 "assistant_id": assistant_id,
                 "user_id": user_message["id"],
-                "code": error.code,
-                "message": error.message,
+                "code": code,
+                "message": message,
                 "text": text,
                 "reasoning": reasoning,
                 "usage": usage,
@@ -1175,8 +1207,8 @@ class ChatService:
             finalised = True
             yield {
                 "type": "error",
-                "code": error.code,
-                "message": error.message,
+                "code": code,
+                "message": message,
                 "assistant_id": assistant_id,
                 "partial": text,
                 "budget": budget.snapshot(),

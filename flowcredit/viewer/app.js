@@ -181,6 +181,29 @@ let tplKey = "full";    // selected template
 let chatThreads = [];   // /api/chat/threads（侧栏「对话」）
 let chatModels = [];    // /api/chat/models（对话模式模型菜单）
 let chatConfig = null;  // /api/settings/chat-config（脱敏后的配置）
+const CHAT_MODEL_KEY = "fa.chatModel";
+function loadChatModelChoice() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(CHAT_MODEL_KEY) || "{}");
+    return {
+      key: typeof parsed.key === "string" ? parsed.key : "mock",
+      touched: parsed.touched === true,
+    };
+  } catch {
+    return { key: "mock", touched: false };
+  }
+}
+const chatModelChoice = loadChatModelChoice();
+let chatModelTouched = chatModelChoice.touched === true;
+function saveChatModelChoice(touched = chatModelTouched) {
+  chatModelTouched = touched;
+  try {
+    localStorage.setItem(CHAT_MODEL_KEY, JSON.stringify({
+      key: chatModelChoice.key,
+      touched: chatModelTouched,
+    }));
+  } catch { /* quota */ }
+}
 const chat = {
   active: false,        // composer 当前属于一段对话，而不是委托/运行
   current: null,        // 打开的线程（含 messages）
@@ -254,8 +277,9 @@ function renderMain(html, { mode = "run", scroll = null } = {}) {
   const composerWrap = document.querySelector(".composer-wrap");
   if (composerWrap) composerWrap.hidden = (mode === "reviews" || mode === "scheduled"
     || mode === "ledger" || mode === "settings");
-  if (scroll === "top") main.scrollTop = 0;
-  else if (scroll === "bottom") main.scrollTop = main.scrollHeight;
+  const scroller = document.querySelector(".main");
+  if (scroll === "top" && scroller) scroller.scrollTop = 0;
+  else if (scroll === "bottom" && scroller) scroller.scrollTop = scroller.scrollHeight;
 }
 
 /* 主区视图入口：只有导航动作走这里；各渲染函数是具体实现。 */
@@ -428,8 +452,8 @@ function openLedger() {
     badge.className = "chain-pill";
     badge.innerHTML = `<span class="dot"></span><span>未加载</span>`;
   }
-  const main = document.getElementById("main");
-  main.scrollTop = 0;
+  const scroller = document.querySelector(".main");
+  if (scroller) scroller.scrollTop = 0;
   renderLedger();
 }
 
@@ -4018,12 +4042,13 @@ function paintModelBadge() {
     return;
   }
   if (chat.active) {
-    const chatEntry = chatModels.find(m => m.key === modelChoice.key && m.available)
-      || chatModels.find(m => m.key === "mock");
-    if (modelChoice.key !== "mock" && !chatModels.some(m => m.key === modelChoice.key && m.available)) {
-      modelChoice.key = (chatEntry && chatEntry.key) || "mock";
-      saveModelChoice();
+    if (chatModels.length && chatModelChoice.key !== "mock"
+        && !chatModels.some(m => m.key === chatModelChoice.key && m.available)) {
+      chatModelChoice.key = "mock";
+      saveChatModelChoice();
     }
+    const chatEntry = chatModels.find(m => m.key === chatModelChoice.key)
+      || chatModels.find(m => m.key === "mock");
     labelEl.textContent = !chatEntry || chatEntry.key === "mock"
       ? "offline-mock"
       : chatEntry.model;
@@ -4943,7 +4968,7 @@ function openSettingsPage() {
   leaveChat();
   if (intake.active) closeIntake(false);
   settingsOpen = true;
-  settingsScroll.main = document.getElementById("main").scrollTop;
+  settingsScroll.main = document.querySelector(".main")?.scrollTop || 0;
   settingsScroll.rail = document.getElementById("rail-body").scrollTop;
   document.getElementById("workspace").classList.add("settings-open");
   document.getElementById("app").classList.add("settings-open");
@@ -4970,7 +4995,8 @@ function closeSettingsPage(returnFocus = true) {
   document.getElementById("settings-page").hidden = true;
   (document.getElementById("settings-mobile") || document.getElementById("settings-btn"))?.removeAttribute("aria-current");
   requestAnimationFrame(() => {
-    document.getElementById("main").scrollTop = settingsScroll.main;
+    const scroller = document.querySelector(".main");
+    if (scroller) scroller.scrollTop = settingsScroll.main;
     document.getElementById("rail-body").scrollTop = settingsScroll.rail;
   });
   if (returnFocus) (document.getElementById("settings-mobile") || document.getElementById("settings-btn"))?.focus({ preventScroll: true });
@@ -5366,14 +5392,12 @@ function renderChats() {
   }).join("");
 }
 
-let chatModelTouched = false; // 用户在菜单里手动选过模型后，不再自动跟随默认值
-
 function adoptDefaultChatModel(defaultKey) {
-  if (chatModelTouched || !defaultKey || defaultKey === "mock") return;
+  if (chatModelTouched || !defaultKey) return;
   const entry = chatModels.find(m => m.key === defaultKey && m.available);
-  if (entry && modelChoice.key !== entry.key) {
-    modelChoice.key = entry.key;
-    saveModelChoice();
+  if (entry && chatModelChoice.key !== entry.key) {
+    chatModelChoice.key = entry.key;
+    saveChatModelChoice();
     paintModelBadge();
   }
 }
@@ -5394,7 +5418,7 @@ function renderChatModelMenu() {
   const menu = document.getElementById("model-menu");
   if (!menu) return;
   const items = chatModels.map(m => {
-    const current = m.available && m.key === modelChoice.key;
+    const current = m.available && m.key === chatModelChoice.key;
     return `<button class="tpl-item model-item${current ? " active" : ""}${m.available ? "" : " disabled"}" data-chatmodel-pick="${esc(m.key)}"${m.available ? "" : " disabled"}>
       <span class="t"><span>${esc(m.label)}${current ? '<span class="check">✓</span>' : ""}</span><span class="m">${esc(m.model)}</span></span>
       <span class="d">${m.available ? (m.remote && m.price ? `${num(m.price.inputMicrousdPerMtok)} / ${num(m.price.outputMicrousdPerMtok)} µUSD·MTok⁻¹` : "离线 · 不产生外部计费") : esc(m.reason)}</span>
@@ -5411,7 +5435,7 @@ async function syncChatConfig() {
     if (!data) return;
     chatConfig = data.config || { providers: {}, default_model: "mock" };
     chatModels = Array.isArray(data.models) ? data.models : chatModels;
-    renderChatConfig();
+    renderChatConfig(true);
   } catch { /* 设置页会显示加载失败 */ }
 }
 
@@ -5440,10 +5464,17 @@ const CHATCFG_FIELDS = {
   ],
 };
 
-function renderChatConfig() {
+function renderChatConfig(preserveInputs = false) {
   const defaultSlot = document.getElementById("chatcfg-default");
   const cardsSlot = document.getElementById("chatcfg-cards");
   if (!defaultSlot || !cardsSlot) return;
+  const before = {};
+  if (preserveInputs) {
+    document.querySelectorAll("#chatcfg input").forEach(input => {
+      // Passwords are intentionally not restored: a saved key clears the field.
+      if (input.type !== "password") before[input.id] = input.value;
+    });
+  }
   const providers = (chatConfig && chatConfig.providers) || {};
   const fallbacks = { kimi: "Kimi 云端", deepseek: "DeepSeek 云端", local: "本地模型", mock: "离线 Mock" };
   const currentDefault = (chatConfig && chatConfig.default_model) || "mock";
@@ -5488,6 +5519,12 @@ function renderChatConfig() {
       </div>
     </div>`;
   }).join("");
+  if (preserveInputs) {
+    for (const [id, value] of Object.entries(before)) {
+      const input = document.getElementById(id);
+      if (input) input.value = value;
+    }
+  }
 }
 
 async function saveChatConfig(provider) {
@@ -5510,7 +5547,7 @@ async function saveChatConfig(provider) {
     if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
     chatConfig = data.config;
     chatModels = Array.isArray(data.models) ? data.models : chatModels;
-    renderChatConfig();
+    renderChatConfig(true);
     paintModelBadge();
     toast("已保存（本机）");
   } catch (error) {
@@ -5529,7 +5566,7 @@ async function clearChatConfigKey(provider) {
     if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
     chatConfig = data.config;
     chatModels = Array.isArray(data.models) ? data.models : chatModels;
-    renderChatConfig();
+    renderChatConfig(true);
     paintModelBadge();
     toast("密钥已清除（回落到环境变量）");
   } catch (error) {
@@ -5548,7 +5585,12 @@ async function setDefaultChatModel(key) {
     if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
     chatConfig = data.config;
     chatModels = Array.isArray(data.models) ? data.models : chatModels;
-    renderChatConfig();
+    if (!chatModelTouched) {
+      const entry = chatModels.find(m => m.key === key && m.available);
+      if (entry) { chatModelChoice.key = key; saveChatModelChoice(); }
+    }
+    renderChatConfig(true);
+    paintModelBadge();
     toast(`默认对话模型：${key}`);
   } catch (error) {
     toast("设置失败：" + error.message);
@@ -5633,6 +5675,8 @@ function newChat() {
   }
   renderChatAttachChips();
   paintSendState();
+  adoptDefaultChatModel(chatConfig && chatConfig.default_model);
+  loadChatModels();
 }
 
 async function openChat(threadId) {
@@ -5662,7 +5706,7 @@ async function openChat(threadId) {
   }
   paintChatChrome(true);
   renderChatHead();
-  renderChat();
+  renderChat({ forceBottom: true });
   renderNav();
   const ta = document.getElementById("composer-ta");
   if (ta) {
@@ -5674,7 +5718,7 @@ async function openChat(threadId) {
   paintSendState();
 }
 
-function renderChat() {
+function renderChat({ forceBottom = false } = {}) {
   const thread = chat.current;
   if (!thread || !(thread.messages || []).length) {
     renderMain(`<div class="chat-empty">
@@ -5683,15 +5727,12 @@ function renderChat() {
     </div>`, { mode: "chat" });
     return;
   }
+  const stick = forceBottom || nearMainBottom();
   renderMain(
     `<div class="chat-thread" aria-live="polite">${thread.messages.map(chatMessageHtml).join("")}</div>`,
-    { mode: "chat", scroll: "bottom" },
+    { mode: "chat" },
   );
-  // 字体/代码块落位后高度还会变；再贴一次底，避免最后一条被输入框截住。
-  requestAnimationFrame(() => {
-    const main = document.getElementById("main");
-    if (main && main.dataset.view === "chat") main.scrollTop = main.scrollHeight;
-  });
+  if (stick) requestAnimationFrame(scrollMainBottom);
 }
 
 function chatMessageHtml(message) {
@@ -5894,12 +5935,37 @@ function stopChat() {
   try { chat.abort.abort(); } catch { /* already settled */ }
 }
 
-function scheduleChatPaint() {
+function scheduleChatPaint(assistant) {
+  chat.paintAssistant = assistant;
   if (chat.paintTimer) return;
   chat.paintTimer = setTimeout(() => {
     chat.paintTimer = null;
-    renderChat();
+    paintStreamingAssistant(chat.paintAssistant);
   }, 70);
+}
+
+function paintStreamingAssistant(assistant) {
+  if (!assistant || !chat.current) return;
+  const node = document.querySelector(`.chat-msg[data-msg-id="${String(assistant.id)}"]`);
+  if (!node) { renderChat(); return; }
+  const stick = nearMainBottom();
+  const body = node.querySelector(".chat-md");
+  if (body) body.innerHTML = renderMarkdown(assistant.text);
+  const typing = node.querySelector(".chat-typing");
+  if (typing && assistant.text) typing.remove();
+  let wait = node.querySelector(".chat-wait");
+  if (assistant.waiting) {
+    if (!wait) {
+      wait = document.createElement("div");
+      wait.className = "chat-wait";
+      const actions = node.querySelector(".chat-msg-actions");
+      node.insertBefore(wait, actions || null);
+    }
+    wait.textContent = `等待 ${assistant.waiting} 秒额度窗口…`;
+  } else if (wait) {
+    wait.remove();
+  }
+  if (stick) scrollMainBottom();
 }
 
 async function sendChatFromComposer() {
@@ -5914,7 +5980,7 @@ async function sendChatFromComposer() {
   chat.attachments = [];
   renderChatAttachChips();
   const threadId = chat.current && chat.current.id ? chat.current.id : null;
-  const model = modelChoice.key || "mock";
+  const model = chatModelChoice.key || "mock";
   if (!chat.current) {
     chat.current = { id: null, title: (text || attachments[0].name || "新对话").slice(0, 30), messages: [] };
   }
@@ -5936,7 +6002,7 @@ async function sendChatFromComposer() {
     error: {},
   });
   renderChatHead();
-  renderChat();
+  renderChat({ forceBottom: true });
   setChatStreaming(true);
   await streamChat("/api/chat/send", { threadId, text, attachments, model });
 }
@@ -6022,7 +6088,7 @@ function handleChatEvent(event, assistant, threadRef) {
     case "start":
       if (event.thread_id) {
         threadRef.id = event.thread_id;
-        if (event.thread && event.thread.title) threadRef.title = event.thread.title;
+        if (event.thread_title) threadRef.title = event.thread_title;
         if (event.user) {
           const pending = [...threadRef.messages].reverse()
             .find(message => message.role === "user" && String(message.id).startsWith("pending-user-"));
@@ -6030,19 +6096,20 @@ function handleChatEvent(event, assistant, threadRef) {
         }
         if (event.assistant_id) assistant.id = event.assistant_id;
         renderChatHead();
+        renderChat();
       }
       break;
     case "wait":
       assistant.waiting = Number(event.seconds) || 0;
-      scheduleChatPaint();
+      scheduleChatPaint(assistant);
       break;
     case "reasoning":
       assistant.reasoning = (assistant.reasoning || "") + String(event.text || "");
-      scheduleChatPaint();
+      scheduleChatPaint(assistant);
       break;
     case "delta":
       assistant.text = (assistant.text || "") + String(event.text || "");
-      scheduleChatPaint();
+      scheduleChatPaint(assistant);
       break;
     case "done":
       if (event.message) {
@@ -6117,10 +6184,10 @@ function saveChatEdit(messageId) {
     usage: {},
     error: {},
   });
-  renderChat();
+  renderChat({ forceBottom: true });
   setChatStreaming(true);
   streamChat(`/api/chat/threads/${encodeURIComponent(chat.current.id)}/edit`, {
-    messageId, text, model: modelChoice.key || "mock",
+    messageId, text, model: chatModelChoice.key || "mock",
   });
 }
 
@@ -6138,10 +6205,10 @@ function regenerateChat(messageId) {
     usage: {},
     error: {},
   });
-  renderChat();
+  renderChat({ forceBottom: true });
   setChatStreaming(true);
   streamChat(`/api/chat/threads/${encodeURIComponent(chat.current.id)}/regenerate`, {
-    messageId, model: modelChoice.key || "mock",
+    messageId, model: chatModelChoice.key || "mock",
   });
 }
 
@@ -6346,9 +6413,9 @@ function bind() {
     }
     const chatPick = event.target.closest("[data-chatmodel-pick]");
     if (chatPick && !chatPick.disabled) {
-      modelChoice.key = chatPick.dataset.chatmodelPick;
+      chatModelChoice.key = chatPick.dataset.chatmodelPick;
       chatModelTouched = true;
-      saveModelChoice();
+      saveChatModelChoice();
       renderChatModelMenu();
       paintModelBadge();
       modelMenu.hidden = true;
