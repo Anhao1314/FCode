@@ -135,7 +135,7 @@ function renderMode(mode, payload = {}) { ... }
 | 旧状态引用 | 0 |
 | `addEventListener` | 56 |
 | 后端测试 | 364 通过 |
-| 前端纯函数测试 | 6 通过（`node --test`） |
+| 前端纯函数测试 | 12 通过（`node --test`） |
 
 ## 仍待收敛
 

@@ -16,6 +16,7 @@ flowcredit/viewer/
   app.js              ← 页面逻辑（对话 / 委托 / 回放 / 运行管理）
   core/format.js      ← canonical JSON、SHA-256、链验证、格式化（纯函数）
   core/chat-format.js ← Markdown 渲染与 SSE 分帧（纯函数，Node 可测）
+  core/chat-view.js   ← 单条消息 DOM 渲染（纯函数，Node 可测）
   report.js           ← 自包含审计报告生成器
   icons-doodle.js     ← 图标与涂鸦
   server.py           ← HTTP 表面：静态文件 + JSON/SSE API + 入口
