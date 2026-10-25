@@ -1,22 +1,23 @@
 # 前端收敛：一个主区，一套状态
 
-Phase 1–3 已完成。目标不是换视觉，而是把历史层收成一个可维护的结构：
-**Paper & Proof 的外观不变，主区只有一个渲染入口，状态只有一个事实源，动态列表只挂一层事件。**
+Phase 1–3 已完成，之后又加了一层对话面。目标始终不是换视觉，而是把历史层收成
+一个可维护的结构：**主区只有一个渲染入口，运行状态只有一个事实源，动态列表
+只挂一层事件；对话有独立的线程状态，但不复制运行状态。**
 
 ## 当前结构
 
 ```text
 Sidebar（唯一导航）
-Main（data-view = run | loading | error | intake | empty | ledger）
+Main（data-view = chat | run | loading | error | intake | empty | ledger | reviews | scheduled）
 Settings（workspace 内的主区页面，打开时让位）
 Rail（只随 run 出现）
-Composer（run / intake）
+Composer（chat / run / intake）
 Overlay（report / palette）
 ```
 
-- 新建委托只有一个路径：`startIntake("")`。
-- `#new-run`、composer `＋`、`⌘N`、palette「新委托」、空状态按钮、`/new` 全部进入需求确认。
-- 设置、账本继续是主区模式，不是弹层；报告和命令面板保留为浮层。
+- 新对话的默认入口是 `newChat()`：`#new-run`、`⌘N`、侧栏「新对话」、空状态都走这里。
+- 委托入口是模板卡、「转为委托」和 `startIntake("")`；对话回答不会自动执行工具。
+- 设置、账本、判断记录、定时任务继续是主区模式，不是弹层；报告和命令面板保留为浮层。
 - 审批、判断记录留在行内。
 
 ## Phase 1：删掉重复入口
@@ -30,7 +31,8 @@ Overlay（report / palette）
 
 - 全部主区写入收口到 `renderMain(html, { mode, scroll })`；16 个直接写入点归零。
 - 主区带 `data-view`，同时记录 `store.mode`。
-- 删除 app.css 的 3 个废弃 `:root`（约 33 条声明）；`design.css` 是唯一 token 入口。
+- 删除 app.css 的 3 个废弃 `:root`（约 33 条声明），当时把 token 收到 `design.css`；
+  后续 Console Light 改版又把令牌移回 `app.css` 顶部，`design.css` 只留组件视觉。
 - 补齐 `--accent` / `--accent-soft` / `--accent-fill` 三个别名。
 - 删除 11 个无引用类和 21 处死 selector。
 
@@ -38,10 +40,14 @@ Overlay（report / palette）
 
 ### CSS：布局与组件分离
 
-- `app.css` **124 行**，只保留外壳结构：box-sizing、shell、侧栏/主区/右栏几何、滚动容器、浮层定位、状态行布局、结构性响应式规则。
-- `design.css` **1,830 行**：`:root` token、自 app.css 迁入的组件层、Paper & Proof 覆盖层。
-- 迁移按原顺序进行，Paper & Proof 规则仍在最后；声明多重集在删除废弃 `:root` 后与迁移前一致。
-- `app.css` 不再含 `:root`、字号、颜色、字距、文本、圆角声明；所有 `var(--x)` 都在 `design.css` 中定义。
+- `app.css` **326 行**：顶部 `:root` design tokens（Console Light 三层表面 / 单强调色 /
+  语义色），下面只保留外壳结构：box-sizing、shell、侧栏/主区/右栏几何、滚动容器、
+  浮层定位、结构性响应式规则。
+- `design.css` **2,139 行**：组件视觉（排版、边框、圆角、图标、动效）与 Paper & Proof
+  覆盖层；在 app.css 之后加载，可以覆盖其非令牌规则。
+- `chat.css` **326 行**：对话消息、气泡、代码块、附件、设置卡片。
+- `desktop.css` **48 行**：只在 `html.desktop-app` 下套用 Kimi 测量比例。
+
 
 ### State：单一 UI store
 
@@ -88,34 +94,59 @@ function renderMode(mode, payload = {}) { ... }
 
 ### Modules：零构建 ES module 边界
 
-- 新增 `flowcredit/viewer/core/format.js`（45 行），用原生 ES module 导出纯函数：
-  `canonical`、`sha256Hex`、`verifyChain`、`esc`、`pct`、`pp`、`num`、`shortHash`、`stripTags`。
-- `app.js` 改为 `type="module"` 并从 `./core/format.js` 导入；无打包器、无第三方依赖。
+- `core/format.js`（45 行）导出 canonical JSON、SHA-256、链验证与格式化；
+  `core/chat-format.js`（92 行）导出 Markdown 渲染与 SSE 分帧。
+- `app.js` 是 `type="module"`，从这两个文件导入；无打包器、无第三方依赖。
 - `report.js` 保持独立 classic script：报告必须是可离线打开的独立产物，刻意不依赖控制台。
 - `icons-doodle.js` 保持 classic script，先于 module 执行，提供 `window.DOODLE_ICONS`。
-- 桌面打包 `desktop/fcode.spec` 同步补齐 `design.css`、`icons-doodle.js` 与 `core/`；此前漏拷会导致桌面端没有 Paper & Proof 样式和手绘图标。
+- 桌面打包 `desktop/fcode.spec` 不再维护文件清单：复制根级 html/css/js 与
+  `core/`、`brand/`、`icons/`，新增静态资源不会漏进 bundle。
+
+### Chat：线程状态与流式渲染
+
+对话不是第二次实现，而是同一套外壳里的一个 `data-view`：
+
+- `chat` 对象只保存对话自己的状态（当前线程、消息、流式句柄、附件、编辑目标、
+  删除确认）；运行状态仍在 `store` / `sessions`，两者不互相复制。
+- 每次发送、编辑、重新生成都追加事件（`chat_user` / `chat_assistant` /
+  `chat_edit` / `chat_regenerate` / `chat_cancelled` / `chat_error`），活跃分支
+  由 supersession 推导；删除线程写墓碑，不抹事件。
+- 流式渲染只重绘当前 assistant 节点，避免整段 Markdown 每次 delta 都重建；
+  滚动容器是 `.main`（不是 `#main` 的内部 div）。
+- 对话模型选择存 `fa.chatModel`，与委托运行的模型选择分离；设置页
+  （设置 > 环境 > 默认）只在用户未手动选择时提供默认值。
+- Markdown / SSE 分帧是纯函数，放在 `core/chat-format.js`，由
+  `node --test viewer/tests/*.test.js` 覆盖；不需要浏览器或测试框架。
+
 
 ## 当前数字
 
 | 项目 | 数值 |
 | --- | --- |
-| `app.js` | 4,622 行 |
-| `design.css` | 1,830 行 |
-| `app.css` | 124 行 |
+| `app.js` | 7,005 行 |
+| `design.css` | 2,139 行 |
+| `app.css` | 326 行 |
+| `chat.css` | 326 行 |
+| `desktop.css` | 48 行 |
 | `core/format.js` | 45 行 |
-| `index.html` | 333 行 |
+| `core/chat-format.js` | 92 行 |
+| `index.html` | 366 行 |
 | `main.innerHTML` 直接写入 | 1 处（`renderMain` 内） |
 | 旧状态引用 | 0 |
-| `addEventListener` | 38 |
-| 后端测试 | 171 通过 |
+| `addEventListener` | 56 |
+| 后端测试 | 340 通过 |
+| 前端纯函数测试 | 6 通过（`node --test`） |
 
 ## 仍待收敛
 
-1. `app.js` 仍有 4,600+ 行；下一步按视图拆 module：run、intake、settings、ledger，各自只依赖 `core/format.js` 与共享 store。
+1. `app.js` 仍有 7,000 行；下一步按视图拆 module：chat、run、intake、settings、ledger，
+   各自只依赖 `core/format.js`、`core/chat-format.js` 与共享 store。
 2. `renderSettings()` 仍返回大段 HTML；拆视图时一并迁出。
-3. `app.css` 保留了少量布局容器的背景/分隔线；若继续压缩，需要先定义“结构线”和“组件线”的边界。
-4. `design.css` 仍有 6 处 `!important`，集中在减少动效与少量覆盖；拆视图后逐条确认能否删除。
-5. 视觉验收目前靠浏览器逐页检查；可补一个零依赖截图基线脚本，但不要为了测试引入构建链。
+3. 对话 UI 仍与运行 UI 同处 `app.js`；目前只有 Markdown/SSE 纯函数被抽出并有测试。
+4. `design.css` 仍有 5 处 `!important`，集中在减少动效与少量覆盖；拆视图后逐条确认能否删除。
+5. 前端测试只覆盖纯函数，没有浏览器 E2E；继续坚持零依赖，不为测试引入构建链。
+6. 对话附件只收纯文本；图片/PDF/Office 不在 v1。
+
 
 ## 约束
 
