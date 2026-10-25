@@ -9,7 +9,7 @@
 <script>window.__errs=[];window.addEventListener('error',e=>window.__errs.push((e.message||'')+'@'+e.lineno));window.addEventListener('unhandledrejection',e=>window.__errs.push('rej:'+(e.reason&&e.reason.message||e.reason)));</script><script>if(new URLSearchParams(location.search).get("desktop")==="1")document.documentElement.classList.add("desktop-app");</script><link rel="stylesheet" href="app.css?v=75">
 <link rel="stylesheet" href="design.css?v=76">
 <link rel="stylesheet" href="desktop.css?v=2">
-<link rel="stylesheet" href="chat.css?v=1">
+<link rel="stylesheet" href="chat.css?v=2">
 </head>
 <body>
 <div class="shell app rail-hidden" id="app">
@@ -241,15 +241,15 @@
           <section class="set-section" id="set-model" data-set-panel="model">
             <div class="set-section-head"><h2>模型与工具</h2><span class="set-tag">运行时</span></div>
             <p class="set-section-desc">模型只提议动作；权限、预算与执行由主机决定。这里展示当前实际生效的配置。</p>
+            <div class="chatcfg" id="chatcfg">
+              <div class="chatcfg-head">
+                <b>对话模型</b>
+                <small>配置保存在本机 <code>chat-config.json</code>（不进仓库、不进事件链）；优先级：这里 &gt; 环境变量。当前作用于对话；委托运行仍读环境变量。</small>
+              </div>
+              <div class="chatcfg-default" id="chatcfg-default"></div>
+              <div class="chatcfg-cards" id="chatcfg-cards"></div>
+            </div>
             <div class="set-rows">
-              <div class="set-row">
-                <span class="set-row-text"><b>当前模型</b><small>离线确定性 mock，用于演示与回归</small></span>
-                <span class="set-value"><code>offline-mock</code></span>
-              </div>
-              <div class="set-row">
-                <span class="set-row-text"><b>本地 Qwen</b><small>训练完成后接入，训练与推理共用同一套 prompt</small></span>
-                <span class="set-value dim">未接入 · 训练中</span>
-              </div>
               <div class="set-row">
                 <span class="set-row-text"><b>工具目录</b><small>封闭注册表：schema、effect、契约版本由主机持有</small></span>
                 <span class="set-value" id="settings-tools">—</span>
@@ -361,6 +361,6 @@
 <script src="report.js?v=56"></script>
 <script src="icons-doodle.js?v=54"></script>
   <script src="brand/seal-icons.js"></script>
-<script src="app.js?v=80" type="module"></script>
+<script src="app.js?v=82" type="module"></script>
 </body>
 </html>

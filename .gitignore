@@ -11,6 +11,7 @@ packages/native-agent/validation/
 *.log
 # console runtime artifacts
 flowcredit/viewer/runs/
+flowcredit/viewer/chat-config.json
 **/receipts/
 **/checkpoints/
 **/blobs/

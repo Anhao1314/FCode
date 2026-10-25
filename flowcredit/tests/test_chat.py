@@ -274,5 +274,116 @@ class RemoteStreamTests(unittest.TestCase):
                 service.store.verify_chain(thread_id)
 
 
+class ChatSettingsTests(unittest.TestCase):
+    """Settings overrides: stored locally, redacted in API responses."""
+
+    KIMI_ENV_CLEARED = {
+        "KIMI_API_KEY": "",
+        "KIMI_INPUT_PRICE_MICROUSD_PER_MTOK": "",
+        "KIMI_OUTPUT_PRICE_MICROUSD_PER_MTOK": "",
+        "KIMI_MODEL": "",
+        "KIMI_BASE_URL": "",
+        "KIMI_MIN_CALL_INTERVAL_SECONDS": "",
+    }
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.root = pathlib.Path(self._tmp.name)
+        patcher = mock.patch.dict(os.environ, self.KIMI_ENV_CLEARED, clear=False)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.service = ChatService(
+            self.root / "chat.sqlite", self.root / "chat-config.json",
+        )
+        self.addCleanup(self.service.close)
+
+    def test_settings_override_enables_kimi_without_env(self) -> None:
+        models = {item["key"]: item for item in self.service.chat_models()}
+        self.assertFalse(models["kimi"]["available"])
+        snapshot = self.service.update_config(provider="kimi", values={
+            "api_key": "sk-test-1234567890",
+            "model": "kimi-k2.6",
+            "input_price_microusd_per_mtok": "950000",
+            "output_price_microusd_per_mtok": "4000000",
+            "min_interval_seconds": "22",
+        })
+        self.assertTrue(snapshot["config"]["providers"]["kimi"]["api_key_set"])
+        self.assertNotIn("sk-test-1234567890", json.dumps(snapshot))
+        models = {item["key"]: item for item in snapshot["models"]}
+        self.assertTrue(models["kimi"]["available"])
+        self.assertEqual(models["kimi"]["model"], "kimi-k2.6")
+        # The key lives only in the local file, never in the API payload.
+        stored = (self.root / "chat-config.json").read_text(encoding="utf-8")
+        self.assertIn("sk-test-1234567890", stored)
+
+    def test_default_model_roundtrip_and_validation(self) -> None:
+        snapshot = self.service.update_config(default_model="kimi")
+        self.assertEqual(snapshot["default"], "kimi")
+        self.assertEqual(self.service.default_model(), "kimi")
+        with self.assertRaises(AgentError) as error:
+            self.service.update_config(default_model="not-a-model")
+        self.assertEqual(error.exception.code, "CHAT_CONFIG_INVALID")
+
+    def test_override_beats_environment(self) -> None:
+        with mock.patch.dict(os.environ, {
+            "KIMI_API_KEY": "env-key",
+            "KIMI_INPUT_PRICE_MICROUSD_PER_MTOK": "1",
+            "KIMI_OUTPUT_PRICE_MICROUSD_PER_MTOK": "2",
+            "KIMI_MODEL": "kimi-env",
+        }, clear=False):
+            self.service.update_config(provider="kimi", values={
+                "api_key": "settings-key",
+                "model": "kimi-settings",
+                "input_price_microusd_per_mtok": "950000",
+                "output_price_microusd_per_mtok": "4000000",
+            })
+            config = resolve_chat_provider(
+                "kimi", self.service._overrides_for("kimi"),
+            )
+        self.assertEqual(config.api_key, "settings-key")
+        self.assertEqual(config.model, "kimi-settings")
+
+    def test_empty_value_clears_back_to_environment(self) -> None:
+        with mock.patch.dict(os.environ, {
+            "KIMI_API_KEY": "env-key",
+            "KIMI_INPUT_PRICE_MICROUSD_PER_MTOK": "950000",
+            "KIMI_OUTPUT_PRICE_MICROUSD_PER_MTOK": "4000000",
+        }, clear=False):
+            self.service.update_config(provider="kimi", values={"api_key": "settings-key"})
+            self.service.update_config(provider="kimi", values={"api_key": ""})
+            config = resolve_chat_provider(
+                "kimi", self.service._overrides_for("kimi"),
+            )
+        self.assertEqual(config.api_key, "env-key")
+
+    def test_validation_fails_closed(self) -> None:
+        cases = [
+            ({"input_price_microusd_per_mtok": "0"}, "positive"),
+            ({"input_price_microusd_per_mtok": "abc"}, "integer"),
+            ({"min_interval_seconds": "-1"}, "0..3600"),
+            ({"max_completion_tokens": "999999"}, "1..32768"),
+            ({"base_url": "ftp://x"}, "http(s)"),
+            ({"nope": "1"}, "unknown field"),
+        ]
+        for values, needle in cases:
+            with self.subTest(field=list(values)[0]):
+                with self.assertRaises(AgentError) as error:
+                    self.service.update_config(provider="kimi", values={**values, "api_key": "k"})
+                self.assertEqual(error.exception.code, "CHAT_CONFIG_INVALID")
+                self.assertIn(needle, error.exception.message)
+        with self.assertRaises(AgentError) as error:
+            self.service.update_config(provider="mock", values={})
+        self.assertEqual(error.exception.code, "CHAT_CONFIG_INVALID")
+
+    def test_corrupt_config_file_reads_as_empty(self) -> None:
+        (self.root / "chat-config.json").write_text("{not json", encoding="utf-8")
+        fresh = ChatService(self.root / "chat2.sqlite", self.root / "chat-config.json")
+        self.addCleanup(fresh.close)
+        self.assertEqual(fresh.default_model(), "mock")
+        models = {item["key"]: item for item in fresh.chat_models()}
+        self.assertTrue(models["mock"]["available"])
+
+
 if __name__ == "__main__":
     unittest.main()

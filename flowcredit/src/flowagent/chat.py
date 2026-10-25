@@ -38,13 +38,21 @@ from .runtime.budget import Budget, BudgetLimits
 
 __all__ = [
     "CHAT_VERSION",
+    "CHAT_CONFIG_VERSION",
     "ChatService",
     "ChatProviderConfig",
     "resolve_chat_provider",
+    "load_chat_config",
+    "save_chat_config",
+    "redact_chat_config",
     "parse_sse_data",
 ]
 
 CHAT_VERSION = "flowagent.chat/v1"
+CHAT_CONFIG_VERSION = "fcode.chat-config/v1"
+#: Providers a settings page may configure. ``mock`` needs nothing.
+CONFIGURABLE_PROVIDERS = ("kimi", "deepseek", "local")
+CHAT_PROVIDER_KEYS = ("mock",) + CONFIGURABLE_PROVIDERS
 
 CHAT_SYSTEM_PROMPT = (
     "你是 FCode 里的对话助手。用中文、清楚、简洁地回答。"
@@ -117,88 +125,186 @@ class ChatProviderConfig:
         return bool(self.base_url)
 
 
-def _kimi_config() -> ChatProviderConfig:
-    api_key = os.environ.get("KIMI_API_KEY", "").strip()
-    model = os.environ.get("KIMI_MODEL", "").strip() or "kimi-k2.6"
-    missing = [] if api_key else ["KIMI_API_KEY"]
+def _ov_str(overrides: dict[str, Any], name: str) -> str:
+    value = overrides.get(name)
+    if value is None:
+        return ""
+    text = str(value).strip()
+    return text
+
+
+def _ov_int(overrides: dict[str, Any], name: str) -> int | None:
+    raw = overrides.get(name)
+    if raw is None or str(raw).strip() == "":
+        return None
     try:
-        input_price = _require_price("KIMI_INPUT_PRICE_MICROUSD_PER_MTOK")
-        output_price = _require_price("KIMI_OUTPUT_PRICE_MICROUSD_PER_MTOK")
-    except AgentError as error:
-        missing.append(error.message.replace("missing ", ""))
-        input_price = output_price = 0
+        return int(str(raw).strip())
+    except ValueError:
+        raise AgentError("CHAT_CONFIG_INVALID", f"{name} must be an integer")
+
+
+def _ov_float(overrides: dict[str, Any], name: str) -> float | None:
+    raw = overrides.get(name)
+    if raw is None or str(raw).strip() == "":
+        return None
+    try:
+        return float(raw)
+    except ValueError:
+        raise AgentError("CHAT_CONFIG_INVALID", f"{name} must be a number")
+
+
+def _remote_config(
+    key: str,
+    label: str,
+    overrides: dict[str, Any],
+    *,
+    api_env: str,
+    model_env: str,
+    base_env: str,
+    base_default: str,
+    model_default: str,
+    in_price_env: str,
+    out_price_env: str,
+    interval_env: str,
+) -> ChatProviderConfig:
+    """Resolve one remote provider: settings override > environment > default.
+
+    Nothing is ever silently free: if neither settings nor env provide the key
+    or both prices, the provider stays unavailable with the exact missing list.
+    """
+    override_api = _ov_str(overrides, "api_key")
+    api_key = override_api or os.environ.get(api_env, "").strip()
+    model = _ov_str(overrides, "model") or os.environ.get(model_env, "").strip() or model_default
+    base_url = _ov_str(overrides, "base_url") or os.environ.get(base_env, "").strip() or base_default
+
+    missing: list[str] = []
+    if not api_key:
+        missing.append(api_env)
+
+    input_price = _ov_int(overrides, "input_price_microusd_per_mtok")
+    if input_price is None:
+        raw = os.environ.get(in_price_env, "").strip()
+        if raw:
+            try:
+                input_price = int(raw)
+            except ValueError:
+                raise AgentError("CHAT_CONFIG_INVALID", f"{in_price_env} must be an integer")
+        else:
+            input_price = None
+            missing.append(in_price_env)
+    elif input_price <= 0:
+        raise AgentError("CHAT_CONFIG_INVALID", "input price must be positive")
+    output_price = _ov_int(overrides, "output_price_microusd_per_mtok")
+    if output_price is None:
+        raw = os.environ.get(out_price_env, "").strip()
+        if raw:
+            try:
+                output_price = int(raw)
+            except ValueError:
+                raise AgentError("CHAT_CONFIG_INVALID", f"{out_price_env} must be an integer")
+        else:
+            output_price = None
+            missing.append(out_price_env)
+    elif output_price <= 0:
+        raise AgentError("CHAT_CONFIG_INVALID", "output price must be positive")
     if missing:
         raise AgentError(
             "CHAT_PROVIDER_UNAVAILABLE",
-            "Kimi 对话未配置：缺少 " + "、".join(sorted(set(missing))),
+            f"{label} 未配置：缺少 " + "、".join(missing),
         )
+
+    interval = _ov_float(overrides, "min_interval_seconds")
+    if interval is None:
+        interval = _env_float(interval_env, 0.0)
+    max_completion = _ov_int(overrides, "max_completion_tokens")
+    if max_completion is None:
+        max_completion = _env_int("CHAT_MAX_COMPLETION_TOKENS", DEFAULT_MAX_COMPLETION)
+    if not 1 <= max_completion <= 32768:
+        raise AgentError("CHAT_CONFIG_INVALID", "max completion tokens must be 1..32768")
     return ChatProviderConfig(
-        key="kimi",
-        label="Kimi",
+        key=key,
+        label=label,
         model=model,
-        base_url=os.environ.get("KIMI_BASE_URL", "").strip() or "https://api.moonshot.cn/v1",
+        base_url=base_url,
         api_key=api_key,
         input_price_microusd_per_mtok=input_price,
         output_price_microusd_per_mtok=output_price,
-        min_interval_seconds=_env_float("KIMI_MIN_CALL_INTERVAL_SECONDS", 0.0),
+        min_interval_seconds=max(0.0, interval),
         timeout_seconds=_env_float("CHAT_STREAM_TIMEOUT_SECONDS", 120.0),
-        max_completion_tokens=_env_int(
-            "CHAT_MAX_COMPLETION_TOKENS",
-            _env_int("KIMI_MAX_COMPLETION_TOKENS", DEFAULT_MAX_COMPLETION),
-        ),
-        completion_field="max_completion_tokens",
+        max_completion_tokens=max_completion,
+        completion_field="max_completion_tokens" if key == "kimi" else "max_tokens",
     )
 
 
-def _deepseek_config() -> ChatProviderConfig:
-    api_key = os.environ.get("DEEPSEEK_API_KEY", "").strip()
-    model = os.environ.get("DEEPSEEK_MODEL", "").strip() or "deepseek-chat"
-    missing = [] if api_key else ["DEEPSEEK_API_KEY"]
-    try:
-        input_price = _require_price("DEEPSEEK_INPUT_PRICE_MICROUSD_PER_MTOK")
-        output_price = _require_price("DEEPSEEK_OUTPUT_PRICE_MICROUSD_PER_MTOK")
-    except AgentError as error:
-        missing.append(error.message.replace("missing ", ""))
-        input_price = output_price = 0
-    if missing:
-        raise AgentError(
-            "CHAT_PROVIDER_UNAVAILABLE",
-            "DeepSeek 对话未配置：缺少 " + "、".join(sorted(set(missing))),
-        )
-    return ChatProviderConfig(
-        key="deepseek",
-        label="DeepSeek",
-        model=model,
-        base_url=os.environ.get("DEEPSEEK_BASE_URL", "").strip() or "https://api.deepseek.com/v1",
-        api_key=api_key,
-        input_price_microusd_per_mtok=input_price,
-        output_price_microusd_per_mtok=output_price,
-        min_interval_seconds=_env_float("DEEPSEEK_MIN_CALL_INTERVAL_SECONDS", 0.0),
-        timeout_seconds=_env_float("CHAT_STREAM_TIMEOUT_SECONDS", 120.0),
-        max_completion_tokens=_env_int(
-            "CHAT_MAX_COMPLETION_TOKENS",
-            _env_int("DEEPSEEK_MAX_TOKENS", DEFAULT_MAX_COMPLETION),
-        ),
+def _kimi_config(overrides: dict[str, Any]) -> ChatProviderConfig:
+    return _remote_config(
+        "kimi",
+        "Kimi",
+        overrides,
+        api_env="KIMI_API_KEY",
+        model_env="KIMI_MODEL",
+        base_env="KIMI_BASE_URL",
+        base_default="https://api.moonshot.cn/v1",
+        model_default="kimi-k2.6",
+        in_price_env="KIMI_INPUT_PRICE_MICROUSD_PER_MTOK",
+        out_price_env="KIMI_OUTPUT_PRICE_MICROUSD_PER_MTOK",
+        interval_env="KIMI_MIN_CALL_INTERVAL_SECONDS",
     )
 
 
-def _local_config() -> ChatProviderConfig:
-    endpoint = os.environ.get("FCODE_LOCAL_ENDPOINT", "").strip()
+def _deepseek_config(overrides: dict[str, Any]) -> ChatProviderConfig:
+    return _remote_config(
+        "deepseek",
+        "DeepSeek",
+        overrides,
+        api_env="DEEPSEEK_API_KEY",
+        model_env="DEEPSEEK_MODEL",
+        base_env="DEEPSEEK_BASE_URL",
+        base_default="https://api.deepseek.com/v1",
+        model_default="deepseek-chat",
+        in_price_env="DEEPSEEK_INPUT_PRICE_MICROUSD_PER_MTOK",
+        out_price_env="DEEPSEEK_OUTPUT_PRICE_MICROUSD_PER_MTOK",
+        interval_env="DEEPSEEK_MIN_CALL_INTERVAL_SECONDS",
+    )
+
+
+def _local_config(overrides: dict[str, Any]) -> ChatProviderConfig:
+    endpoint = _ov_str(overrides, "base_url") or os.environ.get("FCODE_LOCAL_ENDPOINT", "").strip()
     if not endpoint:
         raise AgentError("CHAT_PROVIDER_UNAVAILABLE", "本地模型未配置：缺少 FCODE_LOCAL_ENDPOINT")
+    max_completion = _ov_int(overrides, "max_completion_tokens")
+    if max_completion is None:
+        max_completion = _env_int("CHAT_MAX_COMPLETION_TOKENS", DEFAULT_MAX_COMPLETION)
+    if not 1 <= max_completion <= 32768:
+        raise AgentError("CHAT_CONFIG_INVALID", "max completion tokens must be 1..32768")
     return ChatProviderConfig(
         key="local",
         label="本地模型",
-        model=os.environ.get("FCODE_LOCAL_MODEL", "").strip() or "fcode-qwen3-4b",
+        model=_ov_str(overrides, "model") or os.environ.get("FCODE_LOCAL_MODEL", "").strip() or "fcode-qwen3-4b",
         base_url=endpoint,
-        api_key=os.environ.get("FCODE_LOCAL_API_KEY", "").strip(),
+        api_key=_ov_str(overrides, "api_key") or os.environ.get("FCODE_LOCAL_API_KEY", "").strip(),
         timeout_seconds=_env_float("CHAT_STREAM_TIMEOUT_SECONDS", 120.0),
-        max_completion_tokens=_env_int("CHAT_MAX_COMPLETION_TOKENS", DEFAULT_MAX_COMPLETION),
+        max_completion_tokens=max_completion,
     )
 
 
-def resolve_chat_provider(key: str | None) -> ChatProviderConfig:
+def _peek_model(key: str, overrides: dict[str, Any]) -> str:
+    """The model name to display even when the provider is unavailable."""
+    if key == "kimi":
+        return _ov_str(overrides, "model") or os.environ.get("KIMI_MODEL", "").strip() or "kimi-k2.6"
+    if key == "deepseek":
+        return _ov_str(overrides, "model") or os.environ.get("DEEPSEEK_MODEL", "").strip() or "deepseek-chat"
+    if key == "local":
+        return _ov_str(overrides, "model") or os.environ.get("FCODE_LOCAL_MODEL", "").strip() or "fcode-qwen3-4b"
+    return "offline-chat-mock-v1"
+
+
+def resolve_chat_provider(
+    key: str | None,
+    overrides: dict[str, Any] | None = None,
+) -> ChatProviderConfig:
     normalized = (key or "mock").strip().lower()
+    override = overrides if isinstance(overrides, dict) else {}
     if normalized == "mock":
         return ChatProviderConfig(
             key="mock",
@@ -207,15 +313,75 @@ def resolve_chat_provider(key: str | None) -> ChatProviderConfig:
             max_completion_tokens=_env_int("CHAT_MAX_COMPLETION_TOKENS", DEFAULT_MAX_COMPLETION),
         )
     if normalized == "kimi":
-        return _kimi_config()
+        return _kimi_config(override)
     if normalized == "deepseek":
-        return _deepseek_config()
+        return _deepseek_config(override)
     if normalized == "local":
-        return _local_config()
+        return _local_config(override)
     raise AgentError(
         "CHAT_PROVIDER_UNAVAILABLE",
         f"对话模型 {normalized!r} 未接入；可用：mock / kimi / deepseek / local",
     )
+
+
+# ------------------------------------------------------------ settings store
+
+
+def load_chat_config(path: Path | None) -> dict[str, Any]:
+    """Read the local settings file; anything unexpected reads as empty."""
+    if path is None:
+        return {"version": CHAT_CONFIG_VERSION, "providers": {}}
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {"version": CHAT_CONFIG_VERSION, "providers": {}}
+    if not isinstance(raw, dict) or raw.get("version") != CHAT_CONFIG_VERSION:
+        return {"version": CHAT_CONFIG_VERSION, "providers": {}}
+    providers = raw.get("providers")
+    config: dict[str, Any] = {"version": CHAT_CONFIG_VERSION, "providers": {}}
+    if isinstance(providers, dict):
+        for key in CONFIGURABLE_PROVIDERS:
+            block = providers.get(key)
+            if not isinstance(block, dict):
+                continue
+            config["providers"][key] = {
+                name: value for name, value in block.items()
+                if isinstance(value, (str, int, float)) and str(value).strip() != ""
+            }
+    default = raw.get("default_model")
+    if default in CHAT_PROVIDER_KEYS:
+        config["default_model"] = str(default)
+    return config
+
+
+def save_chat_config(path: Path | None, config: dict[str, Any]) -> None:
+    """Atomic write with owner-only permissions; the key never goes anywhere else."""
+    if path is None:
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(json.dumps(config, ensure_ascii=False, indent=2), encoding="utf-8")
+    try:
+        os.chmod(tmp, 0o600)
+    except OSError:
+        pass
+    os.replace(tmp, path)
+
+
+def redact_chat_config(config: dict[str, Any]) -> dict[str, Any]:
+    """The API-facing copy: never the key itself, only set/masked flags."""
+    providers: dict[str, Any] = {}
+    for key, block in (config.get("providers") or {}).items():
+        shown = {name: value for name, value in block.items() if name != "api_key"}
+        api_key = str(block.get("api_key") or "")
+        shown["api_key_set"] = bool(api_key)
+        shown["api_key_masked"] = (api_key[:3] + "…" + api_key[-4:]) if len(api_key) > 8 else ("已设置" if api_key else "")
+        providers[key] = shown
+    return {
+        "version": CHAT_CONFIG_VERSION,
+        "providers": providers,
+        "default_model": config.get("default_model", "mock"),
+    }
 
 
 # --------------------------------------------------------------------- SSE
@@ -395,12 +561,17 @@ class _RemoteProvider:
 class ChatService:
     """Threads, messages and streaming answers, backed by the task chain."""
 
-    def __init__(self, db_path: Path) -> None:
+    def __init__(self, db_path: Path, config_path: Path | None = None) -> None:
         db_path.parent.mkdir(parents=True, exist_ok=True)
         self.store = TaskStore(db_path)
         self.receipts = ReceiptStore(self.store)
         self._lock = threading.RLock()
         self._db_path = db_path
+        # Settings overrides live next to the chat database (Application
+        # Support in the desktop bundle), win over the environment, and never
+        # enter the event chain, traces or logs.
+        self._config_path = config_path
+        self._config = load_chat_config(config_path)
 
     # -------------------------------------------------------------- helpers
 
@@ -414,15 +585,160 @@ class ChatService:
             max_tokens=_env_int("FCODE_CHAT_MAX_TOKENS", DEFAULT_CHAT_LIMITS.max_tokens),
         )
 
+    def _overrides_for(self, model: str | None) -> dict[str, Any]:
+        key = (model or "mock").strip().lower()
+        if key not in CONFIGURABLE_PROVIDERS:
+            return {}
+        return (self._config.get("providers") or {}).get(key) or {}
+
     def check_model(self, model: str | None) -> dict[str, Any]:
-        config = resolve_chat_provider(model)
+        config = resolve_chat_provider(model, self._overrides_for(model))
         return {
             "key": config.key,
             "label": config.label,
             "model": config.model,
             "remote": config.remote,
             "maxCompletionTokens": config.max_completion_tokens,
+            "price": {
+                "inputMicrousdPerMtok": config.input_price_microusd_per_mtok,
+                "outputMicrousdPerMtok": config.output_price_microusd_per_mtok,
+            },
         }
+
+    def default_model(self) -> str:
+        return str(self._config.get("default_model") or "mock")
+
+    def config_snapshot(self) -> dict[str, Any]:
+        """Redacted settings + model menu, the shape the settings page renders."""
+        return {
+            "config": redact_chat_config(self._config),
+            "models": self.chat_models(),
+            "default": self.default_model(),
+        }
+
+    def chat_models(self) -> list[dict[str, Any]]:
+        """The chat model menu: availability judged from overrides + env."""
+        models: list[dict[str, Any]] = []
+        labels = {"mock": "离线 Mock", "kimi": "Kimi 云端", "deepseek": "DeepSeek 云端", "local": "本地模型"}
+        for key in CHAT_PROVIDER_KEYS:
+            overrides = self._overrides_for(key)
+            try:
+                config = resolve_chat_provider(key, overrides)
+                models.append({
+                    "key": key,
+                    "label": labels[key],
+                    "model": config.model,
+                    "available": True,
+                    "reason": "",
+                    "remote": config.remote,
+                    "price": {
+                        "inputMicrousdPerMtok": config.input_price_microusd_per_mtok,
+                        "outputMicrousdPerMtok": config.output_price_microusd_per_mtok,
+                    } if config.remote else None,
+                })
+            except AgentError as error:
+                models.append({
+                    "key": key,
+                    "label": labels[key],
+                    "model": _peek_model(key, overrides),
+                    "available": False,
+                    "reason": error.message,
+                    "remote": key != "mock",
+                    "price": None,
+                })
+        return models
+
+    def update_config(
+        self,
+        *,
+        provider: str | None = None,
+        values: dict[str, Any] | None = None,
+        default_model: str | None = None,
+    ) -> dict[str, Any]:
+        """Validate and persist settings overrides; empty string clears a field.
+
+        Returns the redacted config plus the refreshed model menu. The stored
+        file is the only place the API key is written — never the chain, traces
+        or logs — and it lives outside the repository.
+        """
+        if provider is not None and provider not in CONFIGURABLE_PROVIDERS:
+            raise AgentError(
+                "CHAT_CONFIG_INVALID",
+                f"provider must be one of {', '.join(CONFIGURABLE_PROVIDERS)}",
+            )
+        clean: dict[str, str] = {}
+        if provider is not None:
+            allowed = {
+                "api_key", "model", "base_url",
+                "input_price_microusd_per_mtok", "output_price_microusd_per_mtok",
+                "min_interval_seconds", "max_completion_tokens",
+            }
+            if not isinstance(values, dict):
+                raise AgentError("CHAT_CONFIG_INVALID", "values must be an object")
+            for name, raw in values.items():
+                if name not in allowed:
+                    raise AgentError("CHAT_CONFIG_INVALID", f"unknown field {name!r}")
+                text = "" if raw is None else str(raw).strip()
+                if text == "":
+                    clean[name] = ""  # explicit clear: fall back to env/default
+                    continue
+                if name == "api_key" and len(text) > 300:
+                    raise AgentError("CHAT_CONFIG_INVALID", "api key is too long")
+                if name == "model" and len(text) > 120:
+                    raise AgentError("CHAT_CONFIG_INVALID", "model name is too long")
+                if name == "base_url" and not text.startswith(("http://", "https://")):
+                    raise AgentError("CHAT_CONFIG_INVALID", "base url must start with http(s)://")
+                if name in ("input_price_microusd_per_mtok", "output_price_microusd_per_mtok"):
+                    try:
+                        price = int(text)
+                    except ValueError:
+                        raise AgentError("CHAT_CONFIG_INVALID", f"{name} must be an integer")
+                    if price <= 0:
+                        raise AgentError("CHAT_CONFIG_INVALID", f"{name} must be positive")
+                    clean[name] = str(price)
+                    continue
+                if name == "min_interval_seconds":
+                    try:
+                        interval = float(text)
+                    except ValueError:
+                        raise AgentError("CHAT_CONFIG_INVALID", "min_interval_seconds must be a number")
+                    if interval < 0 or interval > 3600:
+                        raise AgentError("CHAT_CONFIG_INVALID", "min_interval_seconds must be 0..3600")
+                    clean[name] = text
+                    continue
+                if name == "max_completion_tokens":
+                    try:
+                        tokens = int(text)
+                    except ValueError:
+                        raise AgentError("CHAT_CONFIG_INVALID", "max_completion_tokens must be an integer")
+                    if not 1 <= tokens <= 32768:
+                        raise AgentError("CHAT_CONFIG_INVALID", "max_completion_tokens must be 1..32768")
+                    clean[name] = str(tokens)
+                    continue
+                clean[name] = text
+        with self._lock:
+            providers = dict(self._config.get("providers") or {})
+            if provider is not None:
+                block = dict(providers.get(provider) or {})
+                for name, value in clean.items():
+                    if value == "":
+                        block.pop(name, None)
+                    else:
+                        block[name] = value
+                if block:
+                    providers[provider] = block
+                else:
+                    providers.pop(provider, None)
+            config = {"version": CHAT_CONFIG_VERSION, "providers": providers}
+            if default_model is not None:
+                if default_model not in CHAT_PROVIDER_KEYS:
+                    raise AgentError("CHAT_CONFIG_INVALID", f"default model must be one of {', '.join(CHAT_PROVIDER_KEYS)}")
+                config["default_model"] = default_model
+            elif self._config.get("default_model"):
+                config["default_model"] = self._config["default_model"]
+            self._config = config
+            save_chat_config(self._config_path, config)
+        return self.config_snapshot()
 
     def _thread_exists(self, thread_id: str) -> bool:
         row = self.store._conn.execute(
@@ -692,7 +1008,7 @@ class ChatService:
     # --------------------------------------------------------------- streaming
 
     def _provider(self, model: str | None):
-        config = resolve_chat_provider(model)
+        config = resolve_chat_provider(model, self._overrides_for(model))
         if config.key == "mock":
             return config, _MockProvider(config.model)
         return config, _RemoteProvider(config)

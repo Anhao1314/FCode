@@ -55,6 +55,28 @@ Provider：
 OpenAI 兼容 SSE；Kimi 使用 `max_completion_tokens`，不发送 `temperature`（K2/K3 只接受 1）；
 `KIMI_MIN_CALL_INTERVAL_SECONDS` 生效，等待时会向客户端发 `wait` 事件。
 
+## 模型配置（设置页）
+
+设置 → 模型与工具 现在直接配置对话模型：
+
+- **默认对话模型**：mock / Kimi / DeepSeek / 本地，只对未手动选择过的会话生效；
+- **Kimi / DeepSeek 卡片**：API Key、模型名、输入/输出价（µUSD/MTok）、最小调用间隔、最大补全 tokens；
+- **本地卡片**：OpenAI 兼容端点、模型名、可选 Key。
+
+规则：
+
+- 配置保存在本机 `viewer/chat-config.json`（桌面端在 Application Support），
+  权限 0600，**不进仓库、不进事件链、不出现在任何 API 响应里**（GET 只返回
+  `api_key_set` 与 `sk-…后四位`）；
+- 优先级：**设置页 > 环境变量 > 默认**；留空保存 = 清除该项回落到环境变量，
+  「清除密钥」按钮只清 Key；
+- 价格必填且必须为正整数（fail-closed 计费不放松）；Kimi 用
+  `max_completion_tokens`、不发 `temperature`；
+- **当前只作用于对话**；委托运行的 provider 仍由环境变量配置
+  （provider 泛化合并后统一）。
+
+API：`GET/POST /api/settings/chat-config`、`GET /api/chat/models`。
+
 ## 边界（诚实）
 
 - **对话不调用工具**。这是治理选择，不是能力缺口：要让模型执行，走委托运行。

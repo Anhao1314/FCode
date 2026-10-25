@@ -179,6 +179,8 @@ let health = null;      // /api/health payload
 let templates = [];     // /api/templates
 let tplKey = "full";    // selected template
 let chatThreads = [];   // /api/chat/threads（侧栏「对话」）
+let chatModels = [];    // /api/chat/models（对话模式模型菜单）
+let chatConfig = null;  // /api/settings/chat-config（脱敏后的配置）
 const chat = {
   active: false,        // composer 当前属于一段对话，而不是委托/运行
   current: null,        // 打开的线程（含 messages）
@@ -4015,6 +4017,19 @@ function paintModelBadge() {
     btn.title = "静态回放模式：composer 已整体禁用";
     return;
   }
+  if (chat.active) {
+    const chatEntry = chatModels.find(m => m.key === modelChoice.key && m.available)
+      || chatModels.find(m => m.key === "mock");
+    if (modelChoice.key !== "mock" && !chatModels.some(m => m.key === modelChoice.key && m.available)) {
+      modelChoice.key = (chatEntry && chatEntry.key) || "mock";
+      saveModelChoice();
+    }
+    labelEl.textContent = !chatEntry || chatEntry.key === "mock"
+      ? "offline-mock"
+      : chatEntry.model;
+    btn.title = "选择对话模型；在设置页填写 API 配置";
+    return;
+  }
   if (modelChoice.key !== "mock" && !modelCatalog.some(m => m.key === modelChoice.key && m.available)) {
     // 记忆的选择已不可用：回到 mock（菜单里保留 reason 供查看）
     modelChoice.key = "mock";
@@ -4935,8 +4950,10 @@ function openSettingsPage() {
   document.getElementById("settings-page").hidden = false;
   document.getElementById("settings-back").textContent = "×";
   document.getElementById("settings-back").title = "关闭设置 (Esc)";
-  document.getElementById("settings-btn").setAttribute("aria-current", "page");
+  const anchor = document.getElementById("settings-mobile") || document.getElementById("settings-btn");
+  anchor?.setAttribute("aria-current", "page");
   renderSettings();
+  syncChatConfig();
   document.getElementById("settings-content").scrollTop = 0;
 
   activateSettingsSection(settingsSection, "auto");
@@ -4951,12 +4968,12 @@ function closeSettingsPage(returnFocus = true) {
   document.getElementById("workspace").classList.remove("settings-open");
   document.getElementById("app").classList.remove("settings-open");
   document.getElementById("settings-page").hidden = true;
-  document.getElementById("settings-btn").removeAttribute("aria-current");
+  (document.getElementById("settings-mobile") || document.getElementById("settings-btn"))?.removeAttribute("aria-current");
   requestAnimationFrame(() => {
     document.getElementById("main").scrollTop = settingsScroll.main;
     document.getElementById("rail-body").scrollTop = settingsScroll.rail;
   });
-  if (returnFocus) document.getElementById("settings-btn").focus({ preventScroll: true });
+  if (returnFocus) (document.getElementById("settings-mobile") || document.getElementById("settings-btn"))?.focus({ preventScroll: true });
 }
 
 function toggleSettingsPage() {
@@ -5047,7 +5064,14 @@ function bindSettings() {
     if (approval) {
       setApprovalMode(approval.dataset.setApproval);
       syncSettings();
+      return;
     }
+    const save = target.closest("[data-chatcfg-save]");
+    if (save) { saveChatConfig(save.dataset.chatcfgSave); return; }
+    const clearKey = target.closest("[data-chatcfg-clearkey]");
+    if (clearKey) { clearChatConfigKey(clearKey.dataset.chatcfgClearkey); return; }
+    const defaultPick = target.closest("[data-chatcfg-default]");
+    if (defaultPick && !defaultPick.disabled) { setDefaultChatModel(defaultPick.dataset.chatcfgDefault); return; }
   });
 }
 
@@ -5340,6 +5364,188 @@ function renderChats() {
       <span class="slabel">${esc(thread.title)}</span>
     </button>`;
   }).join("");
+}
+
+let chatModelTouched = false; // 用户在菜单里手动选过模型后，不再自动跟随默认值
+
+function adoptDefaultChatModel(defaultKey) {
+  if (chatModelTouched || !defaultKey || defaultKey === "mock") return;
+  const entry = chatModels.find(m => m.key === defaultKey && m.available);
+  if (entry && modelChoice.key !== entry.key) {
+    modelChoice.key = entry.key;
+    saveModelChoice();
+    paintModelBadge();
+  }
+}
+
+async function loadChatModels() {
+  if (!health || !health.live) return;
+  try {
+    const data = await fetch("/api/chat/models", { cache: "no-store" }).then(r => r.ok ? r.json() : null);
+    if (data && Array.isArray(data.models)) {
+      chatModels = data.models;
+      adoptDefaultChatModel(data.default);
+      if (chat.active) paintModelBadge();
+    }
+  } catch { /* 菜单打开时会重试 */ }
+}
+
+function renderChatModelMenu() {
+  const menu = document.getElementById("model-menu");
+  if (!menu) return;
+  const items = chatModels.map(m => {
+    const current = m.available && m.key === modelChoice.key;
+    return `<button class="tpl-item model-item${current ? " active" : ""}${m.available ? "" : " disabled"}" data-chatmodel-pick="${esc(m.key)}"${m.available ? "" : " disabled"}>
+      <span class="t"><span>${esc(m.label)}${current ? '<span class="check">✓</span>' : ""}</span><span class="m">${esc(m.model)}</span></span>
+      <span class="d">${m.available ? (m.remote && m.price ? `${num(m.price.inputMicrousdPerMtok)} / ${num(m.price.outputMicrousdPerMtok)} µUSD·MTok⁻¹` : "离线 · 不产生外部计费") : esc(m.reason)}</span>
+    </button>`;
+  }).join("");
+  menu.innerHTML = items + `<div class="tpl-note">对话模型；委托运行的模型仍由环境变量配置</div>
+    <button class="tpl-item" type="button" data-chatmodel-settings><span class="t"><span>管理模型配置…</span></span><span class="d">设置 → 模型与工具：填写 API Key 与价格</span></button>`;
+}
+
+async function syncChatConfig() {
+  if (!health || !health.live) return;
+  try {
+    const data = await fetch("/api/settings/chat-config", { cache: "no-store" }).then(r => r.ok ? r.json() : null);
+    if (!data) return;
+    chatConfig = data.config || { providers: {}, default_model: "mock" };
+    chatModels = Array.isArray(data.models) ? data.models : chatModels;
+    renderChatConfig();
+  } catch { /* 设置页会显示加载失败 */ }
+}
+
+const CHATCFG_FIELDS = {
+  kimi: [
+    ["model", "模型", "kimi-k2.6"],
+    ["api_key", "API Key", ""],
+    ["input_price_microusd_per_mtok", "输入价 µUSD/MTok", "950000"],
+    ["output_price_microusd_per_mtok", "输出价 µUSD/MTok", "4000000"],
+    ["min_interval_seconds", "最小间隔（秒）", "22"],
+    ["max_completion_tokens", "最大补全 tokens", "2048"],
+  ],
+  deepseek: [
+    ["model", "模型", "deepseek-chat"],
+    ["api_key", "API Key", ""],
+    ["input_price_microusd_per_mtok", "输入价 µUSD/MTok", ""],
+    ["output_price_microusd_per_mtok", "输出价 µUSD/MTok", ""],
+    ["min_interval_seconds", "最小间隔（秒）", "0"],
+    ["max_completion_tokens", "最大补全 tokens", "2048"],
+  ],
+  local: [
+    ["base_url", "端点（OpenAI 兼容）", "http://127.0.0.1:11434/v1"],
+    ["model", "模型", "fcode-qwen3-4b"],
+    ["api_key", "API Key（可选）", ""],
+    ["max_completion_tokens", "最大补全 tokens", "2048"],
+  ],
+};
+
+function renderChatConfig() {
+  const defaultSlot = document.getElementById("chatcfg-default");
+  const cardsSlot = document.getElementById("chatcfg-cards");
+  if (!defaultSlot || !cardsSlot) return;
+  const providers = (chatConfig && chatConfig.providers) || {};
+  const fallbacks = { kimi: "Kimi 云端", deepseek: "DeepSeek 云端", local: "本地模型", mock: "离线 Mock" };
+  const currentDefault = (chatConfig && chatConfig.default_model) || "mock";
+  defaultSlot.innerHTML = `<span class="chatcfg-label">默认对话模型</span>` + ["mock", "kimi", "deepseek", "local"].map(key => {
+    const entry = chatModels.find(m => m.key === key);
+    const usable = key === "mock" || (entry && entry.available);
+    return `<button type="button" class="chatcfg-radio${currentDefault === key ? " active" : ""}" data-chatcfg-default="${esc(key)}"${usable ? "" : " disabled"} title="${usable ? "" : esc(entry ? entry.reason : "未配置")}">
+      <span class="dot${usable ? " ok" : ""}"></span>${esc(fallbacks[key])}
+    </button>`;
+  }).join("");
+  cardsSlot.innerHTML = Object.entries(CHATCFG_FIELDS).map(([provider, fields]) => {
+    const stored = providers[provider] || {};
+    const entry = chatModels.find(m => m.key === provider);
+    const status = entry && entry.available
+      ? `<span class="chatcfg-status ok">可用 · ${esc(entry.model)}</span>`
+      : `<span class="chatcfg-status bad">${esc(entry ? entry.reason : "未配置")}</span>`;
+    const inputs = fields.map(([name, label, placeholder]) => {
+      const value = name === "api_key" ? "" : String(stored[name] ?? "");
+      const hint = name === "api_key"
+        ? (stored.api_key_set ? `已保存 ${esc(stored.api_key_masked || "")} · 留空保持不变` : "未设置")
+        : "";
+      return `<label class="chatcfg-field">
+        <span>${esc(label)}${hint ? `<i>${hint}</i>` : ""}</span>
+        <input id="chatcfg-${provider}-${name}" type="${name === "api_key" ? "password" : "text"}"
+          value="${esc(value)}" placeholder="${esc(placeholder)}" autocomplete="off" spellcheck="false">
+      </label>`;
+    }).join("");
+    return `<div class="chatcfg-card" data-chatcfg-card="${provider}">
+      <div class="chatcfg-card-head"><b>${esc(fallbacks[provider])}</b>${status}</div>
+      <div class="chatcfg-grid">${inputs}</div>
+      <div class="chatcfg-actions">
+        <button type="button" class="chat-act strong" data-chatcfg-save="${provider}">保存</button>
+        ${stored.api_key_set ? `<button type="button" class="chat-act" data-chatcfg-clearkey="${provider}">清除密钥</button>` : ""}
+        <span class="chatcfg-note">留空保存 = 清除该项（回落到环境变量/默认）</span>
+      </div>
+    </div>`;
+  }).join("");
+}
+
+async function saveChatConfig(provider) {
+  if (!provider || !CHATCFG_FIELDS[provider]) return;
+  const values = {};
+  for (const [name] of CHATCFG_FIELDS[provider]) {
+    const input = document.getElementById(`chatcfg-${provider}-${name}`);
+    if (!input) continue;
+    const value = String(input.value || "").trim();
+    if (name === "api_key" && !value) continue; // 留空 = 保持不变
+    values[name] = value;
+  }
+  try {
+    const response = await fetch("/api/settings/chat-config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ provider, values }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+    chatConfig = data.config;
+    chatModels = Array.isArray(data.models) ? data.models : chatModels;
+    renderChatConfig();
+    paintModelBadge();
+    toast("已保存（本机）");
+  } catch (error) {
+    toast("保存失败：" + error.message);
+  }
+}
+
+async function clearChatConfigKey(provider) {
+  try {
+    const response = await fetch("/api/settings/chat-config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ provider, values: { api_key: "" } }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+    chatConfig = data.config;
+    chatModels = Array.isArray(data.models) ? data.models : chatModels;
+    renderChatConfig();
+    paintModelBadge();
+    toast("密钥已清除（回落到环境变量）");
+  } catch (error) {
+    toast("清除失败：" + error.message);
+  }
+}
+
+async function setDefaultChatModel(key) {
+  try {
+    const response = await fetch("/api/settings/chat-config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ default_model: key }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+    chatConfig = data.config;
+    chatModels = Array.isArray(data.models) ? data.models : chatModels;
+    renderChatConfig();
+    toast(`默认对话模型：${key}`);
+  } catch (error) {
+    toast("设置失败：" + error.message);
+  }
 }
 
 function leaveChat() {
@@ -6113,10 +6319,34 @@ function bind() {
       return;
     }
     apvMenu.hidden = true;
-    if (modelMenu.hidden) renderModelMenu();
+    if (modelMenu.hidden) {
+      if (chat.active) {
+        renderChatModelMenu();
+        loadChatModels().then(() => { if (!modelMenu.hidden) renderChatModelMenu(); });
+      } else {
+        renderModelMenu();
+      }
+    }
     modelMenu.hidden = !modelMenu.hidden;
   });
   modelMenu.addEventListener("click", event => {
+    const chatSettings = event.target.closest("[data-chatmodel-settings]");
+    if (chatSettings) {
+      modelMenu.hidden = true;
+      renderMode("settings");
+      activateSettingsSection("model");
+      return;
+    }
+    const chatPick = event.target.closest("[data-chatmodel-pick]");
+    if (chatPick && !chatPick.disabled) {
+      modelChoice.key = chatPick.dataset.chatmodelPick;
+      chatModelTouched = true;
+      saveModelChoice();
+      renderChatModelMenu();
+      paintModelBadge();
+      modelMenu.hidden = true;
+      return;
+    }
     const pick = event.target.closest("[data-model-pick]");
     if (pick && !pick.disabled) {
       modelChoice.key = pick.dataset.modelPick;
@@ -6703,6 +6933,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   // await：?run= 直链要在 health/runHistory 就绪后才能判定运行状态
   await initLive();
   await loadChatThreads();
+  loadChatModels();
   const params = new URLSearchParams(location.search);
   const runParam = params.get("run");
   const param = params.get("trace");

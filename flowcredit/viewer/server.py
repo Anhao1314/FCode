@@ -473,8 +473,13 @@ class RunManager:
         if runtime is not None:
             try:
                 # Chat lives next to the run history (Application Support in the
-                # desktop bundle), so audit records survive app upgrades.
-                self.chat = runtime.ChatService(RUNS_DIR.parent / "chat.sqlite")
+                # desktop bundle), so audit records survive app upgrades. The
+                # settings file sits beside it and holds provider overrides —
+                # including API keys — outside the repository.
+                self.chat = runtime.ChatService(
+                    RUNS_DIR.parent / "chat.sqlite",
+                    RUNS_DIR.parent / "chat-config.json",
+                )
             except Exception:  # noqa: BLE001 — chat must not take the console down
                 traceback.print_exc()
         self._lock = threading.Lock()
@@ -1990,6 +1995,17 @@ class Handler(SimpleHTTPRequestHandler):
             if mgr.chat is None:
                 return self._json({"error": "chat is unavailable"}, 503)
             return self._json({"threads": mgr.chat.list_threads()})
+        if path == "/api/chat/models":
+            if mgr.chat is None:
+                return self._json({"error": "chat is unavailable"}, 503)
+            return self._json({
+                "models": mgr.chat.chat_models(),
+                "default": mgr.chat.default_model(),
+            })
+        if path == "/api/settings/chat-config":
+            if mgr.chat is None:
+                return self._json({"error": "chat is unavailable"}, 503)
+            return self._json(mgr.chat.config_snapshot())
         if path.startswith("/api/chat/threads/"):
             if mgr.chat is None:
                 return self._json({"error": "chat is unavailable"}, 503)
@@ -2246,6 +2262,33 @@ class Handler(SimpleHTTPRequestHandler):
             except Exception as error:  # noqa: BLE001
                 return self._json({"error": f"intake failed: {error}"}, 400)
             return self._json(turn)
+        if path == "/api/settings/chat-config":
+            if mgr.chat is None:
+                return self._json({"error": "chat is unavailable"}, 503)
+            body = self._read_body()
+            provider = body.get("provider")
+            if provider is not None and not isinstance(provider, str):
+                return self._json({"error": "provider must be a string"}, 400)
+            default_model = body.get("default_model")
+            if default_model is not None and not isinstance(default_model, str):
+                return self._json({"error": "default_model must be a string"}, 400)
+            values = body.get("values")
+            if values is not None and not isinstance(values, dict):
+                return self._json({"error": "values must be an object"}, 400)
+            if len(json.dumps(body, ensure_ascii=False).encode("utf-8")) > 8192:
+                return self._json({"error": "config payload is too large"}, 400)
+            try:
+                snapshot = mgr.chat.update_config(
+                    provider=provider,
+                    values=values,
+                    default_model=default_model,
+                )
+            except Exception as error:  # noqa: BLE001 — validation errors are 400s
+                return self._json(
+                    {"error": str(error), "code": getattr(error, "code", "CHAT_CONFIG_INVALID")},
+                    400,
+                )
+            return self._json(snapshot)
         if path == "/api/chat/send":
             if mgr.chat is None:
                 return self._json({"error": "chat is unavailable"}, 503)
