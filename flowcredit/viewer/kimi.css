@@ -260,17 +260,44 @@ html.desktop-app .side-new { height: 40px; }
 .run-chip .pdot { background: var(--accent); animation: kimiPulse 1.2s ease-in-out infinite alternate; }
 button.run-chip:hover { border-color: var(--accent); color: var(--text-1); }
 
-/* ================================================================ 菜单 / 浮层 */
-.tpl-menu, .model-menu, .foot-menu, .row-menu, .palette-box {
-  border-color: rgba(0, 0, 0, .08); border-radius: 12px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, .10);
+/* ================================================================ 菜单 / 浮层
+   Kimi 的 .kimi-menu 实测（模型浮窗 290 宽）：r16、无外边框、0.5px 内描边
+   + 0 4px 16px 软阴影；进入动画从触发芯片最近的角 0.85 缩放到位（.15s，
+   cubic-bezier(0,0,.2,1)）。浮窗与触发芯片水平对齐、垂直间隙 4px。 */
+.tpl-menu, .foot-menu, .row-menu {
+  border: 0; border-radius: 16px; background: #FFFFFF; padding: 8px;
+  box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, .13), 0 4px 16px rgba(0, 0, 0, .10);
 }
-.tpl-menu { padding: 6px; }
 .tpl-item { border-radius: 8px; padding: 8px 10px; }
 .tpl-item:hover, .tpl-item.active { background: #F5F5F5; }
-.tpl-item .t { font-size: 14px; }
+.tpl-item .t { font-size: 14px; line-height: 20px; }
 .tpl-item .d { color: var(--text-3); font-size: 12px; line-height: 18px; }
 .tpl-note { border-top-color: var(--line-soft); color: var(--text-3); }
+
+/* 模型浮窗：右缘贴芯片右缘。芯片在操作行最右（bar padding 10 + send 36
+   + gap 8 = 54px），写死 54 即可与芯片对齐；上方 4px，原点取右下角。 */
+#model-menu {
+  left: auto; right: 54px; bottom: calc(100% + 4px);
+  width: 290px; transform-origin: bottom right;
+  animation: kimiMenuIn .15s cubic-bezier(0, 0, .2, 1) both;
+}
+#model-menu .tpl-item .t { white-space: nowrap; }
+#model-menu .tpl-item .m { max-width: 46%; overflow: hidden; text-overflow: ellipsis; }
+#model-menu .model-item .check { color: var(--accent); }
+#model-menu .model-effort { border: 0; border-radius: 8px; background: #F5F5F5; }
+
+/* 审批浮窗：同一规则镜像到左缘（plus 36 + gap 8 + padding 10 = 54px）。 */
+#approval-menu {
+  left: 54px; right: auto; bottom: calc(100% + 4px);
+  transform-origin: bottom left;
+  animation: kimiMenuIn .15s cubic-bezier(0, 0, .2, 1) both;
+}
+
+/* 窄屏：芯片锚点会让浮窗越出画布，退回贴边。 */
+@media (max-width: 480px) {
+  #model-menu { right: 10px; width: min(290px, calc(100% - 20px)); }
+  #approval-menu { left: 10px; right: 10px; width: auto; }
+}
 
 .palette-scrim { background: rgba(0, 0, 0, .24); backdrop-filter: blur(2px); }
 .palette-box { border-radius: 14px; }
@@ -309,8 +336,12 @@ button.run-chip:hover { border-color: var(--accent); color: var(--text-1); }
 .attach-caption { color: var(--text-3); letter-spacing: .02em; text-transform: none; font-weight: 500; }
 
 /* 菜单进入：Kimi 的 fade/scale 曲线（0.15s） */
-.tpl-menu:not([hidden]), .model-menu:not([hidden]), .foot-menu:not([hidden]), .row-menu:not([hidden]) {
+.tpl-menu:not([hidden]), .foot-menu:not([hidden]), .row-menu:not([hidden]) {
   animation: kimiFade .15s var(--ease) both;
+}
+@keyframes kimiMenuIn {
+  from { opacity: 0; transform: scale(.85); }
+  to { opacity: 1; transform: scale(1); }
 }
 
 /* ================================================================ 对话 */
