@@ -100,6 +100,7 @@ class Runtime:
         self.clarify = m.clarify
         m = imp("flowagent.chat")
         self.ChatService = m.ChatService
+        self.merge_action = m.merge_action
         m = imp("flowagent.domains")
         self.get_domain = m.get_domain
         self.list_domains = m.list_domains

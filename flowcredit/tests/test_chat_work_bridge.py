@@ -79,13 +79,26 @@ class SpecValidationTests(unittest.TestCase):
         self.assertEqual(len(origin["messages"]), 1)
         self.assertEqual(len(origin["messages"][0]["text"]), 600)
 
-    def test_over_24_messages_is_refused(self) -> None:
+    def test_a_long_thread_keeps_its_most_recent_turns(self) -> None:
+        """Recency wins: 30 turns become the last 24, and the older ones go —
+        "到了之后" refers to the most recent context, not the thread's opening."""
         spec = self.base_spec()
         spec["origin_thread"] = make_origin(messages=[
-            {"role": "user", "text": "m"} for _ in range(25)
+            {"role": "user", "text": f"第{i}轮"} for i in range(1, 31)
         ])
-        with self.assertRaises(ValueError):
-            self.validate(spec)
+        self.validate(spec)
+        kept = spec["origin_thread"]["messages"]
+        self.assertEqual(len(kept), 24)
+        self.assertEqual(kept[0]["text"], "第7轮")
+        self.assertEqual(kept[-1]["text"], "第30轮")
+
+    def test_a_long_message_is_truncated_not_refused(self) -> None:
+        spec = self.base_spec()
+        spec["origin_thread"] = make_origin(messages=[
+            {"role": "user", "text": "长" * 5_000},
+        ])
+        self.validate(spec)
+        self.assertEqual(len(spec["origin_thread"]["messages"][0]["text"]), 600)
 
     def test_bad_role_is_refused(self) -> None:
         spec = self.base_spec()

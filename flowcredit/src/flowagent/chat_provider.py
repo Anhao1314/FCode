@@ -59,6 +59,14 @@ def _cost(prompt_tokens: int, completion_tokens: int, config: ChatProviderConfig
 
 
 class _MockProvider:
+    """The offline transport: no key, no network, no cost.
+
+    ``FCODE_CHAT_MOCK_ACTION`` (a JSON object) appends a scripted
+    ````fcode_action```` proposal to the reply, so the confirmation path can be
+    exercised end to end without a real model. Only this provider reads it —
+    a real provider never does — and malformed JSON adds nothing.
+    """
+
     name = "offline-mock"
 
     def __init__(self, model: str) -> None:
@@ -77,6 +85,14 @@ class _MockProvider:
             "在模型菜单里选择 Kimi / DeepSeek，或配置对应的 API 环境变量后，"
             "同一段对话会交给真实模型回答。"
         )
+        scripted = (os.environ.get("FCODE_CHAT_MOCK_ACTION") or "").strip()
+        if scripted:
+            try:
+                payload = json.loads(scripted)
+            except ValueError:
+                payload = None
+            if isinstance(payload, dict):
+                text += "\n\n```fcode_action\n" + json.dumps(payload, ensure_ascii=False) + "\n```"
         delay = float(os.environ.get("FCODE_CHAT_MOCK_DELAY", "0.012") or 0)
         for index in range(0, len(text), 8):
             if delay:

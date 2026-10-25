@@ -575,6 +575,96 @@ class Handler(SimpleHTTPRequestHandler):
                 model=model,
             )
             return self._stream_chat(events)
+        if path.startswith("/api/chat/threads/") and path.endswith("/confirm"):
+            if mgr.chat is None:
+                return self._json({"error": "chat is unavailable"}, 503)
+            if mgr.runtime is None:
+                return self._json({"error": f"live mode unavailable: {mgr.runtime_error}"}, 503)
+            thread_id = path[len("/api/chat/threads/") : -len("/confirm")]
+            body = self._read_body()
+            message_id = str(body.get("messageId") or "").strip()
+            if not message_id:
+                return self._json({"error": "messageId is required"}, 400)
+            try:
+                thread = mgr.chat.get_thread(thread_id)
+            except Exception as error:  # noqa: BLE001 — no such thread is a 404, not a 500
+                return self._json({"error": str(error)}, 404)
+            message = next(
+                (item for item in thread["messages"] if item["id"] == message_id), None
+            )
+            if message is None:
+                return self._json({"error": "no such message"}, 404)
+            action = message.get("action") or {}
+            if not action:
+                return self._json({"error": "this message carries no execution proposal"}, 400)
+            if message.get("run"):
+                return self._json(
+                    {"error": "proposal already started", "runId": (message["run"] or {}).get("id")},
+                    409,
+                )
+            # The card may be edited before confirming; the edits pass the
+            # parser's own fail-closed checks (chat.merge_action).
+            try:
+                action = mgr.merge_chat_action(
+                    action,
+                    goal=body.get("goal") if isinstance(body.get("goal"), str) else None,
+                    mode=body.get("mode") if isinstance(body.get("mode"), str) else None,
+                    sources=body.get("sources") if isinstance(body.get("sources"), list) else None,
+                )
+            except ValueError as exc:
+                return self._json({"error": str(exc)}, 400)
+            # 与「转为委托」的同一创建路径：模板、spec 校验、审批档位都走原逻辑
+            template = "general-research"
+            try:
+                scenario = mgr.runtime.get_scenario(template)
+            except Exception:
+                return self._json({"error": f"unknown template {template!r}"}, 400)
+            spec = {
+                "version": "fcode.intake/v1",
+                "task": template,
+                "mode": str(action.get("mode") or "script"),
+                "source": "chat-action",
+                "origin_thread": {
+                    "threadId": thread_id,
+                    "threadTitle": thread.get("title", ""),
+                    # The tail of the conversation, same rule as
+                    # validate_delegation_spec: recency wins, size is bounded.
+                    "messages": [
+                        {"role": item["role"], "text": str(item["text"])[:600]}
+                        for item in thread["messages"]
+                        if item.get("role") in ("user", "assistant")
+                        and item.get("text") and item.get("status") != "error"
+                    ][-24:],
+                },
+            }
+            if action.get("sources"):
+                spec["sources"] = list(action["sources"])
+
+            approval = str(body.get("approval") or "consequential")
+            if approval not in ("off", "consequential", "all"):
+                return self._json({"error": "approval must be off, consequential or all"}, 400)
+            try:
+                mgr.validate_delegation_spec(spec, scenario)
+            except ValueError as exc:
+                return self._json({"error": str(exc)}, 400)
+            model_field = body.get("model")
+            effort_field = body.get("effort")
+            try:
+                model_key, effort = mgr.resolve_model(
+                    model_field if isinstance(model_field, str) else None,
+                    effort_field if isinstance(effort_field, str) else None,
+                )
+            except ValueError as exc:
+                return self._json({"error": str(exc)}, 400)
+            objective = str(action["goal"]).strip()[:600]
+            run = mgr.create(objective, template, approval, spec, model_key=model_key, effort=effort)
+            try:
+                mgr.chat.link_run(
+                    thread_id, message_id, run.id, goal=objective, mode=str(action["mode"])
+                )
+            except Exception as error:  # noqa: BLE001 — the run exists; the anchor failure is reported, not hidden
+                return self._json({"error": f"run {run.id} started but the thread anchor failed: {error}"}, 500)
+            return self._json({"run": run.to_json(detail=True)}, 202)
         if path.startswith("/api/chat/threads/") and path.endswith("/edit"):
             if mgr.chat is None:
                 return self._json({"error": "chat is unavailable"}, 503)

@@ -695,3 +695,123 @@ html.desktop-app .side-user { height: 32px; padding: 4px 8px; }
   .chat-thread { max-width: 100%; }
   .chat-bubble { max-width: 100%; }
 }
+
+/* ============================================================ 对话内执行卡
+   Kimi 的形态：一张安静的白卡贴在回答下面，键值行用 90/60/45% 黑，
+   操作按钮为文本按钮 + 一个实心主按钮（Kimi 主按钮是 #000000）。
+   卡片从不执行任何东西，只有 [data-run-start] 会走到确认端点。 */
+.run-card {
+  margin: 10px 0 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: 16px;
+  background: var(--raised);
+  display: flex; flex-direction: column; gap: 10px;
+}
+
+.run-card-head { display: flex; align-items: center; gap: 8px; min-height: 20px; }
+.run-card-title { font: 500 14px/20px var(--font-ui); color: var(--text-1); }
+.run-card-hint { font: 12px/18px var(--font-ui); color: var(--text-3); }
+.run-card .grow { flex: 1 1 auto; }
+
+.run-card-field { display: flex; align-items: flex-start; gap: 10px; }
+.run-card-key {
+  flex: none; width: 44px; padding-top: 6px;
+  font: 12px/18px var(--font-ui); color: var(--text-3);
+}
+.run-card-input {
+  flex: 1 1 auto; width: 100%; box-sizing: border-box;
+  padding: 6px 10px; border: 0; border-radius: 10px;
+  background: var(--panel); color: var(--text-1);
+  font: 14px/20px var(--font-ui);
+  resize: vertical; min-height: 32px;
+  transition: background-color .15s, box-shadow .15s;
+}
+.run-card-input:focus {
+  outline: none; background: var(--raised);
+  box-shadow: inset 0 0 0 0.5px var(--accent-line), 0 0 0 3px var(--accent-soft);
+}
+.run-card-input:disabled { color: var(--text-3); }
+
+.run-card-modes { display: inline-flex; gap: 4px; padding: 2px; border-radius: 10px; background: var(--panel); }
+.run-card-mode {
+  min-width: 52px; height: 28px; padding: 0 12px;
+  border: 0; border-radius: 8px; background: transparent;
+  color: var(--text-2); font: 500 13px/18px var(--font-ui); cursor: pointer;
+  transition: background-color .15s, color .15s;
+}
+.run-card-mode:hover { background: rgba(0, 0, 0, .05); color: var(--text-1); }
+.run-card-mode.active { background: #000000; color: #FFFFFF; }
+.run-card-mode:disabled { cursor: default; }
+
+.run-card-reason { font: 12px/18px var(--font-ui); color: var(--text-3); }
+
+.run-card-facts {
+  display: grid; grid-template-columns: auto 1fr; gap: 2px 12px;
+  padding: 8px 10px; border-radius: 10px; background: var(--panel);
+  font: 12px/18px var(--font-ui);
+}
+.run-card-facts .k { color: var(--text-4); }
+.run-card-facts .v { color: var(--text-2); }
+
+.run-card-error {
+  padding: 8px 10px; border-radius: 10px;
+  background: var(--bad-soft); color: var(--bad-ink);
+  font: 12px/18px var(--font-ui);
+}
+
+.run-card-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+.run-card .a-btn { height: 30px; padding: 0 14px; border-radius: 8px; font-size: 13px; }
+.run-card .a-btn.ghost { border: 0; background: transparent; color: var(--text-2); }
+.run-card .a-btn.ghost:hover { background: var(--panel); color: var(--text-1); }
+.run-card .a-btn.primary { border: 0; background: #000000; color: #FFFFFF; font-weight: 500; }
+.run-card .a-btn.primary:hover { background: #1A1A1A; color: #FFFFFF; }
+.run-card .a-btn.primary:disabled:hover { background: #000000; color: #FFFFFF; }
+
+/* 被忽略的提案：一行，不再是卡 */
+.run-card.dismissed {
+  flex-direction: row; align-items: center; gap: 8px;
+  padding: 6px 10px; border: 0; background: transparent;
+}
+.run-act {
+  border: 0; background: transparent; border-radius: 6px; padding: 2px 8px;
+  color: var(--text-3); font: 12px/18px var(--font-ui); cursor: pointer;
+  transition: background-color .15s, color .15s;
+}
+.run-act:hover { background: var(--panel); color: var(--text-1); }
+
+/* 镜像：进度行、审批门、产物、元信息 */
+.run-card-goal { font: 14px/20px var(--font-ui); color: var(--text-1); }
+.run-card-rows { display: flex; flex-direction: column; gap: 2px; }
+.run-card-rows.waiting { padding: 2px 0; }
+.run-card-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 4px 8px; border-radius: 8px; background: var(--panel);
+  font: 12px/18px var(--font-mono);
+}
+.run-card-row .rno { color: var(--text-4); flex: none; }
+.run-card-row .tool { color: var(--text-1); flex: none; }
+.run-card-row .detail {
+  color: var(--text-3); font-family: var(--font-ui);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.run-card-row .verdict { color: var(--text-2); flex: none; }
+
+.run-card-approval {
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 10px 12px; border-radius: 12px;
+  background: var(--warn-soft, rgba(255, 149, 0, .10));
+  box-shadow: inset 0 0 0 0.5px rgba(255, 149, 0, .32);
+}
+.run-card-approval-head { display: flex; align-items: center; gap: 8px; }
+.run-card-approval-body { font: 12px/18px var(--font-mono); color: var(--text-1); word-break: break-all; }
+
+.run-card-artifacts { display: flex; flex-direction: column; gap: 2px; }
+.run-card-artifact {
+  display: flex; align-items: center; gap: 8px;
+  padding: 4px 8px; border-radius: 8px; background: var(--panel);
+  font: 12px/18px var(--font-mono); color: var(--text-1);
+}
+.run-card-artifact .bytes { color: var(--text-3); }
+
+.run-card-meta { display: flex; flex-wrap: wrap; gap: 12px; font: 12px/18px var(--font-mono); color: var(--text-3); }

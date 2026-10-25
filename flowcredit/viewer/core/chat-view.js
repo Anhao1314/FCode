@@ -2,12 +2,16 @@
  *
  * State (which message is being edited) is passed in, so the renderer can be
  * tested with the Node runner and cannot read a global by accident.
+ *
+ * `extraHtml` is the slot for what belongs to this answer but is rendered by
+ * someone else — today the execution card (core/run-card.js). It sits inside
+ * the message so the card hugs its answer instead of floating in the thread.
  */
 
 import { esc, num } from "./format.js";
 import { renderMarkdown } from "./chat-format.js";
 
-export function chatMessageHtml(message, editingId = null) {
+export function chatMessageHtml(message, editingId = null, extraHtml = "") {
   const id = esc(message.id);
   const streaming = message.status === "streaming";
   if (message.role === "user") {
@@ -57,7 +61,7 @@ export function chatMessageHtml(message, editingId = null) {
   const stopped = message.status === "cancelled" ? `<div class="chat-meta">已停止生成</div>` : "";
   return `<div class="chat-msg assistant${streaming ? " streaming" : ""}${message.status === "cancelled" ? " cancelled" : ""}" data-msg-id="${id}"${streaming ? ' data-streaming="1"' : ""}>
     <div class="chat-md">${renderMarkdown(message.text)}</div>
-    ${wait}${typing}${reasoning}${error}${usage}${stopped}
+    ${wait}${typing}${reasoning}${error}${usage}${stopped}${extraHtml}
     <div class="chat-msg-actions">${actions.join("")}</div>
   </div>`;
 }

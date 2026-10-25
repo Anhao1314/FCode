@@ -20,6 +20,7 @@ one chat surface.
 from __future__ import annotations
 
 import json
+import re
 import secrets
 import threading
 import time
@@ -75,14 +76,135 @@ CHAT_VERSION = "flowagent.chat/v1"
 
 CHAT_SYSTEM_PROMPT = (
     "你是 FCode 里的对话助手。用中文、清楚、简洁地回答。"
-    "你只能回答，不能执行工具、读写文件或运行命令；"
-    "如果用户需要执行任务，明确告诉他切换到“委托运行”，不要声称你已经执行了任何动作。"
-    "不知道就直说，不要编造。"
+    "你只能回答，不能执行工具、读写文件或运行命令，也绝不声称你已经执行了任何动作。"
+    "如果用户的请求需要执行（读写文件、运行命令、抓取网页、多步任务），"
+    "在回答末尾附一个执行提案块，让界面展示确认卡：\n"
+    "```fcode_action\n"
+    '{"goal": "把任务写成一句明确的目标（5–600 字）", "mode": "script", '
+    '"sources": [], "reason": "为什么需要执行（可选）"}\n'
+    "```\n"
+    "mode 只能是 script（在工作区写文件并运行）或 research（抓取公开来源）；"
+    "research 必须在 sources 里给 1–5 个真实的 http(s) URL。"
+    "提案只是确认卡，用户点“开始执行”后才会创建受治理的委托运行。"
+    "不需要执行时不要输出这个块。不知道就直说，不要编造。"
 )
 
 DEFAULT_CHAT_LIMITS = BudgetLimits(60, 0, 300_000, 200_000)
 
-DEFAULT_CHAT_LIMITS = BudgetLimits(60, 0, 300_000, 200_000)
+#: The model's execution proposal travels as a fenced block. Parsing is
+#: deliberately strict and fail-closed: a malformed proposal yields no card
+#: (and the visible text keeps the raw block), because silently repairing it
+#: would put an execution button under something the model did not propose.
+_ACTION_BLOCK = re.compile(r"```fcode_action\s*\n(.*?)\n```", re.DOTALL)
+ACTION_MODES = ("script", "research")
+_ACTION_MAX_BYTES = 2_000
+_ACTION_MAX_SOURCES = 5
+
+
+def _read_action(payload_text: str) -> dict[str, Any] | None:
+    """One candidate block to a proposal, or None if it is not one."""
+    if len(payload_text.encode("utf-8")) > _ACTION_MAX_BYTES:
+        return None
+    try:
+        payload = json.loads(payload_text)
+    except ValueError:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    goal = payload.get("goal")
+    if not isinstance(goal, str) or not 5 <= len(goal.strip()) <= 600:
+        return None
+    mode = str(payload.get("mode") or "script").strip().lower()
+    if mode not in ACTION_MODES:
+        return None
+    action: dict[str, Any] = {"goal": goal.strip(), "mode": mode}
+    reason = payload.get("reason")
+    if isinstance(reason, str) and reason.strip():
+        action["reason"] = reason.strip()[:200]
+    sources = payload.get("sources")
+    if isinstance(sources, list):
+        clean: list[str] = []
+        for item in sources:
+            if not isinstance(item, str):
+                continue
+            text = item.strip()
+            if text and text not in clean:
+                clean.append(text)
+        if clean:
+            action["sources"] = clean[:_ACTION_MAX_SOURCES]
+    return action
+
+
+def parse_action_block(text: str) -> tuple[str, dict[str, Any] | None]:
+    """Split one finished answer into (visible_text, action | None).
+
+    The last block that reads as a whole proposal wins: a model may quote the
+    format while explaining it, and a malformed tail (or an earlier draft) must
+    not void a proposal it really made. Every candidate is validated by the
+    same rules — invalid JSON, an out-of-range goal, an unknown mode or an
+    oversized payload simply are not proposals. With no valid block the answer
+    is returned exactly as written, a malformed one included: no silent repair.
+    """
+    raw = str(text or "")
+    action: dict[str, Any] | None = None
+    found = False
+    for candidate in _ACTION_BLOCK.finditer(raw):
+        found = True
+        valid = _read_action(candidate.group(1).strip())
+        if valid is not None:
+            action = valid
+    if not found:
+        return raw, None
+    if action is None:
+        return raw, None
+    # The machinery leaves the bubble: every block goes, whichever one won.
+    visible = _ACTION_BLOCK.sub("", raw).strip()
+    return visible, action
+
+
+def merge_action(
+    action: dict[str, Any] | None,
+    *,
+    goal: str | None = None,
+    mode: str | None = None,
+    sources: list[Any] | None = None,
+) -> dict[str, Any]:
+    """Apply the operator's edits to one proposal, under the parser's own rules.
+
+    The confirmation card lets the user rewrite the goal, switch the mode and
+    fix the sources. Those edits pass the same fail-closed checks the model's
+    block does, so a hand-edited proposal can never become something
+    ``parse_action_block`` would have refused.
+    """
+    merged = dict(action or {})
+    if goal is not None:
+        text = str(goal).strip()
+        if not 5 <= len(text) <= 600:
+            raise ValueError("goal must be 5 to 600 characters")
+        merged["goal"] = text
+    if mode is not None:
+        key = str(mode).strip().lower()
+        if key not in ACTION_MODES:
+            raise ValueError("mode must be script or research")
+        merged["mode"] = key
+    if sources is not None:
+        clean: list[str] = []
+        for item in sources:
+            text = str(item or "").strip()
+            if not text or text in clean:
+                continue
+            clean.append(text)
+        if len(clean) > _ACTION_MAX_SOURCES:
+            raise ValueError(f"sources lists at most {_ACTION_MAX_SOURCES} URLs")
+        if clean:
+            merged["sources"] = clean
+        else:
+            merged.pop("sources", None)
+    if not str(merged.get("goal") or "").strip():
+        raise ValueError("the proposal carries no goal")
+    merged.setdefault("mode", "script")
+    return merged
+
 
 # ------------------------------------------------------------------ service
 
@@ -355,11 +477,21 @@ CREATE TABLE IF NOT EXISTS chat_thread_meta (
                     "provider": str(detail.get("provider") or ""),
                     "model": str(detail.get("model") or ""),
                     "error": dict(detail.get("error") or {}),
+                    "action": dict(detail.get("action") or {}),
                     "seq": seq,
                     "at": event["at"],
                 }
                 messages.append(message)
                 by_id[message["id"]] = message
+            elif kind == "chat_run_started":
+                target = by_id.get(str(detail.get("message_id") or ""))
+                if target is not None:
+                    target["run"] = {
+                        "id": str(detail.get("run_id") or ""),
+                        "goal": str(detail.get("goal") or ""),
+                        "mode": str(detail.get("mode") or ""),
+                        "at": event["at"],
+                    }
             elif kind == "chat_edit":
                 target = str(detail.get("target_id") or "")
                 target_seq = int((by_id.get(target) or {}).get("seq", seq))
@@ -530,6 +662,48 @@ CREATE TABLE IF NOT EXISTS chat_thread_meta (
                     (row["id"], utc_now()),
                 )
         return len(rows)
+
+    def link_run(
+        self,
+        thread_id: str,
+        message_id: str,
+        run_id: str,
+        *,
+        goal: str | None = None,
+        mode: str | None = None,
+    ) -> dict[str, Any]:
+        """Anchor a confirmed proposal to the run it started.
+
+        The thread keeps one ``chat_run_started`` event; the run itself lives
+        in the run pipeline and stays the only source of its progress. A
+        second confirmation of the same message is refused rather than
+        silently re-anchored — one proposal, one run.
+        """
+        with self._lock:
+            thread = self._load_task(thread_id)
+            messages = self._replay(thread_id)
+            message = next((item for item in messages if item["id"] == message_id), None)
+            if message is None or message.get("role") != "assistant":
+                raise AgentError("CHAT_MESSAGE_INVALID", "run anchor needs an assistant message")
+            action = message.get("action") or {}
+            if not action:
+                raise AgentError("CHAT_ACTION_MISSING", "this message carries no execution proposal")
+            if message.get("run"):
+                existing = (message["run"] or {}).get("id")
+                raise AgentError(
+                    "CHAT_ACTION_ALREADY_STARTED",
+                    f"proposal already started run {existing}",
+                    details={"run_id": existing},
+                )
+            # The anchor records what the operator approved (edited goal and
+            # mode), not the model's original wording.
+            self._append(thread, "chat_run_started", {
+                "message_id": message_id,
+                "run_id": run_id,
+                "goal": str(goal if goal is not None else action.get("goal") or ""),
+                "mode": str(mode if mode is not None else action.get("mode") or ""),
+            })
+        return {"thread_id": thread_id, "message_id": message_id, "run_id": run_id}
 
     def get_thread(self, thread_id: str) -> dict[str, Any]:
         task = self._load_task(thread_id)
@@ -721,6 +895,7 @@ CREATE TABLE IF NOT EXISTS chat_thread_meta (
             total_tokens = int(usage.get("total_tokens") or (prompt_tokens + completion_tokens))
             actual_cost = _cost(prompt_tokens, completion_tokens, config)
             latency_ms = int((time.monotonic() - started) * 1000)
+            text, action = parse_action_block(text)
             receipt_ref = self.receipts.issue(
                 intent={
                     "thread_id": thread_id,
@@ -757,6 +932,8 @@ CREATE TABLE IF NOT EXISTS chat_thread_meta (
                 "provider": config.key,
                 "model": config.model,
             }
+            if action:
+                detail["action"] = action
             thread = self._append(thread, "chat_assistant", detail)
             finalised = True
             message = {
@@ -770,6 +947,7 @@ CREATE TABLE IF NOT EXISTS chat_thread_meta (
                 "provider": config.key,
                 "model": config.model,
                 "error": {},
+                "action": action or {},
                 "at": "",
                 "seq": thread.sequence,
             }

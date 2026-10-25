@@ -90,9 +90,45 @@ OpenAI 兼容 SSE；Kimi 使用 `max_completion_tokens`，不发送 `temperature
 
 API：`GET/POST /api/settings/chat-config`、`GET /api/chat/models`。
 
+## 执行卡（chat v2 · P1）
+
+对话本身仍然不执行工具，但模型可以在回答里**提出**一次执行。它写在回答末尾的一个
+围栏块里：
+
+```fcode_action
+{"goal": "查周三上海到杭州的高铁", "mode": "research", "sources": ["https://…"], "reason": "需要实时车次"}
+```
+
+- **解析是 fail-closed 的**（`flowagent.chat.parse_action_block`）：JSON 不合法、目标不在
+  5–600 字、mode 不是 `script`/`research`、块超过 2 KB，都只当作普通文本——回答原样展示，
+  绝不猜测修补。多个块时取**最后一个读得通的**：模型解释格式时引用的示例，不能顶掉它真正
+  做出的提案；反过来，一处坏块也不能作废前面已经成立的提案。有提案时所有块都从气泡里去掉。
+- **卡片**（`viewer/core/run-card.js`，纯函数、Node 测试覆盖）在回答下方渲染目标 / 方式 /
+  来源 / 审批档位，并说明「确认后才会创建运行」。用户可以改目标、切方式（切到脚本时来源
+  框消失）、改来源；输入不触发重绘，光标不会跳。`取消` 只是把它收成一行「已忽略这个提案」，
+  可以「重新考虑」——提案是消息本身的事实，不因界面收起而消失。
+- **确认**走 `POST /api/chat/threads/{id}/confirm`：校验 `messageId` → 用
+  `chat.merge_action` 复核用户的编辑（与模型自己的块同一套规则）→ 与「转为委托」同一条
+  创建路径（模板、spec 校验、审批档位都不另开分支）→ 建 run → `chat.link_run` 在消息上
+  落一个 `chat_run_started` 锚点。**一个提案只对应一次运行**：第二次确认返回 409 和已经
+  存在的 run id，不静默改写锚点。锚点记录的是**用户批准的目标与方式**，不是模型的初稿。
+- **携带上下文**：确认时把线程尾部最多 24 条、每条 600 字的对话放进 `spec.origin_thread`
+  （与「转为委托」同一条 `threadOrigin()`，越近越相关）。所以「周三 / 当天 / 到了之后」
+  在运行里仍然可解析。
+- **进度是镜像，不是推断**：卡片的运行态订阅运行自己的 SSE（与 Work 视图同一份签名轨迹），
+  显示最近三轮「轮次 · 工具 · 一句话结论 · 判定」，审批门直接就是允许 / 拒绝，结束后列出
+  产物与「链已校验」。还没执行的轮次显示「等待」，不会假装完成；上报中的决定只锁住它对应
+  的那道门，服务器换下一道门时按钮立刻恢复。`在 Work 中打开` 会**先切到工作模式**再打开
+  这次运行的证据视图。
+
+没有真实模型时，`FCODE_CHAT_MOCK_ACTION`（JSON）让离线 mock 追加一个脚本化的提案块，
+仅 mock 读取，真实 provider 永远不看它；`tests/test_chat_action.py` 用它覆盖解析、锚点、
+确认端点与编辑合并。
+
 ## 边界（诚实）
 
-- **对话不调用工具**。这是治理选择，不是能力缺口：要让模型执行，走委托运行。
+- **对话不调用工具**。这是治理选择，不是能力缺口：模型只能提出提案，真正执行要用户点
+  「开始执行」，从那一刻起它是一次普通的受治理运行（门控、预算、审批、哈希链一样不少）。
 - **附件只收纯文本**（代码、Markdown、JSON、CSV 等）。图片/PDF/Office 不在 v1；IAB 的文件选择器本身也不支持上传。
 - **每线程预算**默认 60 次调用 / 300,000 µUSD / 200,000 tokens；可用 `FCODE_CHAT_MAX_*` 调整。
 - **保留策略**：`FCODE_CHAT_RETENTION_DAYS`（默认 0 = 关闭）在服务启动时把超过 N 天
@@ -109,7 +145,7 @@ API：`GET/POST /api/settings/chat-config`、`GET /api/chat/models`。
 cd flowcredit
 python3 viewer/server.py --repo . --port 8643
 open 'http://127.0.0.1:8643/?desktop=1'
-python3 -m unittest tests.test_chat
+python3 -m unittest tests.test_chat tests.test_chat_action tests.test_chat_work_bridge
 node --test viewer/tests/*.test.js
 ```
 
@@ -118,5 +154,6 @@ node --test viewer/tests/*.test.js
 Node 内置 test runner 覆盖转义、围栏未闭合、行内格式、多行 `data:` 帧与
 消息状态，不需要浏览器或测试框架。
 
-Mock 下可以完整验证流式、追问、重新生成、编辑、附件、停止；真实 Kimi 需要在环境里
-配置 API key 与价格快照，然后在模型菜单选择 Kimi。
+Mock 下可以完整验证流式、追问、重新生成、编辑、附件、停止，以及执行卡的提出 → 编辑 →
+确认 → 进度 → 审批 → 完成整条链路；真实 Kimi 需要在环境里配置 API key 与价格快照，
+然后在模型菜单选择 Kimi。

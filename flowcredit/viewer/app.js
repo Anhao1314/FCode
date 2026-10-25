@@ -5,6 +5,7 @@ import {
 } from "./core/format.js";
 import { parseSseFrame, renderMarkdown } from "./core/chat-format.js";
 import { chatMessageHtml } from "./core/chat-view.js";
+import { actionCardHtml, mirrorFrom, runMirrorHtml } from "./core/run-card.js";
 
 /* =================================================================== 边界声明
    本轮结构重构只允许改“生成 DOM 的渲染函数”。
@@ -219,6 +220,8 @@ const chat = {
   total: 0,
   deleteArmed: null,
   deleteTimer: null,
+  cards: new Map(),     // messageId -> proposal card state (draft/mode/sources/busy/error)
+  mirrors: new Map(),   // messageId -> { runId, trace, live, es } — the run's own facts
 };
 let runHistory = [];    // /api/runs
 let runFilter = "";     // 运行记录搜索词
@@ -5896,6 +5899,7 @@ async function openChat(threadId) {
     const response = await fetch(`/api/chat/threads/${encodeURIComponent(threadId)}`, { cache: "no-store" });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     chat.current = await response.json();
+    await prepareCardRuns(chat.current);
   } catch (error) {
     toast("对话加载失败：" + error.message);
     newChat();
@@ -5926,7 +5930,9 @@ function renderChat({ forceBottom = false } = {}) {
   }
   const stick = forceBottom || nearMainBottom();
   renderMain(
-    `<div class="chat-thread" aria-live="polite">${thread.messages.map(message => chatMessageHtml(message, chat.editing)).join("")}</div>`,
+    `<div class="chat-thread" aria-live="polite">${thread.messages
+      .map(message => chatMessageHtml(message, chat.editing, chatCardHtml(message)))
+      .join("")}</div>`,
     { mode: "chat" },
   );
   if (stick) requestAnimationFrame(scrollMainBottom);
@@ -6281,16 +6287,337 @@ function delegateChatMessage(messageId) {
   if (!chat.current) return;
   const message = chat.current.messages.find(item => item.id === messageId);
   if (!message || message.role !== "user") return;
-  /* 转委托携带对话上下文：本轮目标是 message.text，但“周三/当天/到了后”
-     指代的是本线程前文——把活跃分支的消息一并带过去，规划器才能解析。 */
-  const origin = {
-    threadId: chat.current.id || null,
-    threadTitle: chat.current.title || "",
-    messages: (chat.current.messages || [])
-      .filter(item => item.status !== "error")
-      .map(item => ({ role: item.role, text: String(item.text || "").slice(0, 600) })),
+  startIntake(message.text, { origin: threadOrigin(chat.current) });
+}
+
+/* 对话上下文随委托一起走：本轮目标是 message.text，但“周三/当天/到了后”
+   指代的是本线程前文。取尾部 24 条（越近越相关），每条截断 600 字，
+   与后端 validate_delegation_spec 的上限一致。 */
+const ORIGIN_MESSAGES = 24;
+const ORIGIN_CHARS = 600;
+
+function threadOrigin(thread) {
+  if (!thread) return null;
+  const messages = (thread.messages || [])
+    .filter(item => item.status !== "error" && (item.role === "user" || item.role === "assistant"))
+    .map(item => ({ role: item.role, text: String(item.text || "").slice(0, ORIGIN_CHARS) }))
+    .filter(item => item.text)
+    .slice(-ORIGIN_MESSAGES);
+  return { threadId: thread.id || null, threadTitle: thread.title || "", messages };
+}
+
+/* ------------------------------------------- 对话内执行卡（chat v2 · P1）
+   对话本身绝不执行工具：模型只能在回答里提出一个提案块，前端把它渲染成一张
+   卡片；只有用户点「开始执行」，卡片才把提案（含用户的编辑）交给确认端点，
+   由运行流水线创建一次受治理的运行。卡片之后的进度不是前端猜的——它订阅运行
+   自己的 SSE，与 Work 视图读同一份签名轨迹。 */
+
+const cssEscape = value => (window.CSS && window.CSS.escape
+  ? window.CSS.escape(String(value))
+  : String(value).replace(/["\\]/g, "\\$&"));
+
+function chatCardHtml(message) {
+  if (!message.action) return "";
+  const state = chat.cards.get(message.id) || {};
+  if (message.run) {
+    return runMirrorHtml(message, mirrorView(message), { run: message.run });
+  }
+  if (state.dismissed) {
+    return `<div class="run-card dismissed" data-card="${esc(message.id)}" data-run-card="${esc(message.id)}">
+      <span class="run-card-hint">已忽略这个提案</span>
+      <span class="grow"></span>
+      <button type="button" class="run-act" data-run-reconsider="${esc(message.id)}">重新考虑</button>
+    </div>`;
+  }
+  return actionCardHtml(message, {
+    draft: state.draft,
+    mode: state.mode,
+    sources: state.sources,
+    busy: state.busy,
+    error: state.error,
+    approval: approvalMode,
+  });
+}
+
+function cardState(messageId) {
+  if (!chat.cards.has(messageId)) chat.cards.set(messageId, {});
+  return chat.cards.get(messageId);
+}
+
+/* 输入框不触发重绘，光标就不会丢；结构性变化（切方式/提交中）之前先把
+   用户已经敲进 DOM 的内容读回状态。 */
+function readCardDraft(messageId) {
+  const node = document.querySelector(`[data-run-card="${cssEscape(messageId)}"]`);
+  if (!node) return;
+  const state = cardState(messageId);
+  const goal = node.querySelector("[data-run-goal]");
+  const sources = node.querySelector("[data-run-sources]");
+  if (goal) state.draft = goal.value;
+  if (sources) state.sources = sources.value;
+}
+
+function paintCard(messageId) {
+  const message = chatMessageById(messageId);
+  if (!message) return;
+  const node = document.querySelector(`[data-run-card="${cssEscape(messageId)}"]`);
+  if (!node) { renderChat(); return; }
+  const holder = document.createElement("div");
+  holder.innerHTML = chatCardHtml(message);
+  const next = holder.firstElementChild;
+  if (next) node.replaceWith(next);
+}
+
+function chatMessageById(messageId) {
+  const thread = chat.current;
+  if (!thread || !thread.messages) return null;
+  return thread.messages.find(item => item.id === messageId) || null;
+}
+
+function parseSourceLines(text) {
+  return String(text || "")
+    .split(/[\n,，\s]+/)
+    .map(item => item.trim())
+    .filter(Boolean);
+}
+
+async function startCardRun(messageId) {
+  const message = chatMessageById(messageId);
+  if (!message || !message.action || message.run) return;
+  readCardDraft(messageId);
+  const state = cardState(messageId);
+  if (state.busy) return;
+  const goal = String(state.draft !== undefined ? state.draft : message.action.goal || "").trim();
+  const mode = state.mode || message.action.mode || "script";
+  const sources = mode === "research"
+    ? parseSourceLines(state.sources !== undefined ? state.sources : (message.action.sources || []).join("\n"))
+    : [];
+  /* 本地先按同一套规则拦一遍，错误直接落在卡片上；服务端仍会独立复核。 */
+  if (goal.length < 5 || goal.length > 600) {
+    state.error = "目标需要 5 到 600 个字";
+    paintCard(messageId);
+    return;
+  }
+  if (mode === "research" && (sources.length < 1 || sources.length > 5)) {
+    state.error = "研究方式需要 1 到 5 个 http(s) 来源";
+    paintCard(messageId);
+    return;
+  }
+  state.busy = true;
+  state.error = "";
+  paintCard(messageId);
+  try {
+    const response = await fetch(
+      `/api/chat/threads/${encodeURIComponent(chat.current.id)}/confirm`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messageId, goal, mode, sources,
+          approval: approvalMode,
+          model: chatModelChoice.key || "mock",
+          effort: chatModelChoice.effort || "",
+        }),
+      },
+    );
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
+    const run = payload.run || {};
+    message.run = { id: run.id, goal, mode, at: new Date().toISOString() };
+    chat.cards.delete(messageId);
+    seedMirror(messageId, run);
+    paintCard(messageId);
+    loadChatThreads();
+    toast(`已开始运行 ${run.id}`);
+  } catch (error) {
+    state.busy = false;
+    state.error = error.message;
+    paintCard(messageId);
+  }
+}
+
+function dismissCard(messageId) {
+  const state = cardState(messageId);
+  state.dismissed = true;
+  paintCard(messageId);
+}
+
+function reconsiderCard(messageId) {
+  const state = cardState(messageId);
+  state.dismissed = false;
+  paintCard(messageId);
+}
+
+/* ------------------------------------------------------------- 运行镜像 */
+
+function mirrorView(message) {
+  const state = chat.mirrors.get(message.id);
+  const run = message.run || {};
+  const live = Object.assign(
+    { finished: ["succeeded", "failed", "stopped"].includes(run.status) },
+    state ? state.live : {},
+  );
+  return mirrorFrom(state ? state.trace : null, live, rowDescription);
+}
+
+const rowDescription = observation => stripTags((describe(observation) || [])[0] || "");
+const TERMINAL_STATUS = ["succeeded", "failed", "stopped"];
+
+/* 进入一段对话时，先把锚定的运行读一遍：卡片第一次出现就是事实，
+   不是「等待中」的占位。随后 SSE 接管。 */
+async function prepareCardRuns(thread) {
+  const anchored = (thread.messages || []).filter(message => message.run && message.run.id);
+  await Promise.all(anchored.map(async message => {
+    if (chat.mirrors.has(message.id)) return;
+    let run = null;
+    try {
+      const response = await fetch(`/api/runs/${encodeURIComponent(message.run.id)}`, { cache: "no-store" });
+      if (response.ok) run = await response.json();
+    } catch { /* the card falls back to whatever the anchor recorded */ }
+    if (chat.current !== thread) return;
+    seedMirror(message.id, run || { id: message.run.id });
+  }));
+}
+
+function seedMirror(messageId, run) {
+  const entry = chat.mirrors.get(messageId) || { runId: run.id, trace: null, live: {}, es: null };
+  entry.runId = run.id;
+  entry.live = Object.assign({}, entry.live, {
+    status: run.status || entry.live.status || "",
+    error: run.error || entry.live.error || "",
+    cost: run.cost || entry.live.cost || null,
+    finished: TERMINAL_STATUS.includes(run.status) || entry.live.finished,
+  });
+  chat.mirrors.set(messageId, entry);
+  attachMirror(messageId, entry);
+  return entry;
+}
+
+function attachMirror(messageId, entry) {
+  if (!entry || entry.es || !entry.runId) return;
+  const es = new EventSource(`/api/runs/${encodeURIComponent(entry.runId)}/stream`);
+  entry.es = es;
+  const absorb = payload => {
+    if (payload.snapshot) entry.trace = payload.snapshot;
+    entry.live = Object.assign({}, entry.live, {
+      status: payload.status || entry.live.status,
+      error: payload.error || "",
+      pending: payload.pending || null,
+      cost: payload.cost || entry.live.cost || null,
+      finished: !!payload.finished,
+    });
+    /* The server is the authority on what is still pending: once the gate we
+       submitted for is gone, the submitted state is gone with it. */
+    const deciding = entry.live.deciding;
+    if (deciding && (!entry.live.pending || entry.live.pending.id !== deciding.pendingId)) {
+      entry.live.deciding = null;
+    }
+    paintCard(messageId);
   };
-  startIntake(message.text, { origin });
+  es.addEventListener("snapshot", event => {
+    let data;
+    try { data = JSON.parse(event.data); } catch { return; }
+    absorb(data);
+    if (data.finished) closeMirror(entry, data);
+  });
+  es.addEventListener("append", event => {
+    let delta;
+    try { delta = JSON.parse(event.data); } catch { return; }
+    if (entry.trace) applyDelta(entry.trace, delta);
+    absorb({
+      status: delta.status,
+      error: delta.error,
+      pending: delta.pending,
+      finished: !!delta.finished,
+    });
+    if (delta.finished) closeMirror(entry, delta);
+  });
+  es.addEventListener("done", event => {
+    let data = {};
+    try { data = JSON.parse(event.data); } catch { /* empty */ }
+    absorb(Object.assign({}, entry.live, { status: data.status, error: data.error, finished: true }));
+    closeMirror(entry, data);
+  });
+  es.addEventListener("failed", event => {
+    let data = {};
+    try { data = JSON.parse(event.data); } catch { /* empty */ }
+    if (!TERMINAL_STATUS.includes(entry.live.status)) {
+      entry.live.error = data.error || "运行未留下可读快照";
+    }
+    entry.live.finished = true;
+    closeMirror(entry, data);
+  });
+}
+
+function closeMirror(entry, data) {
+  if (entry.es) {
+    entry.es.close();
+    entry.es = null;
+  }
+  entry.live.finished = true;
+  if (data && data.status) entry.live.status = data.status;
+  paintCardFor(entry);
+}
+
+/* 卡片可能已经被重绘或换到别处；按 run id 找到它当前的主人。 */
+function paintCardFor(entry) {
+  for (const [messageId, candidate] of chat.mirrors) {
+    if (candidate === entry) paintCard(messageId);
+  }
+}
+
+async function decideFromCard(messageId, pendingId, allow) {
+  const message = chatMessageById(messageId);
+  const entry = chat.mirrors.get(messageId);
+  if (!message || !message.run || !entry || entry.live.deciding) return;
+  entry.live.deciding = { allow, pendingId };
+  paintCard(messageId);
+  try {
+    const response = await fetch(`/api/runs/${encodeURIComponent(message.run.id)}/decision`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ approvalId: pendingId, allow, remember: false }),
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.error || `HTTP ${response.status}`);
+    }
+    toast(allow ? "已允许 · 运行继续" : "已拒绝 · 运行将终止");
+  } catch (error) {
+    entry.live.deciding = null;
+    entry.live.error = error.message;
+    paintCard(messageId);
+    toast("决定未送达：" + error.message);
+  }
+}
+
+async function stopFromCard(runId) {
+  try {
+    const response = await fetch(`/api/runs/${encodeURIComponent(runId)}/stop`, { method: "POST" });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    toast("已在轮次边界请求停止");
+  } catch (error) {
+    toast("停止请求未送达：" + error.message);
+  }
+}
+
+async function openRunFromCard(runId) {
+  /* 先切到工作模式：侧栏、顶栏与输入框都跟着换，然后是这次运行的证据视图。
+     顺序不能反——工作模式的切换在会话未激活时会打开工作首页。 */
+  const known = runHistory.find(run => run.id === runId);
+  if (known) {
+    setUiMode("work");
+    openLive(known.id, known.objective, known.template);
+    return;
+  }
+  try {
+    const response = await fetch(`/api/runs/${encodeURIComponent(runId)}`, { cache: "no-store" });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const run = await response.json();
+    setUiMode("work");
+    openLive(run.id, run.objective, run.template);
+  } catch (error) {
+    toast("打开运行失败：" + error.message);
+  }
 }
 
 function bindChatAttachments() {
@@ -6583,6 +6910,38 @@ function bind() {
     if (chatCopy) { copyChatMessage(chatCopy.dataset.chatCopy); return; }
     const chatDelegate = event.target.closest("[data-chat-delegate]");
     if (chatDelegate) { delegateChatMessage(chatDelegate.dataset.chatDelegate); return; }
+    const cardStart = event.target.closest("[data-run-start]");
+    if (cardStart) { startCardRun(cardStart.dataset.runStart); return; }
+    const cardCancel = event.target.closest("[data-run-cancel]");
+    if (cardCancel) { dismissCard(cardCancel.dataset.runCancel); return; }
+    const cardAgain = event.target.closest("[data-run-reconsider]");
+    if (cardAgain) { reconsiderCard(cardAgain.dataset.runReconsider); return; }
+    const cardMode = event.target.closest("[data-run-mode]");
+    if (cardMode) {
+      const holder = cardMode.closest("[data-run-card]");
+      if (holder) {
+        readCardDraft(holder.dataset.runCard);
+        cardState(holder.dataset.runCard).mode = cardMode.dataset.runMode;
+        paintCard(holder.dataset.runCard);
+      }
+      return;
+    }
+    const cardAllow = event.target.closest("[data-run-allow]");
+    if (cardAllow) {
+      const holder = cardAllow.closest("[data-run-card]");
+      if (holder) decideFromCard(holder.dataset.runCard, cardAllow.dataset.runAllow, true);
+      return;
+    }
+    const cardDeny = event.target.closest("[data-run-deny]");
+    if (cardDeny) {
+      const holder = cardDeny.closest("[data-run-card]");
+      if (holder) decideFromCard(holder.dataset.runCard, cardDeny.dataset.runDeny, false);
+      return;
+    }
+    const cardStop = event.target.closest("[data-run-stop]");
+    if (cardStop) { stopFromCard(cardStop.dataset.runStop); return; }
+    const cardOpen = event.target.closest("[data-run-open]");
+    if (cardOpen) { openRunFromCard(cardOpen.dataset.runOpen); return; }
     const chatRemove = event.target.closest("[data-chat-attach-remove]");
     if (chatRemove) {
       const index = Number(chatRemove.dataset.chatAttachRemove);
@@ -6609,6 +6968,13 @@ function bind() {
     if (event.target.closest("#palette-btn")) { openPalette(); return; }
     if (event.target.closest("#settings-btn") || event.target.closest("#foot-settings")) { toggleSettingsPage(); return; }
     if (event.target.closest("#settings-mobile")) { renderMode("settings"); return; }
+  });
+  document.addEventListener("input", event => {
+    const field = event.target.closest("[data-run-goal], [data-run-sources]");
+    if (!field) return;
+    const holder = field.closest("[data-run-card]");
+    if (!holder) return;
+    readCardDraft(holder.dataset.runCard);
   });
   document.getElementById("run-search").addEventListener("input", event => {
     runFilter = event.target.value;

@@ -184,14 +184,31 @@ class ArtifactBookTests(unittest.TestCase):
             book.close()
 
     def test_real_general_trace_projects(self) -> None:
+        """A real run projects into artifact facts, faithfully.
+
+        The file names belong to the plan (a run may call its script fib.py or
+        script.py), so the assertion is the projection's contract against the
+        trace itself, not a hardcoded name.
+        """
         path = pathlib.Path(__file__).resolve().parent.parent / "work" / "demo" / "general-research.trace.json"
         if not path.exists():
             self.skipTest("demo trace not generated yet")
         trace = json.loads(path.read_text(encoding="utf-8"))
+        expected = [
+            str((record.get("observation") or {}).get("result", {}).get("path") or "")
+            for record in trace.get("rounds") or []
+            if (record.get("observation") or {}).get("tool") in ("write_file", "edit_file")
+            and (record.get("observation") or {}).get("result", {}).get("changed") is not False
+            and (record.get("observation") or {}).get("result", {}).get("sha256_after")
+            and (record.get("observation") or {}).get("result", {}).get("path")
+        ]
+        self.assertTrue(expected, "the demo run wrote at least one file")
         artifacts = project_artifacts(trace, run_id="demo-general")
-        paths = [a.path for a in artifacts]
-        self.assertIn("fib.py", paths)
-        self.assertIn("results.md", paths)
+        self.assertEqual([a.path for a in artifacts], expected)
+        for artifact in artifacts:
+            self.assertTrue(artifact.path and not artifact.path.startswith("/"))
+            self.assertEqual(len(artifact.sha256), 64)
+            self.assertIn(artifact.produced_by, ("write_file", "edit_file"))
 
 
 if __name__ == "__main__":

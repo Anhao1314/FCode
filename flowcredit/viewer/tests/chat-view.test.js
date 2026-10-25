@@ -81,3 +81,16 @@ test("a streaming answer shows typing and the rate-limit wait", () => {
   assert.ok(html.includes("等待 7 秒"));
   assert.ok(!html.includes("data-chat-regen"));
 });
+
+test("extraHtml rides inside the answer, above the actions", () => {
+  const html = chatMessageHtml(
+    { id: "a1", role: "assistant", text: "回答", status: "ok" },
+    null,
+    '<div class="run-card" data-run-card="a1"></div>',
+  );
+  assert.ok(html.includes('data-run-card="a1"'));
+  assert.ok(html.indexOf("run-card") < html.indexOf("chat-msg-actions"));
+  // A user message has no card slot: it is the model that proposes work.
+  const user = chatMessageHtml({ id: "u1", role: "user", text: "问" }, null, "<div></div>");
+  assert.ok(!user.includes("<div></div>"));
+});

@@ -165,6 +165,25 @@ class RunManager:
             raise ValueError("思考强度必须是 low、medium 或 high")
         return model_key, effort or "medium"
 
+    def merge_chat_action(
+        self,
+        action: dict | None,
+        *,
+        goal: str | None = None,
+        mode: str | None = None,
+        sources: list | None = None,
+    ) -> dict:
+        """Operator edits on a chat proposal, under the model's own rules.
+
+        The confirmation card lets the goal be rewritten and the mode switched;
+        ``flowagent.chat.merge_action`` re-applies the parser's fail-closed
+        checks, so an edited proposal can never become one the parser would
+        have refused.
+        """
+        if self.runtime is None:
+            raise ValueError("live mode is unavailable")
+        return self.runtime.merge_action(action, goal=goal, mode=mode, sources=sources)
+
     def validate_delegation_spec(self, spec: dict | None, scenario) -> dict | None:
         """Validate operator delegation overrides before a run exists.
 
@@ -231,9 +250,11 @@ class RunManager:
                 ):
                     raise ValueError("origin_thread.messages must be user/assistant objects")
                 if len(messages) > 24:
-                    raise ValueError("origin_thread carries at most 24 messages")
+                    # The tail, not the head: "周三 / 当天 / 到了之后" resolve
+                    # against the most recent turns.
+                    messages = messages[-24:]
                 origin["messages"] = [
-                    {"role": item["role"], "text": item["text"][:600]} for item in messages[:24]
+                    {"role": item["role"], "text": item["text"][:600]} for item in messages
                 ]
         else:
             scope = spec.get("scope")

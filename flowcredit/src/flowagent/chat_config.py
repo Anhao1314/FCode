@@ -20,12 +20,9 @@ CHAT_CONFIG_VERSION = "fcode.chat-config/v1"
 CONFIGURABLE_PROVIDERS = ("kimi", "deepseek", "local")
 CHAT_PROVIDER_KEYS = ("mock",) + CONFIGURABLE_PROVIDERS
 
-CHAT_SYSTEM_PROMPT = (
-    "你是 FCode 里的对话助手。用中文、清楚、简洁地回答。"
-    "你只能回答，不能执行工具、读写文件或运行命令；"
-    "如果用户需要执行任务，明确告诉他切换到“委托运行”，不要声称你已经执行了任何动作。"
-    "不知道就直说，不要编造。"
-)
+# The system prompt is not here: it describes the `fcode_action` block format,
+# so it lives next to the parser that enforces it (flowagent.chat). A second
+# copy in this module would drift out of step with that contract silently.
 
 MAX_TEXT = 8_000
 MAX_ATTACHMENTS = 3
