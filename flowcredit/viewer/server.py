@@ -2088,7 +2088,20 @@ class Handler(SimpleHTTPRequestHandler):
         if path == "/api/chat/threads":
             if mgr.chat is None:
                 return self._json({"error": "chat is unavailable"}, 503)
-            return self._json({"threads": mgr.chat.list_threads()})
+            query = parse_qs(urlparse(self.path).query)
+            try:
+                limit = int((query.get("limit") or ["50"])[0])
+                offset = int((query.get("offset") or ["0"])[0])
+            except (TypeError, ValueError):
+                return self._json({"error": "limit and offset must be integers"}, 400)
+            if not 1 <= limit <= 200 or offset < 0:
+                return self._json({"error": "limit must be 1..200 and offset >= 0"}, 400)
+            return self._json({
+                "threads": mgr.chat.list_threads(limit, offset),
+                "total": mgr.chat.thread_count(),
+                "limit": limit,
+                "offset": offset,
+            })
         if path == "/api/chat/models":
             if mgr.chat is None:
                 return self._json({"error": "chat is unavailable"}, 503)
@@ -2703,11 +2716,28 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_DELETE(self) -> None:  # noqa: N802
         path = unquote(urlparse(self.path).path)
-        if not path.startswith("/api/runs/") or path.count("/") != 3:
+        if not path.startswith("/api/"):
             return self.send_error(404)
         if not self._authorized():
             return self._json({"error": "unauthorized"}, 401)
+        if not self._mutation_guard():
+            return
         mgr = self.manager
+        if path.startswith("/api/chat/threads/"):
+            thread_id = path[len("/api/chat/threads/") :]
+            if not thread_id or "/" in thread_id:
+                return self._json({"error": "no such thread"}, 404)
+            if mgr.chat is None:
+                return self._json({"error": "chat is unavailable"}, 503)
+            try:
+                result = mgr.chat.archive_thread(thread_id)
+            except Exception as error:  # noqa: BLE001 — missing thread is a 404
+                code = getattr(error, "code", "")
+                status = 404 if code in ("CHAT_THREAD_NOT_FOUND", "TASK_NOT_FOUND") else 400
+                return self._json({"error": str(error), "code": code}, status)
+            return self._json(result)
+        if not path.startswith("/api/runs/") or path.count("/") != 3:
+            return self.send_error(404)
         if mgr.runtime is None:
             return self._json({"error": "live mode unavailable"}, 503)
         run_id = path[len("/api/runs/") :]
@@ -2751,6 +2781,12 @@ def main(argv: list[str] | None = None) -> int:
         help="require this token (cookie bootstrap via /?token=…); desktop mode uses it",
     )
     args = parser.parse_args(argv)
+    if args.host not in ("127.0.0.1", "localhost", "::1") and not args.token:
+        print(
+            "[console] refusing to listen on a non-loopback host without --token; "
+            "configure --token (the desktop app does this) or bind 127.0.0.1"
+        )
+        return 2
 
     runtime: Runtime | None = None
     runtime_error = ""

@@ -33,7 +33,7 @@ from urllib.parse import urlsplit
 
 from .core.contracts import AgentError, Task
 from .core.receipts import ReceiptStore
-from .core.store import TaskStore
+from .core.store import TaskStore, utc_now
 from .runtime.budget import Budget, BudgetLimits
 
 __all__ = [
@@ -576,6 +576,15 @@ class ChatService:
         # enter the event chain, traces or logs.
         self._config_path = config_path
         self._config = load_chat_config(config_path)
+        # Archiving is a tombstone, not a delete: the event chain and receipts
+        # stay verifiable; only the sidebar hides the thread.
+        self.store._conn.executescript("""
+CREATE TABLE IF NOT EXISTS chat_thread_meta (
+    thread_id   TEXT PRIMARY KEY,
+    archived    INTEGER NOT NULL DEFAULT 0,
+    archived_at TEXT NOT NULL DEFAULT ''
+);
+""")
 
     # -------------------------------------------------------------- helpers
 
@@ -921,11 +930,16 @@ class ChatService:
         ]
         return public
 
-    def list_threads(self, limit: int = 50) -> list[dict[str, Any]]:
+    def list_threads(self, limit: int = 50, offset: int = 0) -> list[dict[str, Any]]:
+        limit = max(1, min(int(limit), 200))
+        offset = max(0, int(offset))
         rows = self.store._conn.execute(
-            "SELECT id, body, updated_at FROM task"
-            " WHERE id LIKE 'chat-%' ORDER BY updated_at DESC LIMIT ?",
-            (max(1, min(int(limit), 200)),),
+            "SELECT t.id, t.body, t.updated_at FROM task t"
+            " WHERE t.id LIKE 'chat-%' AND NOT EXISTS ("
+            "   SELECT 1 FROM chat_thread_meta m"
+            "   WHERE m.thread_id = t.id AND m.archived = 1)"
+            " ORDER BY t.updated_at DESC LIMIT ? OFFSET ?",
+            (limit, offset),
         ).fetchall()
         threads = []
         for row in rows:
@@ -939,6 +953,29 @@ class ChatService:
                 "updated_at": row["updated_at"],
             })
         return threads
+
+    def thread_count(self) -> int:
+        row = self.store._conn.execute(
+            "SELECT COUNT(*) AS n FROM task t"
+            " WHERE t.id LIKE 'chat-%' AND NOT EXISTS ("
+            "   SELECT 1 FROM chat_thread_meta m"
+            "   WHERE m.thread_id = t.id AND m.archived = 1)",
+        ).fetchone()
+        return int(row["n"] or 0)
+
+    def archive_thread(self, thread_id: str) -> dict[str, Any]:
+        """Hide a thread from the sidebar without destroying its evidence."""
+        with self._lock:
+            self._load_task(thread_id)
+            with self.store.transaction():
+                self.store._conn.execute(
+                    "INSERT INTO chat_thread_meta (thread_id, archived, archived_at)"
+                    " VALUES (?, 1, ?)"
+                    " ON CONFLICT(thread_id) DO UPDATE SET"
+                    " archived = 1, archived_at = excluded.archived_at",
+                    (thread_id, utc_now()),
+                )
+        return {"id": thread_id, "archived": True}
 
     def get_thread(self, thread_id: str) -> dict[str, Any]:
         task = self._load_task(thread_id)

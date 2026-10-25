@@ -22,6 +22,8 @@ FCode 现在有两种模型交互，边界是刻意画清的：
 - **文本附件**：最多 3 个、每个 ≤64 KiB、总计 ≤128 KiB；内容折进用户消息，事件链保留原文。
 - **停止生成**：中断 fetch，服务端把已生成的部分记成 `chat_cancelled`，UI 显示“已停止生成”。
 - **线程持久化**：线程与消息在 `chat.sqlite` 的 `task`/`event` 表里，重启后可从侧栏继续。
+- **分页与归档**：侧栏按 `updated_at` 分页加载；删除是 tombstone（`chat_thread_meta.archived`），
+  事件链、收据和直接按 id 读取都不受影响。
 
 ## 治理
 
@@ -38,10 +40,14 @@ FCode 现在有两种模型交互，边界是刻意画清的：
 - `POST /api/chat/send`：`{threadId?, text, attachments?, model}` → SSE。
 - `POST /api/chat/threads/{id}/edit`：`{messageId, text, attachments?, model}` → SSE。
 - `POST /api/chat/threads/{id}/regenerate`：`{messageId, model?}` → SSE。
-- `GET /api/chat/threads`、`GET /api/chat/threads/{id}`。
+- `GET /api/chat/threads?limit=50&offset=0`：线程分页，返回 `threads` / `total`。
+- `GET /api/chat/threads/{id}`：完整线程（直接审计仍可用）。
+- `DELETE /api/chat/threads/{id}`：**归档**而不是删除事件。侧栏隐藏，事件链与收据保留；
+  需要彻底清理时由操作者直接处理本地数据库。
 
 流式事件：`start` / `wait` / `reasoning` / `delta` / `done` / `error`。客户端断开时
 `_stream_chat` 关闭生成器，服务端在 `finally` 里落 `chat_cancelled`。
+本地服务默认只绑定回环地址；监听非回环地址时必须同时给出 `--token`，否则拒绝启动。
 
 Provider：
 

@@ -226,7 +226,7 @@ git 快照记录文件效应，这些让"批准什么"可审阅，但不构成 O
   失败、tool_unknown 只执行一次）、`tests/test_mcp_bridge.py`（真实
   子进程 stdio 全链路：握手、导入命名、schema 校验、主机分类、调用、
   isError confirmed、超时 unknown、进程死亡降级、坏 server 不遮蔽好
-  server）。当前全量 336 项测试通过。
+  server）。当前全量 340 项测试通过。
 - 里程碑演示（录屏/截图）：viewer 创建通用委托"调研公开主题，写
   research.md"→ fetch_url 真实抓取收据 → write_file 真实 diff 审批
   （键盘放行）→ 预算走表 → `verify_trace` 通过 → 工作区文件存在且

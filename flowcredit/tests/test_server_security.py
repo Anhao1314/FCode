@@ -160,6 +160,22 @@ class ServerBoundaryTests(unittest.TestCase):
         )
         self.assertEqual(status, 200)
 
+    def test_delete_requires_same_origin(self) -> None:
+        status, _ = request(
+            f"{self.base}/api/chat/threads/chat-missing",
+            method="DELETE",
+            headers={"Origin": "http://evil.example"},
+        )
+        self.assertEqual(status, 403)
+        status, _ = request(
+            f"{self.base}/api/chat/threads/chat-missing",
+            method="DELETE",
+            headers={"Sec-Fetch-Site": "cross-site"},
+        )
+        self.assertEqual(status, 403)
+        status, _ = request(f"{self.base}/api/chat/threads/chat-missing", method="DELETE")
+        self.assertEqual(status, 404)
+
     def test_oversized_body_is_refused_before_parsing(self) -> None:
         status, _ = request(
             f"{self.base}/api/settings/chat-config",
@@ -167,6 +183,20 @@ class ServerBoundaryTests(unittest.TestCase):
             headers={"Content-Type": "application/json"},
         )
         self.assertEqual(status, 413)
+
+
+class HostGuardTests(unittest.TestCase):
+    def test_non_loopback_without_token_is_refused(self) -> None:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.bind(("127.0.0.1", 0))
+            port = sock.getsockname()[1]
+        result = subprocess.run(
+            [sys.executable, str(SERVER), "--repo", str(ROOT),
+             "--host", "0.0.0.0", "--port", str(port)],
+            cwd=str(ROOT), capture_output=True, text=True, timeout=10,
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("non-loopback", result.stdout + result.stderr)
 
 
 if __name__ == "__main__":

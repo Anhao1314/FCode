@@ -8,6 +8,7 @@ import pathlib
 import sys
 import tempfile
 import threading
+import time
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from unittest import mock
@@ -160,6 +161,33 @@ class ChatServiceTests(unittest.TestCase):
         self.assertEqual(threads[0]["id"], thread_id)
         self.assertTrue(threads[0]["title"].startswith("标题来自第一条消息"))
         self.assertLessEqual(len(threads[0]["title"]), 31)
+
+    def test_archive_hides_thread_but_keeps_the_chain(self) -> None:
+        first = self.send("归档我")
+        thread_id = first[0]["thread_id"]
+        self.assertEqual([thread["id"] for thread in self.service.list_threads()], [thread_id])
+        self.service.archive_thread(thread_id)
+        self.assertEqual(self.service.list_threads(), [])
+        self.assertEqual(self.service.thread_count(), 0)
+        # The evidence is still auditable, just not listed.
+        thread = self.service.get_thread(thread_id)
+        self.assertTrue(thread["messages"])
+        self.service.store.verify_chain(thread_id)
+        with self.assertRaises(AgentError) as error:
+            self.service.archive_thread("chat-missing")
+        self.assertEqual(error.exception.code, "CHAT_THREAD_NOT_FOUND")
+
+    def test_list_threads_paginates(self) -> None:
+        ids = []
+        for index in range(3):
+            ids.append(self.send(f"问题 {index}")[0]["thread_id"])
+            time.sleep(0.003)
+        first = self.service.list_threads(limit=2, offset=0)
+        second = self.service.list_threads(limit=2, offset=2)
+        self.assertEqual(len(first), 2)
+        self.assertEqual(len(second), 1)
+        self.assertEqual({thread["id"] for thread in first + second}, set(ids))
+        self.assertEqual(self.service.thread_count(), 3)
 
     def test_unknown_thread_is_not_silently_created(self) -> None:
         with self.assertRaises(AgentError) as error:

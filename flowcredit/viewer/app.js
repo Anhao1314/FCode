@@ -213,6 +213,10 @@ const chat = {
   attachments: [],
   editing: null,
   paintTimer: null,
+  limit: 50,
+  total: 0,
+  deleteArmed: null,
+  deleteTimer: null,
 };
 let runHistory = [];    // /api/runs
 let runFilter = "";     // 运行记录搜索词
@@ -5365,11 +5369,19 @@ function hydrateDoodles(root = document) {
    对话是“回答”，不是“运行”：每次回答仍是一笔受预算约束、进事件链的
    模型调用，但不执行工具。需要执行时，用户点「转为委托」。 */
 
-async function loadChatThreads() {
+async function loadChatThreads(reset = true) {
   if (!health || !health.live) return;
+  const offset = reset ? 0 : chatThreads.length;
   try {
-    const data = await fetch("/api/chat/threads", { cache: "no-store" }).then(r => r.ok ? r.json() : null);
-    chatThreads = data && Array.isArray(data.threads) ? data.threads : [];
+    const data = await fetch(
+      `/api/chat/threads?limit=${chat.limit}&offset=${offset}`,
+      { cache: "no-store" },
+    ).then(r => r.ok ? r.json() : null);
+    const list = data && Array.isArray(data.threads) ? data.threads : [];
+    if (data && Number.isFinite(Number(data.total))) chat.total = Number(data.total);
+    chatThreads = reset
+      ? list
+      : chatThreads.concat(list.filter(thread => !chatThreads.some(item => item.id === thread.id)));
     chat.threads = chatThreads;
     renderChats();
   } catch { /* 侧栏列表失败不阻塞对话 */ }
@@ -5384,12 +5396,49 @@ function renderChats() {
     nav.innerHTML = `<div class="side-empty-inline">还没有对话</div>`;
     return;
   }
-  nav.innerHTML = chatThreads.slice(0, 40).map(thread => {
+  const items = chatThreads.map(thread => {
     const active = chat.current && chat.current.id === thread.id;
     return `<button class="session chat-row${active ? " active" : ""}" data-chat-id="${esc(thread.id)}" title="${esc(thread.title)}">
       <span class="slabel">${esc(thread.title)}</span>
+      <span class="chat-del" data-chat-delete="${esc(thread.id)}" role="button" title="从列表移除（事件链保留）">×</span>
     </button>`;
   }).join("");
+  const more = chatThreads.length < chat.total
+    ? `<button class="chat-more" type="button" data-chat-more>加载更多 · 还有 ${chat.total - chatThreads.length} 条</button>`
+    : "";
+  nav.innerHTML = items + more;
+}
+
+function handleChatDelete(threadId, el) {
+  if (chat.deleteArmed !== threadId) {
+    chat.deleteArmed = threadId;
+    el.textContent = "确认";
+    el.classList.add("armed");
+    clearTimeout(chat.deleteTimer);
+    chat.deleteTimer = setTimeout(() => {
+      chat.deleteArmed = null;
+      chat.deleteTimer = null;
+      renderChats();
+    }, 3000);
+    return;
+  }
+  chat.deleteArmed = null;
+  clearTimeout(chat.deleteTimer);
+  (async () => {
+    try {
+      const response = await fetch(`/api/chat/threads/${encodeURIComponent(threadId)}`, { method: "DELETE" });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+      chatThreads = chatThreads.filter(thread => thread.id !== threadId);
+      chat.threads = chatThreads;
+      chat.total = Math.max(0, chat.total - 1);
+      if (chat.current && chat.current.id === threadId) newChat();
+      renderChats();
+      toast("对话已从列表移除（事件链保留）");
+    } catch (error) {
+      toast("删除失败：" + error.message);
+    }
+  })();
 }
 
 function adoptDefaultChatModel(defaultKey) {
@@ -6500,6 +6549,9 @@ function bind() {
     }
     if (event.target.closest("#nav-reviews")) { renderMode("reviews"); return; }
     if (event.target.closest("#nav-scheduled")) { renderMode("scheduled"); return; }
+    const chatDelete = event.target.closest("[data-chat-delete]");
+    if (chatDelete) { handleChatDelete(chatDelete.dataset.chatDelete, chatDelete); return; }
+    if (event.target.closest("[data-chat-more]")) { loadChatThreads(false); return; }
     const chatRow = event.target.closest("#chat-nav [data-chat-id]");
     if (chatRow) { openChat(chatRow.dataset.chatId); return; }
     const chatEdit = event.target.closest("[data-chat-edit]");
