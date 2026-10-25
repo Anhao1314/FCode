@@ -282,7 +282,13 @@ class Runtime:
         self.WorkspaceSandbox = m.WorkspaceSandbox
 
     def _module_for(self, template_key: str | None):
-        """The domain module a template runs on; finance stays the default."""
+        """The domain module a template runs on.
+
+        The general module is the product's default entry. The finance module
+        stays registered as the reference workload: when no template is named
+        (the corpus browser) or an unknown key arrives, the reference world is
+        the only one with a canned corpus to show.
+        """
         key = DOMAIN_KEY
         if template_key:
             try:
@@ -531,7 +537,7 @@ class RunManager:
             return None
         if not isinstance(spec, dict):
             raise ValueError("spec must be an object")
-        general = getattr(scenario, "module", DOMAIN_KEY) != DOMAIN_KEY
+        general = scenario.module != DOMAIN_KEY
         if general:
             mode = str(spec.get("mode") or "research")
             if mode not in ("research", "script"):
@@ -936,7 +942,7 @@ class RunManager:
             run_dir = RUNS_DIR / run.id
             db = run_dir / "task.sqlite"
             store = rt.TaskStore(db)
-            module = rt.get_domain(getattr(scenario, "module", DOMAIN_KEY))
+            module = rt.get_domain(scenario.module)
             general = module.key != DOMAIN_KEY
             # The general module keeps its workspace sandbox inside the run
             # directory, next to the chain it feeds; files survive restarts.
@@ -1820,7 +1826,7 @@ def _run_crash(rt: Runtime, harness, store, world, scenario, task, observer, db:
         timeout=180,
     )
     resumed = store.load(task.id)
-    module = rt.get_domain(getattr(scenario, "module", DOMAIN_KEY))
+    module = rt.get_domain(scenario.module)
     memory = rt.Loop(
         harness, planner=module.make_planner(world), result_tools=module.result_tools,
     ).restore(resumed)

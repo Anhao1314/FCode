@@ -28,8 +28,9 @@ def _reject_float(value: Any) -> None:
     """Raise if *value* contains a float anywhere.
 
     Floats are excluded on purpose: ``0.1 + 0.2`` has no stable textual form
-    across runtimes, and a financial runtime should never hash one. Percentages
-    are stored as integers in basis points and money as integer micro-units.
+    across runtimes, and an audited runtime should never hash one. Quantities
+    are carried as integers in the caller's smallest unit — basis points,
+    micro-units or plain counts.
     """
     if isinstance(value, float):
         raise TypeError("canonical_json does not accept float; use int micro-units or basis points")

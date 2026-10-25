@@ -403,9 +403,9 @@ class Harness:
     def verify(self, observation: Observation) -> dict[str, Any]:
         """Delegate independent recomputation to the domain module.
 
-        The kernel does not know how to check a margin, a sample or a backtest;
-        it only knows that a result is not accepted on the model's word. The
-        module supplies the recomputation.
+        The kernel does not know how to check a number, a file state or an
+        external fact; it only knows that a result is not accepted on the
+        model's word. The module supplies the recomputation.
         """
         if self.verifier is None:
             raise AgentError("RESULT_INCOMPLETE", "no verifier is configured for this harness")

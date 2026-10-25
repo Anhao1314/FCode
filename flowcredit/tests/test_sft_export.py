@@ -22,7 +22,6 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "src"))
 
-from flowagent.core.plan import Todo  # noqa: E402
 from flowagent.core.receipts import ReceiptStore  # noqa: E402
 from flowagent.core.store import TaskStore  # noqa: E402
 from flowagent.demo.fixtures import get_scenario  # noqa: E402
@@ -48,11 +47,6 @@ from flowagent.tools.registry import ToolRegistry  # noqa: E402
 from flowagent.trajectory.exporter import export_trace  # noqa: E402
 from flowagent.trajectory.recorder import TraceRecorder  # noqa: E402
 from flowagent.domains.finance import FINANCE_DOMAIN, verify_observation as verify_finance  # noqa: E402
-
-from flowagent.domains.credit import CREDIT_DOMAIN  # noqa: E402
-from flowagent.tools.credit.planner import CreditPlanner  # noqa: E402
-from flowagent.tools.credit.tools import CREDIT_TOOL_NAMES, build_credit_tools  # noqa: E402
-from flowagent.tools.credit.world import CreditWorld  # noqa: E402
 
 
 def run_episode(
@@ -97,74 +91,6 @@ def run_episode(
     trace = recorder.build(store.load(task.id))
     store.close()
     return trace, provider.captured, provider.proposals
-
-
-class _PostResultReviewPlanner(CreditPlanner):
-    """Adds one review todo so the model is asked after both metrics exist."""
-
-    def decompose(self, goal):
-        plan = super().decompose(goal)
-        return plan.revise(
-            add=(
-                Todo(
-                    "r1",
-                    "复核八个指标并给出结论",
-                    "report_blocked",
-                    "reported",
-                    {"reason": "insufficient_evidence"},
-                ),
-            ),
-            reason="test: capture the context after both results",
-        )
-
-
-def run_credit_episode(tmp: Path) -> list:
-    """Run the real credit stack with a recording provider; return contexts."""
-    world = CreditWorld()
-    store = TaskStore(tmp / "credit-task.sqlite")
-    registry = ToolRegistry(build_credit_tools(world))
-    receipts = ReceiptStore(store)
-    provider = RecordingProvider(MockProvider(policy="research"))
-    recorder = TraceRecorder(store, provider_name=provider.name, model_name=provider.model)
-    limits = BudgetLimits(
-        max_calls=20,
-        max_reads=20,
-        max_cost_microusd=20_000,
-        max_tokens=20_000,
-    )
-    harness = Harness(
-        store=store,
-        registry=registry,
-        provider=provider,
-        world=world,
-        verifier=lambda observation: CREDIT_DOMAIN.verify(world, observation),
-        limits=limits,
-        receipts=receipts,
-    )
-    allowed = list(CREDIT_TOOL_NAMES)
-    task = harness.create(
-        task_id="fidelity-credit",
-        objective="credit context fidelity",
-        principal="test",
-        binding={"scenario": "credit", "synthetic": True},
-        allowed_tools=allowed,
-        grant={
-            "allowed_tools": allowed,
-            "max_calls": 20,
-            "max_reads": 20,
-            "max_cost_microusd": 20_000,
-            "max_tokens": 20_000,
-        },
-    )
-    Loop(
-        harness,
-        planner=_PostResultReviewPlanner(),
-        max_rounds=20,
-        observer=recorder,
-        result_tools=CREDIT_DOMAIN.result_tools,
-    ).run(task.id)
-    store.close()
-    return provider.captured
 
 
 class FidelityTests(unittest.TestCase):
@@ -276,50 +202,6 @@ class FidelityTests(unittest.TestCase):
         ):
             parsed = parse_proposal_text(wrapper(good))
             self.assertEqual(parsed["todo_id"], "t1")
-
-
-class CreditContextTests(unittest.TestCase):
-    def test_credit_context_carries_fields_and_both_metrics(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            captured = run_credit_episode(Path(tmp))
-
-        self.assertNotIn("metrics", captured[0]["state"])
-        expected_metrics = {
-            "net_debt_to_ebitda": 37714,
-            "interest_coverage": 41667,
-            "ocf_to_short_term_debt": 3000,
-            "receivables_to_revenue": 2296,
-            "related_party_funding_ratio": 577,
-            "contingent_liabilities_to_equity": 281,
-            "audit_opinion": "standard_unqualified",
-            "rating_migration": "stable",
-        }
-        both = [
-            context["state"]["metrics"]
-            for context in captured
-            if context["state"].get("metrics") == expected_metrics
-        ]
-        self.assertEqual(len(both), 1)
-
-        read_summaries = [
-            observation["summary"]
-            for context in captured
-            for observation in context.get("observations", [])
-            if observation["tool"] == "read_document"
-        ]
-        self.assertTrue(read_summaries)
-        self.assertTrue(all("fields" in summary for summary in read_summaries))
-        for summary in read_summaries:
-            self.assertIn("found", summary)
-            self.assertIn("doc_id", summary)
-            self.assertNotIn("basis", summary)
-            self.assertNotIn("revenue", summary)
-
-        annual = next(
-            summary for summary in read_summaries
-            if summary["doc_id"] == "doc_ar_fy2025"
-        )
-        self.assertEqual(annual["fields"]["ebitda"], 175_000)
 
 
 if __name__ == "__main__":

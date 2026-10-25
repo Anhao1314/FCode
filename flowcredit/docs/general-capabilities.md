@@ -217,8 +217,8 @@ git 快照记录文件效应，这些让"批准什么"可审阅，但不构成 O
   委托全流程 Loop 成功 + 双验证（当前盘上/git 历史）、超时路径
   tool_unknown 只派发一次；commands.json 只加不减；playwright mock
   stdio 冒烟：命名空间导入、全部 consequential、server 自述不被信任、
-  URL 参数门控校验、调用往返、主机 readonly 标注生效）。全量 361 项
-  通过（原 328 零回归）。
+  URL 参数门控校验、调用往返、主机 readonly 标注生效）。当前全量
+  323 项测试通过。
 - 离线测试：`tests/test_general_capabilities.py`（沙箱逃逸矩阵、SSRF
   各地址段、DNS 重绑定、钉住连接、超时→unknown、前置拒绝为 confirmed、
   1 MiB 上限、重定向再校验、收据字段与 not-verified、门控效果类、
@@ -226,7 +226,7 @@ git 快照记录文件效应，这些让"批准什么"可审阅，但不构成 O
   失败、tool_unknown 只执行一次）、`tests/test_mcp_bridge.py`（真实
   子进程 stdio 全链路：握手、导入命名、schema 校验、主机分类、调用、
   isError confirmed、超时 unknown、进程死亡降级、坏 server 不遮蔽好
-  server）。全量 328 项测试通过（原 287 项零回归）。
+  server）。当前全量 323 项测试通过。
 - 里程碑演示（录屏/截图）：viewer 创建通用委托"调研公开主题，写
   research.md"→ fetch_url 真实抓取收据 → write_file 真实 diff 审批
   （键盘放行）→ 预算走表 → `verify_trace` 通过 → 工作区文件存在且

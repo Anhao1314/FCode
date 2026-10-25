@@ -1,8 +1,8 @@
 """Domain modules: the kernel hosts them without knowing their nouns.
 
-The finance module must be able to supply world, tools, planner and verifier
-on its own; the kernel's only remaining duty is to refuse a result the module
-cannot independently recompute.
+Each module supplies world, tools, planner and verifier on its own; the
+kernel's only remaining duty is to refuse a result the module cannot
+independently recompute.
 """
 
 from __future__ import annotations
@@ -19,8 +19,8 @@ from flowagent.core.contracts import AgentError  # noqa: E402
 from flowagent.core.receipts import ReceiptStore  # noqa: E402
 from flowagent.core.store import TaskStore  # noqa: E402
 from flowagent.domains import get_domain, list_domains  # noqa: E402
-from flowagent.domains.credit import CREDIT_DOMAIN  # noqa: E402
 from flowagent.domains.finance import FINANCE_DOMAIN, verify_observation  # noqa: E402
+from flowagent.domains.general import GENERAL_DOMAIN  # noqa: E402
 from flowagent.providers.mock import MockProvider  # noqa: E402
 from flowagent.runtime.budget import BudgetLimits  # noqa: E402
 from flowagent.runtime.harness import Harness  # noqa: E402
@@ -31,15 +31,25 @@ from flowagent.tools.registry import ToolRegistry  # noqa: E402
 
 
 class DomainModuleTests(unittest.TestCase):
-    def test_registry_exposes_finance_credit_and_general_modules(self) -> None:
+    def test_registry_exposes_the_general_and_reference_modules(self) -> None:
+        self.assertIs(get_domain("general-work"), GENERAL_DOMAIN)
         self.assertIs(get_domain("finance-research"), FINANCE_DOMAIN)
-        self.assertIs(get_domain("credit-due-diligence"), CREDIT_DOMAIN)
         self.assertEqual(
             {module.key for module in list_domains()},
-            {"finance-research", "credit-due-diligence", "general-work"},
+            {"general-work", "finance-research"},
         )
+        # Registration order is the console's default preference: general first.
+        self.assertEqual(list_domains()[0].key, "general-work")
         with self.assertRaises(KeyError):
             get_domain("audit")
+
+    def test_general_module_declares_its_own_answer_and_template(self) -> None:
+        self.assertEqual(GENERAL_DOMAIN.result_tools, ("write_file",))
+        self.assertEqual(GENERAL_DOMAIN.report_template, "generic")
+        self.assertEqual(GENERAL_DOMAIN.approval_tools, ("write_file", "edit_file", "run_command"))
+        self.assertIsNotNone(GENERAL_DOMAIN.make_planner(
+            GENERAL_DOMAIN.create_world(spec={"sources": ["https://example.com/doc"]}),
+        ).decompose("调研 example.com"))
 
     def test_module_supplies_world_tools_and_planner(self) -> None:
         world = FINANCE_DOMAIN.create_world()

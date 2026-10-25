@@ -109,9 +109,8 @@ class RenderedOutputTest(unittest.TestCase):
 
         for key, scenario in SCENARIOS.items():
             if scenario.module != "finance-research":
-                # general-research needs operator-provided sources (spec)
-                # and would hit the network; its offline equivalent runs in
-                # test_general_capabilities with an injected fake fetcher.
+                # general-research's offline script mode is exercised in
+                # GeneralScenarioTest with its operator spec.
                 continue
             with self.subTest(scenario=key):
                 buffer = io.StringIO()
@@ -119,6 +118,27 @@ class RenderedOutputTest(unittest.TestCase):
                     result = run_scenario(key, fast=True, quiet=False)
                 self.assertEqual(result.status, scenario.expected_status)
                 self.assertIn("终态", buffer.getvalue())
+
+
+class GeneralScenarioTest(unittest.TestCase):
+    """The general prototype must run headlessly, offline and be rendered."""
+
+    def test_script_mode_writes_runs_fixes_and_files_results(self) -> None:
+        import contextlib
+        import io
+
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            result = run_scenario(
+                "general-research", fast=True, quiet=False, spec={"mode": "script"},
+            )
+        self.assertEqual(result.status, "succeeded")
+        self.assertEqual(result.rounds, 5)
+        self.assertEqual(result.model_calls, 5)
+        self.assertTrue(result.trace_verified)
+        output = buffer.getvalue()
+        self.assertIn("终态", output)
+        self.assertIn("results.md", output)
 
 
 if __name__ == "__main__":

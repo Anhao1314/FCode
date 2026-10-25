@@ -1280,7 +1280,6 @@ const RESULT_BLOCK_KINDS = {
   reconcile_basis: "brief",
   normalize_units: "brief",
   calculate_margin: "brief",
-  compute_credit_metric: "brief",
   working_paper_append: "diff",
   collect_source: "diff",
   write_document: "diff",
@@ -2623,7 +2622,6 @@ const APPROVAL_VERBS = {
   reconcile_basis: "核对口径",
   check_restatement: "核对重述",
   calculate_margin: "计算毛利率",
-  compute_credit_metric: "计算信用指标",
   report_blocked: "宣告受阻",
 };
 
@@ -4153,7 +4151,9 @@ async function initLive() {
     paintModelBadge();
     return;
   }
-  setTemplate(templates.some(t => t.key === "full") ? "full" : templates[0].key);
+  // 通用委托是产品默认入口；金融研究作为参考负载仍可显式选择。
+  const preferred = ["general-research", "full"].find(key => templates.some(t => t.key === key));
+  setTemplate(preferred || templates[0].key);
   setComposerRunning(false);
   paintModelBadge();
   updateStatusline();

@@ -100,9 +100,10 @@ class Plan:
         """True when no work remains and no required todo was refused.
 
         An optional todo may finish as ``blocked``: the plan is complete, but
-        the gap must still be reported by the domain (the credit memo's
-        ``missing_optional``). A required ``blocked`` todo is never complete;
-        the caller must stop instead of issuing a partial answer.
+        the gap must still be reported by the domain (as an explicit
+        missing-optional record, for example). A required ``blocked`` todo is
+        never complete; the caller must stop instead of issuing a partial
+        answer.
         """
         return all(
             todo.status in ("done", "abandoned")

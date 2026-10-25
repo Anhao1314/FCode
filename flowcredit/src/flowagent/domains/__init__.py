@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from .base import DomainModule
-from .credit import CREDIT_DOMAIN
 from .finance import FINANCE_DOMAIN
 from .general import GENERAL_DOMAIN
 
@@ -11,16 +10,17 @@ __all__ = [
     "DomainModule",
     "DOMAINS",
     "FINANCE_DOMAIN",
-    "CREDIT_DOMAIN",
     "GENERAL_DOMAIN",
     "get_domain",
     "list_domains",
 ]
 
+#: The general module is the product's default entry. The finance module stays
+#: registered as the deterministic reference workload: it is what the reliability
+#: scenarios and the independent-recomputation tests run against.
 DOMAINS: dict[str, DomainModule] = {
-    FINANCE_DOMAIN.key: FINANCE_DOMAIN,
-    CREDIT_DOMAIN.key: CREDIT_DOMAIN,
     GENERAL_DOMAIN.key: GENERAL_DOMAIN,
+    FINANCE_DOMAIN.key: FINANCE_DOMAIN,
 }
 
 

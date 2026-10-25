@@ -389,8 +389,8 @@ class Loop:
             raise AgentError("RESULT_INCOMPLETE", "no result observations to verify")
 
         # One verified observation keeps the historical single-result shape
-        # (finance's margin fields). Multiple observations use a deterministic
-        # list ordered by the committed event sequence.
+        # (a single-result domain's field set). Multiple observations use a
+        # deterministic list ordered by the committed event sequence.
         if len(verified) == 1:
             return verified[0]
         return {

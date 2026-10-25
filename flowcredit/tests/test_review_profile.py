@@ -179,7 +179,7 @@ class BuildProfileTests(unittest.TestCase):
             (
                 "run-d",
                 make_trace(
-                    module="credit-research",
+                    module="other-module",
                     events=[
                         review_event(
                             "accept", sequence=3, at="2026-01-01T00:00:05Z", reason="a2"
@@ -220,7 +220,7 @@ class BuildProfileTests(unittest.TestCase):
         )
 
         empty = build_profile(
-            self.traces, module="credit-research", template="full", outcome="failed"
+            self.traces, module="other-module", template="full", outcome="failed"
         )
         self.assertEqual(empty["total"], 0)
         self.assertEqual(empty["counts"], {"accept": 0, "needs_evidence": 0, "qualified": 0, "redo": 0})

@@ -134,17 +134,38 @@ class Renderer:
         self._p(self._c(self.BOLD, line))
         if task.status == "succeeded" and result:
             self._p(self._c(self.GREEN + self.BOLD, " 终态  SUCCEEDED（Runtime 独立重算通过）"))
-            self._p(f"  2024 毛利率  {self._pct(result['margin_bp_2024'])}")
-            self._p(f"  2025 毛利率  {self._pct(result['margin_bp_2025'])}")
-            change = result["change_bp"]
-            colour = self.RED if change < 0 else self.GREEN
-            self._p(f"  变化        {self._c(colour, self._pp(change))}")
-            self._p(f"  口径        {result['basis']} / {result['consolidation']} / 已应用 2024 重述")
-            self._p("  引用来源")
-            for citation in result.get("citations", []):
-                self._p(
-                    f"    - {citation['period']}  {citation['doc_id']}  毛利 {citation['value_cny']:,} 元"
-                )
+            if "margin_bp_2024" in result:
+                self._p(f"  2024 毛利率  {self._pct(result['margin_bp_2024'])}")
+                self._p(f"  2025 毛利率  {self._pct(result['margin_bp_2025'])}")
+                change = result["change_bp"]
+                colour = self.RED if change < 0 else self.GREEN
+                self._p(f"  变化        {self._c(colour, self._pp(change))}")
+                self._p(f"  口径        {result['basis']} / {result['consolidation']} / 已应用 2024 重述")
+                self._p("  引用来源")
+                for citation in result.get("citations", []):
+                    self._p(
+                        f"    - {citation['period']}  {citation['doc_id']}  毛利 {citation['value_cny']:,} 元"
+                    )
+            else:
+                # The result shape belongs to the domain module, not the
+                # renderer: print the verified entries unchanged.
+                self._p(f"  复核方式    {result.get('verification', 'runtime-recomputed')}")
+                entries = result.get("results")
+                if not isinstance(entries, list):
+                    entries = [result]
+                for entry in entries:
+                    if not isinstance(entry, dict):
+                        continue
+                    label = str(entry.get("path") or entry.get("tool") or "结果")
+                    details = " · ".join(
+                        f"{key}={value}"
+                        for key, value in entry.items()
+                        if key not in ("path", "content_truth", "verification", "verified")
+                        and isinstance(value, (str, int, bool))
+                    )
+                    self._p(f"  {label:<16} {details}")
+                    if entry.get("content_truth"):
+                        self._p(f"  {'':<16} {entry['content_truth']}")
         elif task.status == "denied":
             failure = task.failure or {}
             self._p(self._c(self.RED + self.BOLD, " 终态  DENIED（主机拒绝，工具未执行）"))

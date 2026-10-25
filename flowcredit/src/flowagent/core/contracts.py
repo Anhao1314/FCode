@@ -133,8 +133,8 @@ class Step:
     """One tool call proposed by the model.
 
     ``arguments`` is validated against the tool schema *and* the host policy.
-    In Phase 1 the finance tools accept a small, closed set of parameters; the
-    model can choose values but never the tool's identity, effect or scope.
+    Tools accept a small, closed set of parameters; the model can choose values
+    but never the tool's identity, effect or scope.
     """
 
     id: str
@@ -195,9 +195,9 @@ def validate_plan(value: Any) -> Plan:
 
     Rules are intentionally identical to the Node prototype: version must
     match, 1-6 steps, unique snake/kebab ids, a registered-looking tool name,
-    a dict of arguments no larger than 1 KiB. Tool *existence* is checked by
-    the runtime gate, not here, so an unknown tool produces a denial receipt
-    instead of a schema error.
+    a dict of arguments no larger than the canonical 96 KiB bound. Tool
+    *existence* is checked by the runtime gate, not here, so an unknown tool
+    produces a denial receipt instead of a schema error.
     """
     if not exact_keys(value, ("version", "steps")):
         raise AgentError("PLAN_SCHEMA_INVALID", "plan must contain exactly version and steps")

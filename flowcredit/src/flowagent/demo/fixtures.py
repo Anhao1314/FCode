@@ -25,6 +25,10 @@ class Scenario:
     grant: dict[str, Any]
     limits: BudgetLimits
     max_rounds: int
+    #: Which domain module assembles this scenario's world, tools and verifier.
+    #: Explicit on every scenario: a silent default would bind a new scenario
+    #: to the reference workload without anyone deciding it.
+    module: str
     policy: str = "research"
     fail_at_call: int | None = None
     reconcile: bool = False
@@ -37,9 +41,6 @@ class Scenario:
     #: before executing them. Data, not runtime policy: a different domain can
     #: name a different set without touching the loop.
     approval_tools: tuple[str, ...] = ("reconcile_basis", "report_blocked", "working_paper_append")
-    #: Which domain module assembles this scenario's world, tools and verifier.
-    #: The default keeps every existing scenario on finance; new domains opt in.
-    module: str = "finance-research"
 
 
 _ALL_TOOLS = (
@@ -90,6 +91,7 @@ SCENARIOS: dict[str, Scenario] = {
         grant=_grant(),
         limits=BudgetLimits(12, 20, 20_000, 20_000),
         max_rounds=12,
+        module="finance-research",
     ),
     "tool-denied": Scenario(
         key="tool-denied",
@@ -103,6 +105,7 @@ SCENARIOS: dict[str, Scenario] = {
         # before the host-gate evidence is conclusive. Six rounds leaves room
         # for that without pretending a round-limit refusal is a gate denial.
         max_rounds=6,
+        module="finance-research",
         policy="escalate",
         expected_status="denied",
     ),
@@ -115,6 +118,7 @@ SCENARIOS: dict[str, Scenario] = {
         grant=_grant(max_calls=4),
         limits=BudgetLimits(4, 20, 20_000, 20_000),
         max_rounds=10,
+        module="finance-research",
         policy="loop",
         expected_status="failed",
     ),
@@ -127,6 +131,7 @@ SCENARIOS: dict[str, Scenario] = {
         grant=_grant(max_calls=6),
         limits=BudgetLimits(6, 20, 20_000, 20_000),
         max_rounds=12,
+        module="finance-research",
         expected_status="failed",
     ),
     "crash": Scenario(
@@ -138,6 +143,7 @@ SCENARIOS: dict[str, Scenario] = {
         grant=_grant(),
         limits=BudgetLimits(12, 20, 20_000, 20_000),
         max_rounds=12,
+        module="finance-research",
         crash_at="tool_succeeded",
         crash_at_count=3,
     ),
@@ -150,6 +156,7 @@ SCENARIOS: dict[str, Scenario] = {
         grant=_grant(),
         limits=BudgetLimits(12, 20, 20_000, 20_000),
         max_rounds=12,
+        module="finance-research",
         fail_at_call=3,
         reconcile=True,
     ),
@@ -166,6 +173,7 @@ SCENARIOS: dict[str, Scenario] = {
         grant=_grant(),
         limits=BudgetLimits(12, 20, 20_000, 20_000),
         max_rounds=12,
+        module="finance-research",
         partial_corpus=True,
         expected_status="failed",
     ),

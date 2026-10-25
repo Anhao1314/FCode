@@ -1,14 +1,18 @@
 # FCode
 
-**flowcredit 的 Agent Runtime：模型不掌权、出错不乱来、全程可审计。**
+**可审计的通用 Agent Runtime：模型不掌权、出错不乱来、全程可审计。**
 
-模型只能提议动作，主机掌握授权、预算、工具与凭证；Runtime 独立校验后才执行，每一步落进哈希链，崩溃可恢复，未知结果不重发。金融研究是第一个示例域，内核领域无关。
+模型只能提议动作，主机掌握授权、预算、工具与凭证；Runtime 独立校验后才执行，每一步落进哈希链，崩溃可恢复，未知结果不重发。通用委托（文件、命令、网页）是默认入口；金融研究保留为可重算的参考负载。内核领域无关。
 
 ```sh
-cd flowcredit && python demo.py
+cd flowcredit
+python demo.py general-research --fast   # 通用委托：写脚本、运行、锚定修复、复跑、归档（离线，5 轮）
+python demo.py full --fast               # 参考负载：9 轮治理故事
 ```
 
-Python 3.11+，零第三方依赖，零配置，离线。在终端里给出场景菜单；无终端时直接跑完整故事。
+Python 3.11+，零第三方依赖，零配置，离线。在终端里给出场景菜单；无终端时直接跑参考负载的完整故事。
+
+参考负载的一次完整运行：
 
 ```
 第 6 轮   预算 calls 5/12  reads 5/20  cost 2500/20000 µUSD
@@ -32,7 +36,7 @@ Python 3.11+，零第三方依赖，零配置，离线。在终端里给出场�
 
 | | 主张 | 代码里怎么落实 | 怎么验证 |
 | --- | --- | --- | --- |
-| **模型不掌权** | 模型只能提议，主机门控工具、参数、预算、授权 | 工具是封闭注册表；参数按 schema 校验；工具必须同时出现在任务范围与主机 grant 里；模型不能传财务数值 | `demo.py tool-denied`：提议一个未注册工具，被拒且读取计数为 0 |
+| **模型不掌权** | 模型只能提议，主机门控工具、参数、预算、授权 | 工具是封闭注册表；参数按 schema 校验；工具必须同时出现在任务范围与主机 grant 里；模型不能自报结果数值 | `demo.py tool-denied`：提议一个未注册工具，被拒且读取计数为 0 |
 | **出错不乱来** | 崩溃可恢复，unknown 不重发、不重复扣费，结果独立校验 | 调用在发送前扣预算；`unknown` 只能凭匹配的签名收据显式对账；成功必须由 Runtime 重算通过 | `demo.py crash`：真实 SIGKILL 后 9 轮 9 次调用，无一轮重复；`demo.py unknown` |
 | **全程可审计** | 每步签名收据 + 哈希链，Trace 可回放、可评测、防篡改 | 每事件 `sha256(canonical_json({sequence,type,payload,prev_hash,at}))`，链头写入任务行 | `flowcredit/viewer/` 用 `crypto.subtle` 重算全链，改一个字节就变红 |
 
@@ -73,11 +77,14 @@ flowchart TB
 
 一次调用穿过四道关：**门控 → 预算 → 执行 → 独立重算**。任何一道不过，任务都不会被标记为成功。
 
-## 七个场景
+## 八个场景
 
 ```sh
 cd flowcredit
-python demo.py full          # 完整研究，9 轮
+python demo.py general-research --fast  # 通用委托：离线脚本模式，写→跑→修→复跑→归档
+python demo.py general-research --sources https://example.com --fast
+                                        # 通用委托：抓取来源，写入 research.md
+python demo.py full          # 参考负载，9 轮
 python demo.py tool-denied   # 越权工具：主机拒绝，工具从未执行
 python demo.py budget        # 预算耗尽：发送前拦住，已占用不退
 python demo.py budget-resume # 预算追加：失败后续跑，已付的读取不重发
@@ -89,17 +96,21 @@ python demo.py --serve       # 打开只读回放控制台
 ```
 
 ```
- 场景           终态                     轮次   调用   读取    花费µUSD   轨迹
- full         succeeded               9    9    9      4500   ok
- tool-denied  denied                  1    1    0       500   ok
- budget       failed                  5    4    4      2000   ok
- budget-resume failed                  7    6    6      3000   ok
- crash        succeeded               9    9    9      4500   ok
- unknown      succeeded               9    9    9      4500   ok
- open-ended   failed                  9    9    9      4500   ok
+ 场景                 终态                     轮次   调用   读取    花费µUSD   轨迹
+ full               succeeded               9    9    9      4500   ok
+ tool-denied        denied                  1    1    0       500   ok
+ budget             failed                  5    4    4      2000   ok
+ budget-resume      failed                  7    6    6      3000   ok
+ crash              succeeded               9    9    9      4500   ok
+ unknown            succeeded               9    9    9      4500   ok
+ open-ended         failed                  9    9    9      4500   ok
+ general-research   succeeded               5    5    5      2500   ok
 ```
 
-其余六个场景都不改 Runtime 代码——它们是不同的主机策略与故障注入。这一点本身就是设计主张：可靠性不是特判出来的。
+`general-research` 是通用 agent 原型：默认离线脚本模式，也可以用 `--sources`
+切到“抓取来源 → 写 research.md”。其余七个场景是**参考负载**上的故障注入，
+它们不改 Runtime 代码，只是不同的主机策略与数据。场景到模块的显式绑定、以及
+这次从产品层移除的信用尽调域，见 [domain-layer.md](flowcredit/docs/domain-layer.md)。
 
 ## 控制台
 
@@ -112,6 +123,7 @@ python3 flowcredit/viewer/server.py --repo .   # 打开 http://127.0.0.1:8642/
 ![console](flowcredit/viewer/docs/console-live.png)
 
 - 左侧：目录式的任务历史——每条记录两行（名称/时间 + 模板/轮次/成本），今天 / 昨天 / 更早分组带计数；悬停 `⋯` 菜单固定 / 重命名 / 删除；`↑↓` 在记录间移动、`Enter` 打开、`/` 聚焦搜索；示例场景收进折叠的附录。
+- 默认委托：通用 agent（文件、命令、网页）；金融研究作为参考负载保留在模板里。模板到模块的绑定是显式的（`scenario.module`），未知模板不会静默落到某个域。
 - 委托入口：用户先发消息，clarifier 返回理解摘要和 2–4 个选项——关注点 → 输出 → 审批，任务卡确认后才创建运行；选择写入 `binding.spec`，可回退、取消或继续描述。
 - 新建委托：点侧栏「＋ 新建委托」或 composer 的 `＋` 打开三步向导（类型 → 说明 → 审批），提交即开跑；也可以直接在 composer 输入任务，Enter 发送。
 - 真实运行：Runtime 现场执行，Plan、预算、逐轮工具卡与哈希链边产生边渲染；`⌘.` 在轮次边界停止。
@@ -147,28 +159,6 @@ open desktop/dist/FCode.app
 - `.github/workflows/desktop.yml` 在 macOS / Windows 上构建，发布 Release 时自动附带 zip
 - 未签名构建首次打开需右键 → 打开；正式分发再加 Apple Developer 签名与公证
 
-## 信用尽调
-
-`flowcredit/tools/credit/` 是第二个生产域：3 家合成发行人、5 个必需指标 +
-3 个可选观察、14 步蓝图、Host 组装的 `memo.json` / `memo.md`（memo v2）。
-可选指标缺失只写 caveat，不阻止签发；必需指标缺失才 `insufficient_evidence` /
-blocked。模型只提议读取和计算，memo 里的每个数字都由 Host 从已验证 observation
-组装。Host 签发只表示结果已验证并由 Host 组装，不等于人工签字或信贷决定。
-
-真实公开数据的 profile 驱动抽取 lab 在 [labs/sec_10k/README.md](flowcredit/labs/sec_10k/README.md)：
-Cisco 与 Home Depot 的 FY2025 10-K，各 21 个事实（11 当前期 + 10 比较期）、
-行级 citation；规则在 `data/<issuer>/profile.json`，代码中没有 issuer 常量。
-两家的 5 个必需指标完整，rating / related-party / contingent 三个可选指标缺失，
-memo v2 都给出 `pass` / `issued: true` / `pending_human_review` 并把缺口写入
-caveat。设计与边界见 [sec-10k-extraction.md](flowcredit/docs/sec-10k-extraction.md)。
-
-```sh
-cd flowcredit
-python3.12 credit_demo.py --all
-```
-
-设计、结论策略与边界见 [credit-due-diligence.md](flowcredit/docs/credit-due-diligence.md)。
-
 ## 能力清单
 
 | 能力 | 状态 |
@@ -188,9 +178,9 @@ python3.12 credit_demo.py --all
 | 工具目录面板（允许/授权、effect、契约版本、每次运行用量） | 已实现 |
 | 长期案例记忆（终态轨迹 → 确定性案例簿；召回事件入链；首轮上下文注入 top-3；删除只墓碑） | 已实现 |
 | 双时态事实记忆（as-of / known-at 查询；修正追加不覆盖；每条事实带来源事件哈希） | 已实现（金融域抽取器） |
-| 域模块协议（模块自给世界/工具/规划器/验证器；模板按模块分组；金融研究与信用尽调） | 已实现 |
-| 信用尽调域（5 必需 + 3 可选指标 / 3 家合成发行人 / memo v2 / 签发与人工签字分离） | 已实现（Phase 2b，合成数据） |
-| SEC 10-K 抽取 lab（Cisco + Home Depot / 各 21 事实 / profile 驱动 / 行级 citation） | 已实现（lab，两家） |
+| 域模块协议（模块自给世界/工具/规划器/验证器；装配层按 `scenario.module` 显式绑定） | 已实现 |
+| 通用委托（文件读写 / 锚定编辑 / 受限命令 / 网页抓取；默认入口） | 已实现 |
+| MCP 桥接（导入即注册，调用仍经门控、预算与审批） | 已实现（stdio；未配置即关闭） |
 | 独立验证（Runtime 重算，模型不能自报完成） | 已实现 |
 | 人工审批门（关键步骤 / 逐步 / 自动、超时拒绝、本次运行免询） | 已实现 |
 | 运行时人工控制（计划跳过 / 提前、预算调高、失败续跑） | 已实现 |
@@ -217,12 +207,13 @@ python3.12 credit_demo.py --all
 
 ## 数字
 
-- **287** 项单元与场景测试，全部离线
-- **7** 个可复现场景，其中崩溃场景用真实 `SIGKILL`
+- **323** 项单元与场景测试，全部离线
+- **8** 个可复现场景，其中 1 个是通用委托，7 个是参考负载上的故障注入
 - **0** 个第三方运行时依赖（只用标准库）
-- **9** 轮完成一次完整研究，**4500 µUSD** 合成预算
-- 哈希链 **49** 个事件，读取时全量重算
-- 控制台 **4** 个静态文件 + **1** 个标准库 server，零构建、可离线
+- 参考负载 **9** 轮完成一次完整研究，**4500 µUSD** 合成预算
+- 通用委托 **5** 轮完成“写脚本 → 运行 → 锚定修复 → 复跑 → 归档”
+- 哈希链 **49** 个事件（参考负载），读取时全量重算
+- 控制台零构建静态文件 + **1** 个标准库 server，可离线
 
 ## 目录
 
@@ -231,13 +222,14 @@ flowcredit/          Python Runtime 与 Demo
   src/flowagent/
     core/            canonical JSON、契约与状态机、计划层、sqlite + 哈希链、签名收据
     runtime/         门控、预算、单轮 harness、多轮 loop（含恢复）
-    tools/           封闭注册表；finance/ 只读工具与 Evidence Authority
-    providers/       mock / local / kimi / deepseek / oracle（均只提议，不执行）
+    domains/         域模块注册表：general-work（默认）+ finance-research（参考负载）
+    tools/           封闭注册表：general/ 文件、命令、网页；finance/ 参考负载
+    providers/       mock / local / kimi / deepseek / openai-compatible / oracle（均只提议，不执行）
     memory/          短期观测摘要 + 案例簿 + 双时态事实簿（确定性投影、可解释检索）
     trajectory/      记录、导出、独立重算
-    demo/            CLI、终端渲染、七个场景、崩溃 worker
+    demo/            CLI、终端渲染、八个场景、模块装配、崩溃 worker
   viewer/            实时控制台 + Trace 回放（零依赖零构建）
-  tests/             287 项 unittest
+  tests/             323 项 unittest
   docs/              架构、设计决策、框架对照、JD 映射
 archive/             v1：Node.js 研究原型（保留，不参与 CI）
 ```
@@ -251,10 +243,11 @@ v2 不再问那个问题。它把 v1 里真正有价值的部分——可恢复�
 ## 边界
 
 - 真实模型默认关闭。真实传输需要一次性授权（≤1h）、凭证提供者、主机复核的价格快照与硬预算，缺一不可。
-- 演示中的金额、公司、资料全部是合成的，不是真实财报，也不构成任何投资或信贷意见。信用尽调产品域仍使用 3 家合成发行人；另有 `labs/sec_10k/` 的两份真实 10-K 抽取 lab，不接真实 LLM/PDF/OCR，也不构成投资或信贷意见。
+- 演示中的金额、公司、资料全部是合成的，不是真实财报，也不构成任何投资或信贷意见。金融研究只是参考负载。
+- 通用委托抓取的网页内容如实标注 `content_truth: not-verified`：Runtime 复核文件状态哈希、预算与链，不核实网页内容真伪。受限终端是命令级约束（白名单、参数策略、审批、收据），不是 OS 级沙箱。
 - 签名收据证明的是"这次调用发生了、内容是什么"，不证明供应商账单准确。`external_billing` 恒为 `not-verified`。
 - 哈希链保护的是本地记录的一致性。能同时改写数据库与签名密钥的攻击者不在威胁模型内。
-- 未做：RAG、MCP、FastAPI、前端工程化。这些不是遗漏，是刻意的范围边界。
+- 未做：RAG、FastAPI、前端工程化。这些不是遗漏，是刻意的范围边界。
 - 多智能体目前只有一个确定性角色编排 lab（`flowcredit/labs/multi_agent/`），不是产品能力；设计与边界见 [multi-agent-lab.md](flowcredit/docs/multi-agent-lab.md)。
 
 ## 许可

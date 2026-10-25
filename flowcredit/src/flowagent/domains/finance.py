@@ -1,8 +1,10 @@
-"""Finance research: the first domain module.
+"""Finance research: the deterministic reference workload module.
 
-The seven finance tools, the blueprint planner and the independent margin
-recomputation all live here. The shared workspace tools (ingestion, artifacts,
-connectors) are composed by the caller, not owned by this module.
+The general module is the product's default entry; this one stays registered
+because it gives the reliability scenarios a world whose answer can be
+independently recomputed. The seven finance tools, the blueprint planner and
+the margin recomputation all live here. The shared workspace tools (ingestion,
+artifacts, connectors) are composed by the caller, not owned by this module.
 """
 
 from __future__ import annotations

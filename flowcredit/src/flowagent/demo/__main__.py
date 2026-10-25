@@ -32,7 +32,11 @@ def _build_parser() -> argparse.ArgumentParser:
         epilog=(
             "examples:\n"
             "  python demo.py                 menu in a terminal, full scenario otherwise\n"
-            "  python demo.py full --fast     the main story, no pauses\n"
+            "  python demo.py full --fast     the reference workload's reliability story\n"
+            "  python demo.py general-research --fast\n"
+            "                                 general delegation, offline script mode\n"
+            "  python demo.py general-research --sources https://example.com --fast\n"
+            "                                 general delegation, fetch + write research.md\n"
             "  python demo.py all             every scenario, then a summary table\n"
             "  python demo.py --serve         open the trace viewer in a browser\n"
         ),
@@ -67,6 +71,12 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-total-cost", type=int, default=None, help="batch guard in µUSD (required for external provider batches)")
     parser.add_argument("--workdir", default=None, help="isolated directory for one real-provider run")
     parser.add_argument("--workroot", default=None, help="parent directory for batch runs; each scenario gets a subdir")
+    parser.add_argument(
+        "--mode", choices=("research", "script"), default=None,
+        help="general delegation mode (default: research when --sources is given, otherwise script)",
+    )
+    parser.add_argument("--sources", default=None, help="comma-separated URLs for a general research delegation")
+    parser.add_argument("--script-path", default=None, help="workspace filename for a general script delegation")
     parser.add_argument("--open", action="store_true", dest="open_viewer", help="open the trace viewer afterwards")
     parser.add_argument("--serve", action="store_true", help="serve the viewer on 127.0.0.1 and open it")
     parser.add_argument("--port", type=int, default=0, help="port for --serve (default: pick a free one)")
@@ -82,6 +92,32 @@ def _provider_options(args: argparse.Namespace) -> dict[str, object]:
         "structured": args.structured,
         "reasoning_effort": args.reasoning_effort,
     }
+
+
+def _parse_sources(raw: str | None) -> list[str]:
+    return [item.strip() for item in (raw or "").split(",") if item.strip()]
+
+
+def _delegation_spec(args: argparse.Namespace, scenario_key: str) -> dict[str, object]:
+    """Operator terms for one delegation; only the general module reads them.
+
+    Research mode fetches the named sources; script mode writes, runs and fixes
+    a local script with no network. With no explicit mode, sources mean research
+    and their absence means script, so the general prototype has an offline run.
+    """
+    scenario = get_scenario(scenario_key)
+    if scenario.module != "general-work":
+        return {}
+    sources = _parse_sources(getattr(args, "sources", None))
+    mode = getattr(args, "mode", None) or ("research" if sources else "script")
+    spec: dict[str, object] = {"mode": mode}
+    if sources:
+        spec["sources"] = sources
+    if getattr(args, "script_path", None):
+        spec["scriptPath"] = args.script_path
+    if mode == "research" and not sources:
+        raise ValueError("--mode research needs --sources (1 to 5 comma-separated URLs)")
+    return spec
 
 
 def _limits(args: argparse.Namespace, scenario_key: str) -> BudgetLimits | None:
@@ -133,7 +169,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.list_scenarios:
         print("scenarios:")
         for key, scenario in SCENARIOS.items():
-            print(f"  {key:<12} {scenario.title}")
+            print(f"  {key:<12} {scenario.title}  [{scenario.module}]")
         return 0
 
     if args.serve:
@@ -156,6 +192,7 @@ def main(argv: list[str] | None = None) -> int:
                 workroot=args.workroot,
                 limits=_limits(args, "full"),
                 max_total_cost=args.max_total_cost,
+                spec_for=lambda name: _delegation_spec(args, name),
             )
             code = 0 if all(result.ok for result in results) else 1
         else:
@@ -168,6 +205,7 @@ def main(argv: list[str] | None = None) -> int:
                 provider_options=_provider_options(args),
                 workdir=args.workdir,
                 limits=_limits(args, key),
+                spec=_delegation_spec(args, key),
             )
             code = result.exit_code
     except KeyError:

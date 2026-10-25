@@ -29,6 +29,7 @@ from ..runtime.budget import BudgetLimits
 from ..runtime.harness import Harness
 from ..runtime.loop import Loop
 from ..tools.registry import ToolRegistry
+from ..tools.general.sandbox import WorkspaceSandbox
 from ..trajectory.exporter import export_trace, verify_trace
 from ..trajectory.recorder import TraceRecorder
 from .fixtures import SCENARIOS, Scenario, get_scenario
@@ -145,11 +146,20 @@ def build_stack(
     *,
     provider_factory: Callable[[ReceiptStore], Provider] | None = None,
     limits: BudgetLimits | None = None,
+    spec: dict[str, Any] | None = None,
 ) -> Stack:
     """Assemble store, world, registry, provider and harness for one scenario."""
     store = TaskStore(db_path)
     module = get_domain(scenario.module)
-    world = module.create_world(partial=scenario.partial_corpus)
+    # The delegation spec is operator input (sources, mode, scope), never model
+    # input. The reference workload ignores it; the general world reads it.
+    world_kwargs: dict[str, Any] = {}
+    if module.key == "general-work":
+        # The sandbox sits next to the chain it feeds, so files survive a restart.
+        world_kwargs["sandbox"] = WorkspaceSandbox(db_path.parent / "workspace")
+    world = module.create_world(
+        partial=scenario.partial_corpus, spec=spec or {}, **world_kwargs,
+    )
     registry = ToolRegistry(module.build_tools(world))
     receipts = ReceiptStore(store)
     issued: dict[str, str] = {}
@@ -183,12 +193,16 @@ def _count(store: TaskStore, task_id: str, event_type: str) -> int:
     return sum(1 for event in store.events(task_id) if event["type"] == event_type)
 
 
-def _create_task(stack: Stack, scenario: Scenario) -> Task:
+def _create_task(stack: Stack, scenario: Scenario, spec: dict[str, Any] | None = None) -> Task:
+    binding = {"scenario": scenario.key, "corpus": "synthetic-authored-v1"}
+    if spec:
+        # The operator's delegation terms travel into the chain with the task.
+        binding["spec"] = dict(spec)
     return stack.harness.create(
         task_id=f"task-{scenario.key}-0001",
         objective=scenario.objective,
         principal="demo-researcher",
-        binding={"scenario": scenario.key, "corpus": "synthetic-authored-v1"},
+        binding=binding,
         allowed_tools=list(scenario.allowed_tools),
         grant=scenario.grant,
     )
@@ -247,6 +261,7 @@ def run_scenario(
     provider_options: dict[str, Any] | None = None,
     workdir: str | Path | None = None,
     limits: BudgetLimits | None = None,
+    spec: dict[str, Any] | None = None,
 ) -> RunResult:
     """Run one scenario and return its numbers.
 
@@ -303,6 +318,7 @@ def run_scenario(
         scenario,
         provider_factory=factory if provider_name != "mock" else None,
         limits=limits,
+        spec=spec,
     )
     if provider_name != "mock":
         print(provider_start_line(stack.provider))
@@ -310,7 +326,7 @@ def run_scenario(
     renderer = Renderer(fast=fast, quiet=quiet)
     recorder = TraceRecorder(stack.store, provider_name=stack.provider.name, model_name=stack.provider.model)
     observer = _Tee(renderer, recorder)
-    task = _create_task(stack, scenario)
+    task = _create_task(stack, scenario, spec)
     provider_note = (
         "(离线确定性 Mock，无网络、无密钥、无付费调用)"
         if provider_name == "mock"
@@ -539,6 +555,7 @@ def run_all(
     workroot: str | Path | None = None,
     limits: BudgetLimits | None = None,
     max_total_cost: int | None = None,
+    spec_for: Callable[[str], dict[str, Any]] | None = None,
 ) -> list[RunResult]:
     """Run every scenario in order and print a summary table.
 
@@ -576,6 +593,7 @@ def run_all(
             provider_options=provider_options,
             workdir=Path(workroot) / key if workroot is not None else None,
             limits=limits,
+            spec=spec_for(key) if spec_for is not None else None,
         )
         results.append(result)
         cumulative += result.receipt_cost_microusd
@@ -594,12 +612,12 @@ def run_all(
     print("─" * 78)
     print(" 场景汇总")
     print("─" * 78)
-    header = f" {'场景':<12} {'终态':<20} {'轮次':>4} {'调用':>4} {'读取':>4} {'花费µUSD':>9} {'轨迹':>4}"
+    header = f" {'场景':<18} {'终态':<20} {'轮次':>4} {'调用':>4} {'读取':>4} {'花费µUSD':>9} {'轨迹':>4}"
     print(header)
     for result in results:
         trace_state = "ok" if result.trace_verified else "FAIL"
         print(
-            f" {result.key:<12} {result.status:<20} {result.rounds:>4} {result.calls:>4}"
+            f" {result.key:<18} {result.status:<20} {result.rounds:>4} {result.calls:>4}"
             f" {result.reads:>4} {result.cost_microusd:>9} {trace_state:>4}"
         )
     print("─" * 78)

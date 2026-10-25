@@ -1,11 +1,11 @@
-"""General delegation: the second domain module, and the reference for
-governed *general* capabilities.
+"""General delegation: the default domain module and the general-agent
+prototype.
 
-The finance module proves the runtime on recomputable numbers. This module
-proves it on file writes and web fetches — capabilities where "independent
-recomputation" generalises to file-state hashes and honest not-verified
-labels. Same kernel, same gate, same budget, same receipts; only the domain
-vocabulary changed.
+The finance module stays as the reference workload that proves the runtime on
+recomputable numbers. This module proves it on file writes, command execution
+and web fetches — capabilities where "independent recomputation" generalises to
+file-state hashes and honest not-verified labels. Same kernel, same gate, same
+budget, same receipts; only the vocabulary changed.
 """
 
 from __future__ import annotations
