@@ -4313,11 +4313,16 @@ function renderModelMenu() {
       <span class="d">${m.available ? (m.key === "mock" ? "离线确定性 mock · 演示与回归" : m.supportsEffort ? "云端模型 · 支持思考强度" : "本地推理") : esc(m.reason)}</span>
     </button>`;
   }).join("");
-  const kimi = modelCatalog.find(m => m.key === "kimi");
-  const effortBlock = kimi && kimi.available ? `<div class="model-effort">
-    <span class="me-head">思考强度</span>
+  // 思考强度块对"当前选中的模型"生效——菜单数据源是服务端枚举的
+  // provider 清单，任何 supportsEffort 的条目（kimi 或主机声明的端点）
+  // 选中时都能调档，不再写死单一 provider。
+  const selected = modelCatalog.find(m => m.key === modelChoice.key);
+  const effortHost = selected && selected.available && selected.supportsEffort
+    ? selected : modelCatalog.find(m => m.key === "kimi" && m.available && m.supportsEffort);
+  const effortBlock = effortHost ? `<div class="model-effort">
+    <span class="me-head">思考强度${effortHost.key !== modelChoice.key ? ` · ${esc(effortHost.label)}` : ""}</span>
     <div class="me-opts">${EFFORT_LEVELS.map(level =>
-      `<button class="me-opt${modelChoice.key === "kimi" && modelChoice.effort === level ? " active" : ""}" data-effort-pick="${level}">${EFFORT_LABEL[level]}</button>`
+      `<button class="me-opt${modelChoice.key === effortHost.key && modelChoice.effort === level ? " active" : ""}" data-effort-pick="${level}">${EFFORT_LABEL[level]}</button>`
     ).join("")}</div>
     <span class="me-note">默认中；以你选择的档位发送</span>
   </div>` : "";

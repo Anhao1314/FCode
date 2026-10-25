@@ -162,13 +162,6 @@ def _probe_local_endpoint(endpoint: str) -> bool:
     return ok
 
 
-def _kimi_env_ready() -> bool:
-    return all(
-        os.environ.get(name, "").strip()
-        for name in ("KIMI_API_KEY", "KIMI_INPUT_PRICE_MICROUSD_PER_MTOK", "KIMI_OUTPUT_PRICE_MICROUSD_PER_MTOK")
-    )
-
-
 def _scaled_budget_for_prices(limits, price, max_completion_tokens: int) -> dict:
     """外部计费模型的价格天花板（创建与恢复共用一套算法）。
 
@@ -191,38 +184,23 @@ def _scaled_budget_for_prices(limits, price, max_completion_tokens: int) -> dict
 
 
 def model_catalog(local_endpoint: str | None) -> list[dict]:
-    """The selectable-model list, judged live at request time.
+    """The selectable-model list, enumerated from what the host configured.
 
-    An unavailable model is reported with its reason and must never be shown
-    as selectable; creation re-checks the same facts and fails closed.
+    The menu's single source of truth is the provider catalog: the offline
+    mock, the local endpoint probe, the built-in presets (kimi, deepseek) and
+    every prefix declared in FCODE_OPENAI_COMPAT_PROVIDERS. An endpoint
+    appears the moment its configuration is complete; an incomplete one
+    appears with the exact reason it is unavailable. Creation re-checks the
+    same facts and fails closed.
     """
-    kimi_model = os.environ.get("KIMI_MODEL", "").strip() or "kimi-k2.6"
-    catalog: list[dict] = [
-        {
-            "key": "mock", "label": "offline-mock", "model": "offline-deterministic-mock-v1",
-            "supportsEffort": False, "available": True, "reason": "",
-        }
-    ]
-    if local_endpoint:
-        probed = _probe_local_endpoint(local_endpoint)
-        catalog.append({
-            "key": "local", "label": "本地 Qwen", "model": "fcode-qwen3-4b",
-            "supportsEffort": False, "available": probed,
-            "reason": "" if probed else "本地推理端点探活失败",
-        })
-    else:
-        catalog.append({
-            "key": "local", "label": "本地 Qwen", "model": "fcode-qwen3-4b",
-            "supportsEffort": False, "available": False,
-            "reason": "未配置本地推理端点",
-        })
-    kimi_ready = _kimi_env_ready()
-    catalog.append({
-        "key": "kimi", "label": "Kimi 云端", "model": kimi_model,
-        "supportsEffort": True, "available": kimi_ready,
-        "reason": "" if kimi_ready else "Host 未配置 KIMI_API_KEY/价格",
-    })
-    return catalog
+    try:
+        from flowagent.providers.catalog import provider_catalog
+    except ImportError:  # pragma: no cover — static mode; /api/models needs live anyway
+        return []
+    return provider_catalog(
+        local_endpoint=local_endpoint,
+        local_probe=(lambda: _probe_local_endpoint(local_endpoint)) if local_endpoint else None,
+    )
 
 
 class StopRequested(Exception):
@@ -336,6 +314,8 @@ class Runtime:
         self.build_profile = m.build_profile
         m = imp("flowagent.tools.general.sandbox")
         self.WorkspaceSandbox = m.WorkspaceSandbox
+        m = imp("flowagent.providers.catalog")
+        self.provider_catalog = m.provider_catalog
 
     def _module_for(self, template_key: str | None):
         """The domain module a template runs on.
@@ -689,23 +669,28 @@ class RunManager:
         return out
 
     def _budget_for_model(self, m: dict, limits) -> dict | None:
-        if m["key"] == "kimi":
-            if not m["available"]:
-                return None
-            try:
-                from flowagent.providers.kimi import load_kimi_settings
+        if m["key"] in ("mock", "local"):
+            # 不产生外部计费，预算顶即模板草案
+            return {
+                "max_calls": limits.max_calls,
+                "max_reads": limits.max_reads,
+                "max_cost_microusd": limits.max_cost_microusd,
+                "max_tokens": limits.max_tokens,
+            }
+        price = m.get("price")
+        if not m.get("available") or not price:
+            return None
+        # 任何带价格快照的 provider（预设或主机声明）都按其单价重算预算顶：
+        # 创建与恢复共用这一条路径，菜单里的数字与运行时一致。
+        from types import SimpleNamespace
 
-                settings = load_kimi_settings()
-            except Exception:  # noqa: BLE001 — env drifted since the catalog check
-                return None
-            return _scaled_budget_for_prices(limits, settings.price, settings.max_completion_tokens)
-        # mock / local 不产生外部计费，预算顶即模板草案
-        return {
-            "max_calls": limits.max_calls,
-            "max_reads": limits.max_reads,
-            "max_cost_microusd": limits.max_cost_microusd,
-            "max_tokens": limits.max_tokens,
-        }
+        snapshot = SimpleNamespace(
+            input_microusd_per_mtok=price["inputMicrousdPerMtok"],
+            output_microusd_per_mtok=price["outputMicrousdPerMtok"],
+        )
+        return _scaled_budget_for_prices(
+            limits, snapshot, int(m.get("maxCompletionTokens") or 512)
+        )
 
     # ------------------------------------------------------------- persistence
 
@@ -1005,7 +990,8 @@ class RunManager:
             scenario=scenario,
             receipts=receipts,
             endpoint=self.local_endpoint if run.model == "local" else None,
-            reasoning_effort=run.effort or None if run.model == "kimi" else None,
+            # 思考强度对任何 supportsEffort 的 provider 生效（创建时已校验）
+            reasoning_effort=(run.effort or None) if run.model != "mock" else None,
         )
 
     def _run_thread(self, run: Run, *, resume_limits: dict | None = None, extra_rounds: int = 6) -> None:

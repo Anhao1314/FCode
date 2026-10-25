@@ -8,6 +8,7 @@ in the runtime and are unchanged.
 
 from __future__ import annotations
 
+import os
 from dataclasses import replace
 from pathlib import Path
 from typing import Any, Callable
@@ -18,6 +19,12 @@ from ..providers.deepseek_config import load_deepseek_settings
 from ..providers.kimi import KimiProvider, load_kimi_settings
 from ..providers.local import LocalProvider
 from ..providers.mock import MockProvider
+from ..providers.openai_compat import (
+    GENERIC_COMPAT_DEFAULTS,
+    OpenAICompatProvider,
+    declared_compat_prefixes,
+    load_compat_settings,
+)
 from ..providers.oracle import OracleFileProvider
 from .fixtures import Scenario
 
@@ -157,4 +164,28 @@ def build_provider(
         provider = settings.provider()
         return FaultInjectionProvider(provider) if scenario.key == "tool-denied" else provider
 
-    raise ValueError(f"unknown provider {provider_name!r}; known: {PROVIDER_NAMES}")
+    declared = {prefix.lower(): prefix for prefix in declared_compat_prefixes()}
+    if provider_name in declared:
+        # A host-declared OpenAI-compatible endpoint (docs/openai-compat.md):
+        # the same engine, transport discipline and receipts as the presets.
+        prefix = declared[provider_name]
+        settings = load_compat_settings(
+            prefix,
+            defaults=GENERIC_COMPAT_DEFAULTS,
+            overrides={"reasoning_effort": reasoning_effort} if reasoning_effort else None,
+        )
+        calibration = calibration_path
+        if calibration is None:
+            path_env = os.environ.get(f"{prefix}_CALIBRATION_PATH", "").strip()
+            if path_env:
+                calibration = Path(path_env)
+        provider = OpenAICompatProvider.from_settings(
+            settings,
+            calibration_path=calibration,
+            issue_receipt=issue,
+            raw_sink=raw_sink,
+        )
+        return FaultInjectionProvider(provider) if scenario.key == "tool-denied" else provider
+
+    known = sorted({*PROVIDER_NAMES, *declared})
+    raise ValueError(f"unknown provider {provider_name!r}; known: {known}")
