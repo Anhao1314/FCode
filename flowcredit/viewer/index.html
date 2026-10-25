@@ -10,7 +10,7 @@
 <link rel="stylesheet" href="design.css?v=76">
 <link rel="stylesheet" href="desktop.css?v=3">
 <link rel="stylesheet" href="chat.css?v=3">
-<link rel="stylesheet" href="kimi.css?v=13">
+<link rel="stylesheet" href="kimi.css?v=14">
 </head>
 <body>
 <div class="shell app rail-hidden" id="app">
@@ -50,23 +50,29 @@
         <span data-doodle="search"></span>
         <input id="run-search" placeholder="搜索任务…" autocomplete="off" spellcheck="false">
       </label>
-      <button class="side-desk" id="desk-btn" title="委托汇总与成本账本">
-        <span data-doodle="layout-grid"></span>
-        <span>看板 · 账本</span>
-        <span class="side-count" id="desk-count">0</span>
-      </button>
       <div class="side-nav">
-        <button class="nav-item" id="nav-reviews" title="判断记录">
-          <span data-doodle="clipboard-list"></span><span>判断记录</span>
-        </button>
         <button class="nav-item" id="nav-scheduled" title="定时任务">
           <span data-doodle="calendar"></span><span>定时任务</span>
         </button>
+        <button class="nav-item" id="nav-more" type="button" aria-expanded="false" aria-controls="more-nav" title="更多">
+          <span data-doodle="ellipsis"></span><span>更多</span>
+          <span class="chev" aria-hidden="true">▾</span>
+        </button>
       </div>
-      <div class="side-section"><span>任务</span><span class="side-count" id="run-count">0</span></div>
-      <nav class="nav" id="run-nav"></nav>
+      <div class="side-nav more-nav" id="more-nav" hidden>
+        <button class="nav-item" id="desk-btn" title="委托汇总与成本账本">
+          <span data-doodle="layout-grid"></span>
+          <span>看板 · 账本</span>
+          <span class="side-count" id="desk-count">0</span>
+        </button>
+        <button class="nav-item" id="nav-reviews" title="判断记录">
+          <span data-doodle="clipboard-list"></span><span>判断记录</span>
+        </button>
+      </div>
       <div class="side-section"><span>Projects</span><span class="side-count" id="proj-count">0</span></div>
       <nav id="project-nav"></nav>
+      <div class="side-section"><span>任务</span><span class="side-count" id="run-count">0</span></div>
+      <nav class="nav" id="run-nav"></nav>
     </div>
 
     <div class="side-foot">
@@ -203,7 +209,7 @@
           <button type="button" class="active" data-set-section="appearance"><span class="n">01</span><span>外观与动效</span></button>
           <button type="button" data-set-section="delegation"><span class="n">02</span><span>委托默认</span></button>
           <button type="button" data-set-section="model"><span class="n">03</span><span>模型与工具</span></button>
-          <button type="button" data-set-section="memory"><span class="n">04</span><span>记忆与数据</span></button>
+          <button type="button" data-set-section="memory"><span class="n">04</span><span>记忆与产物</span></button>
           <button type="button" data-set-section="notify"><span class="n">05</span><span>通知与快捷键</span></button>
           <button type="button" data-set-section="about"><span class="n">06</span><span>安全与关于</span></button>
         </nav>
@@ -268,11 +274,12 @@
           </section>
 
           <section class="set-section" id="set-memory" data-set-panel="memory">
-            <div class="set-section-head"><h2>记忆与数据</h2><span class="set-tag">本机 / 运行时</span></div>
+            <div class="set-section-head"><h2>记忆与产物</h2><span class="set-tag">本机 / 运行时</span></div>
             <p class="set-section-desc">长期记忆是签名轨迹的确定性投影；删除运行只写墓碑，不销毁证据。</p>
             <div class="set-stats">
               <div class="set-stat"><span class="k">案例</span><b id="settings-cases">—</b><small>有效 / 含墓碑</small></div>
               <div class="set-stat"><span class="k">事实</span><b id="settings-facts">—</b><small>有效 / 含墓碑</small></div>
+              <div class="set-stat"><span class="k">产物</span><b id="settings-artifacts">—</b><small>有效 / 含墓碑</small></div>
               <div class="set-stat"><span class="k">运行记录</span><b id="settings-runs">—</b><small>本机历史</small></div>
             </div>
             <div class="set-actions">
@@ -367,6 +374,6 @@
 <script src="report.js?v=56"></script>
 <script src="icons-doodle.js?v=54"></script>
   <script src="brand/seal-icons.js"></script>
-<script src="app.js?v=95" type="module"></script>
+<script src="app.js?v=97" type="module"></script>
 </body>
 </html>

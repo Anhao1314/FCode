@@ -878,3 +878,12 @@ html.desktop-app .side-user { height: 32px; padding: 4px 8px; }
 
 /* 预算增量从"每一行都 +1"的噪音位挪进展开体 */
 .turn-meta { margin: 2px 0 6px; font: 12px/18px var(--font-mono); color: var(--text-4); }
+
+/* 侧栏「更多」：折叠的功能行与主行同形，展开时行本身保持可见 */
+.side-nav .nav-item .chev {
+  margin-left: auto; font-size: 11px; color: var(--text-4);
+  transition: transform .15s var(--ease);
+}
+.side-nav .nav-item.open .chev { transform: rotate(180deg); }
+.more-nav[hidden] { display: none !important; }
+.more-nav { padding-left: 10px; }

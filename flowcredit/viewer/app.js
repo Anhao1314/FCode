@@ -413,9 +413,33 @@ let ledgerConfirmId = null;
 function renderNav() {
   const desk = document.getElementById("desk-btn");
   if (desk) desk.classList.toggle("active", ledgerOpen);
+  paintMoreNav();
   renderChats();
   renderProjects();
   renderRuns();
+}
+
+/* 侧栏「更多」：Kimi 把功能行收在同一层级，多余的直接折叠。
+   两个治理页（看板·账本、判断记录）放在这里可达但不占前门。 */
+const MORE_KEY = "fa.sideMore";
+
+function moreOpen() {
+  try { return localStorage.getItem(MORE_KEY) === "1"; } catch { return false; }
+}
+
+function paintMoreNav() {
+  const wrap = document.getElementById("more-nav");
+  const toggle = document.getElementById("nav-more");
+  if (!wrap || !toggle) return;
+  const open = moreOpen();
+  wrap.hidden = !open;
+  toggle.setAttribute("aria-expanded", String(open));
+  toggle.classList.toggle("open", open);
+}
+
+function setMoreNav(open) {
+  try { localStorage.setItem(MORE_KEY, open ? "1" : "0"); } catch { /* quota */ }
+  paintMoreNav();
 }
 
 /* ================= Projects（运行分组，v1 单设备存储） ================= */
@@ -447,6 +471,7 @@ function clearNavActive() {
 /* ------------------ MIXED — trace 成本回填逻辑（不改）+ 账本渲染模板 */
 
 function openLedger() {
+  setMoreNav(true);
   leaveChat();
   if (intake.active) closeIntake(false);
   if (settingsOpen) closeSettingsPage(false);
@@ -5074,6 +5099,9 @@ function syncSettings() {
   };
   setText("settings-cases", cases ? `${cases.active} / ${cases.total}` : "—");
   setText("settings-facts", facts ? `${facts.active} / ${facts.total}` : "—");
+  setText("settings-artifacts", memoryStats && memoryStats.artifacts
+    ? `${memoryStats.artifacts.active} / ${memoryStats.artifacts.total}`
+    : "—");
   setText("settings-runs", String(runHistory.length));
   setText("settings-tools", toolContracts ? `${toolContracts.length} 个工具 · 契约已加载` : "—");
   setText("settings-chain", store.check
@@ -7036,6 +7064,7 @@ function bind() {
     }
     if (event.target.closest("#nav-reviews")) { renderMode("reviews"); return; }
     if (event.target.closest("#nav-scheduled")) { renderMode("scheduled"); return; }
+    if (event.target.closest("#nav-more")) { setMoreNav(!moreOpen()); return; }
     const chatDelete = event.target.closest("[data-chat-delete]");
     if (chatDelete) { handleChatDelete(chatDelete.dataset.chatDelete, chatDelete); return; }
     if (event.target.closest("[data-chat-more]")) { loadChatThreads(false); return; }

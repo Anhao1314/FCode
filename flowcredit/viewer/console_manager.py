@@ -505,6 +505,13 @@ class RunManager:
                 "active": facts.count() if facts else 0,
                 "total": facts.count(include_archived=True) if facts else 0,
             },
+            # The artifact book is the general domain's fact layer: which file
+            # exists, produced by which run and round. Counts here; the browser
+            # that opens them lands with the artifacts work.
+            "artifacts": {
+                "active": self.artifact_book.count(archived=False) if self.artifact_book else 0,
+                "total": self.artifact_book.count() if self.artifact_book else 0,
+            },
         }
 
     def review_profile(self, module: str = "", template: str = "", outcome: str = "") -> dict[str, Any]:
