@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import argparse
 import sys
-import webbrowser
 
 from ..core.contracts import AgentError
 from ..runtime.budget import BudgetLimits
@@ -77,7 +76,12 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--sources", default=None, help="comma-separated URLs for a general research delegation")
     parser.add_argument("--script-path", default=None, help="workspace filename for a general script delegation")
-    parser.add_argument("--open", action="store_true", dest="open_viewer", help="open the trace viewer afterwards")
+    parser.add_argument(
+        "--open",
+        action="store_true",
+        dest="open_viewer",
+        help="serve the viewer and open it (the page is an ES module app, so file:// cannot load it)",
+    )
     parser.add_argument("--serve", action="store_true", help="serve the viewer on 127.0.0.1 and open it")
     parser.add_argument("--port", type=int, default=0, help="port for --serve (default: pick a free one)")
     parser.add_argument("--list", action="store_true", dest="list_scenarios", help="list scenarios and exit")
@@ -224,14 +228,14 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     if args.open_viewer:
-        viewer = PROJECT_ROOT / "viewer" / "index.html"
-        if viewer.exists():
-            try:
-                webbrowser.open(viewer.as_uri())
-            except Exception:  # noqa: BLE001 - opening a browser must never change the exit code
-                print(f"could not open a browser; open {viewer} manually")
-        else:
-            print("viewer/index.html is missing from this checkout.")
+        # The console loads app.js as an ES module; Chromium refuses module
+        # imports from file://, so hand the page to the same local server
+        # --serve uses instead of opening index.html directly.
+        missing = [key for key in SCENARIOS if not (WORK_DIR / f"{key}.trace.json").exists()]
+        if missing:
+            print(f"generating {len(missing)} missing trace(s) before serving…")
+            run_all()
+        return serve(PROJECT_ROOT, port=args.port)
     return code
 
 

@@ -168,5 +168,7 @@ node --test flowcredit/viewer/tests/*.test.js
 
 ```sh
 cd flowcredit && python demo.py all
-# 浏览器打开 viewer/index.html?trace=../work/demo/full.trace.json
+# 起本地静态服务并打开 viewer（ES module 不能从 file:// 加载）
+python demo.py --serve
+# 终端会打印地址；在地址后追加 ?trace=../work/demo/full.trace.json
 ```

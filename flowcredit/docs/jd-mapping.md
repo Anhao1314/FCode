@@ -27,7 +27,7 @@
 | 状态机建模 | `core/contracts.py` 显式迁移表，存储层强制 | `test_illegal_transition_is_rejected` |
 | 类型注解与文档 | 全量类型注解；每个模块有 docstring 说明**为什么**这样设计 | 随便打开一个文件 |
 | 测试设计 | 单元（门控/预算/存储/收据/验证/控制）+ 端到端（七个场景）+ 真实 SIGKILL | `test_scenarios.py`、`test_control.py` |
-| 前后端基础 | `viewer/index.html`：单文件、无构建、`crypto.subtle` 重算哈希 | `python demo.py full --open` |
+| 前后端基础 | `viewer/index.html` + `core/format.js`：零构建 ES module、`crypto.subtle` 重算哈希 | `python demo.py full --open`（本地起静态服务） |
 | 文档能力 | `docs/`：架构、12 条设计决策、框架对照、本文件 | — |
 
 ## 领域相关（金融）
@@ -47,11 +47,11 @@
 - **多智能体编排**：没有。这是单任务单循环，`docs/design-decisions.md` 第 10 条解释了为什么。
 - **真实供应商联调**：只有骨架，默认关闭。没有真实调用记录，也没有真实账单。
 - **分布式**：单机 SQLite，没有多副本、没有分布式锁。
-- **前端工程化**：viewer 是单文件，没有构建链、没有框架。
+- **前端工程化**：viewer 是零构建 ES module，没有打包链、没有框架，也没有第三方运行时依赖。
 - **训练 / 蒸馏**：v1 的结论是 `NO_GO`，v2 不碰。
 
 ## 一句话总结
 
-如果只能演示三分钟：`python demo.py all` 跑完七个场景，然后打开 `viewer/index.html` 拖进 trace，改一个字节让它变红。
+如果只能演示三分钟：`python demo.py all` 跑完全部场景，再 `python demo.py --serve` 打开 viewer，拖进 trace，改一个字节让它变红。
 
 这三步分别证明：**能跑、能失败得正确、能证明自己没撒谎。**

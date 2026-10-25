@@ -181,7 +181,7 @@ class Renderer:
             return
         self._p(f" 轮次 {rounds}   预算 {self._budget_text(budget)}")
         self._p(f" Trace {trace_path}")
-        self._p(self._c(self.DIM, " 可视化：python demo.py --open <scenario>，或浏览器打开 viewer/index.html 拖入该 JSON"))
+        self._p(self._c(self.DIM, " 可视化：python demo.py <scenario> --open（本地起服务并打开），或 python demo.py --serve 后把该 JSON 拖进页面"))
         self._p()
 
     # ------------------------------------------------------------- formatting
