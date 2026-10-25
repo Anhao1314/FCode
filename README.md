@@ -138,7 +138,7 @@ python3 flowcredit/viewer/server.py --repo .   # 打开 http://127.0.0.1:8642/
 - 审计报告：运行结束后「签发报告」生成一份自包含 HTML 工作底稿（结论、账单、证据、人工决定、链附录），可打印、下载或离线转发。
 - 只读回放：`cd flowcredit && python demo.py --serve`；页面加载时用 `crypto.subtle` 重算全链，改一个字节就变红。
 - 右侧案卷：事件按轮分组，关键/全部/人工三档过滤，机械事件折叠为「过程 N 条」；工具契约与用量、完整性封印（链头可复制）、带行号可复制/下载的原文。
-- 设计：**Paper & Proof / 纸与证**——纯白底稿、近黑墨色、楷体只留给人的判断、等宽只留给证据；虚线是校对痕，颜色只表达状态，零阴影、无渐变。规范见 [design-system.md](flowcredit/docs/design-system.md)，样式页 `viewer/design.html`；agent 的架构/交互约束见 [`.agents/skills/fcode-design/SKILL.md`](.agents/skills/fcode-design/SKILL.md)。
+- 设计：外壳与对话采用 **Kimi 实测皮肤**（`#FBFAF9` / `#F5F5F5` / `#1783FF` / 5 点螺旋加载，见 [kimi-skin.md](flowcredit/docs/kimi-skin.md)）；审计底稿与证据区保留 **Paper & Proof**（纯白底稿、近黑墨、等宽证据）。规范见 [design-system.md](flowcredit/docs/design-system.md)，样式页 `viewer/design.html`；agent 的架构/交互约束见 [`.agents/skills/fcode-design/SKILL.md`](.agents/skills/fcode-design/SKILL.md)。
 - 长期记忆：终态运行自动投影进案例簿与双时态事实簿；从签名轨迹重建：
   `PYTHONPATH=flowcredit/src python3 -m flowagent.memory.cases --repo .`、
   `PYTHONPATH=flowcredit/src python3 -m flowagent.tools.finance.facts --repo .`。

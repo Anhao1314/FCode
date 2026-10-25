@@ -8,8 +8,9 @@
 <link rel="icon" type="image/svg+xml" href="brand/favicon.svg">
 <script>window.__errs=[];window.addEventListener('error',e=>window.__errs.push((e.message||'')+'@'+e.lineno));window.addEventListener('unhandledrejection',e=>window.__errs.push('rej:'+(e.reason&&e.reason.message||e.reason)));</script><script>if(new URLSearchParams(location.search).get("desktop")==="1")document.documentElement.classList.add("desktop-app");</script><link rel="stylesheet" href="app.css?v=75">
 <link rel="stylesheet" href="design.css?v=76">
-<link rel="stylesheet" href="desktop.css?v=2">
+<link rel="stylesheet" href="desktop.css?v=3">
 <link rel="stylesheet" href="chat.css?v=3">
+<link rel="stylesheet" href="kimi.css?v=1">
 </head>
 <body>
 <div class="shell app rail-hidden" id="app">
@@ -26,7 +27,7 @@
     </div>
 
     <button class="side-new" id="new-run">
-      <span data-doodle="plus"></span>
+      <span data-doodle="kimi-plus"></span>
       <span>新对话</span>
     </button>
 
@@ -120,11 +121,11 @@
                 placeholder="给 agent 派一个任务：判断 2024 与 2025 两期合并毛利率是否可比…"></textarea>
               <div class="composer-bar">
                 <button class="c-icon" id="composer-open" title="资料 / 工具 / 预算" aria-expanded="false">
-                  <span class="plus-glyph" aria-hidden="true">+</span>
-                  <span class="close-glyph" aria-hidden="true">×</span>
+                  <svg class="i plus-glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5.5v13M5.5 12h13"/></svg>
+                  <svg class="i close-glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/></svg>
                 </button>
                 <button class="c-icon" id="chat-attach" title="添加文本附件（最多 3 个，每个 ≤64 KiB）" hidden>
-                  <svg class="i" viewBox="0 0 24 24"><path d="M8 12.5 14.5 6a3.5 3.5 0 0 1 5 5L12 18.5a5 5 0 0 1-7-7l7-7"/></svg>
+                  <svg class="i" viewBox="0 0 24 24"><path d="M12 5.5v13M5.5 12h13"/></svg>
                 </button>
                 <button class="c-btn" id="approval-btn" title="审批档位：只在需要你确认的地方暂停（对新任务生效）">
                   <span data-doodle="key"></span>
@@ -145,7 +146,6 @@
                   <span id="run-chip-text" aria-live="polite">运行中</span>
                 </button>
                 <button class="c-btn" id="model-btn" title="选择模型与思考强度">
-                  <span data-doodle="cube"></span>
                   <span id="model-label">offline-mock</span>
                   <svg class="i" viewBox="0 0 24 24" style="width:12px;height:12px"><path d="m6 9 6 6 6-6"/></svg>
                 </button>
@@ -207,11 +207,11 @@
             <p class="set-section-desc">只改变这台机器上的阅读与操作方式，不影响运行结果或签名链。</p>
             <div class="set-rows">
               <div class="set-row">
-                <span class="set-row-text"><b>界面动效</b><small>手绘图标与进入动画</small></span>
+                <span class="set-row-text"><b>界面动效</b><small>线条图标与进入动画</small></span>
                 <button class="set-switch" id="settings-motion" type="button" role="switch" aria-checked="true" aria-label="界面动效"><span></span></button>
               </div>
               <div class="set-row">
-                <span class="set-row-text"><b>主题</b><small>浅色为当前主题（近黑版保留在版本历史，可经 data-theme 回归）</small></span>
+                <span class="set-row-text"><b>主题</b><small>浅色（Kimi 风格）；深色版保留在版本历史</small></span>
                 <span class="set-value">浅色</span>
               </div>
               <div class="set-row">
@@ -361,6 +361,6 @@
 <script src="report.js?v=56"></script>
 <script src="icons-doodle.js?v=54"></script>
   <script src="brand/seal-icons.js"></script>
-<script src="app.js?v=87" type="module"></script>
+<script src="app.js?v=88" type="module"></script>
 </body>
 </html>

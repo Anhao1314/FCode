@@ -49,7 +49,7 @@ export function chatMessageHtml(message, editingId = null) {
     ? `<div class="chat-wait">等待 ${esc(message.waiting)} 秒额度窗口…</div>`
     : "";
   const typing = streaming && !message.text
-    ? `<span class="chat-typing" aria-label="正在生成"><i></i><i></i><i></i></span>`
+    ? `<span class="chat-typing" aria-label="正在生成"><i></i><i></i><i></i><i></i><i></i></span>`
     : "";
   const usage = message.usage && message.usage.total_tokens
     ? `<div class="chat-meta">${num(message.usage.total_tokens)} tokens · ${num(message.usage.cost_microusd)} µUSD${message.receipt_ref ? " · 已签收据" : ""}</div>`

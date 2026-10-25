@@ -9,6 +9,7 @@
   const still = {
     /* ---- 导航与动作 ---- */
     "plus": S('<rect x="4.5" y="4.5" width="15" height="15" rx="4"/><path d="M12 9v6M9 12h6"/>'),
+    "kimi-plus": S('<path d="M12 5.5v13M5.5 12h13"/>'),
     "search": S('<rect x="4.5" y="4.5" width="10.5" height="10.5" rx="4"/><path d="M14 14l5.5 5.5"/>'),
     "gear": S('<path d="M4.5 7.5h15M4.5 12h15M4.5 16.5h15"/><rect x="8" y="5.8" width="3.4" height="3.4" rx="1.2" fill="currentColor" stroke="none"/><rect x="12.6" y="10.3" width="3.4" height="3.4" rx="1.2" fill="currentColor" stroke="none"/><rect x="7" y="14.8" width="3.4" height="3.4" rx="1.2" fill="currentColor" stroke="none"/>'),
     "layout-grid": S('<rect x="4.5" y="4.5" width="15" height="15" rx="3"/><path d="M4.5 12h15M12 4.5V12"/><rect x="6" y="6" width="4.5" height="4.5" rx="1.4" fill="currentColor" stroke="none"/>'),

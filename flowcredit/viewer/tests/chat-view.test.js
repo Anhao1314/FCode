@@ -76,6 +76,7 @@ test("a streaming answer shows typing and the rate-limit wait", () => {
     waiting: 7,
   });
   assert.ok(html.includes("chat-typing"));
+  assert.equal((html.match(/<i><\/i>/g) || []).length, 5);
   assert.ok(html.includes('data-streaming="1"'));
   assert.ok(html.includes("等待 7 秒"));
   assert.ok(!html.includes("data-chat-regen"));

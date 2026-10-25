@@ -13,6 +13,7 @@ flowcredit/viewer/
   design.css          ← 组件视觉
   chat.css            ← 对话消息 / 气泡 / 代码块 / 附件 / 设置卡片
   desktop.css         ← ?desktop=1 时的桌面比例覆盖（Kimi 测量值）
+  kimi.css            ← Kimi 实测色号与动效皮肤（最后加载）
   app.js              ← 页面逻辑（对话 / 委托 / 回放 / 运行管理）
   core/format.js      ← canonical JSON、SHA-256、链验证、格式化（纯函数）
   core/chat-format.js ← Markdown 渲染与 SSE 分帧（纯函数，Node 可测）
@@ -147,12 +148,16 @@ WAL 只读连接取已提交事件，重建快照推给浏览器。静态文件�
 
 ## 设计
 
-- 浅色三层表面（画布 `#FAFAFB` / 面板 `#F4F4F6` / 悬浮 `#FFFFFF`），1px 黑 8% 描边，
-  8px 圆角（composer 舞台 24px）；
-- 强调色只有近黑 `#18181B`；状态语义用绿 / 红 / 琥珀小圆点，白底对比度已校准；
+- 浅色三层表面（画布 `#FBFAF9` / 次级面 `#F5F5F5` / 主表面 `#FFFFFF`），
+  分隔线 `rgba(0,0,0,.13)`，8px 圆角（composer 舞台 24px）；
+- 强调色是 Kimi 蓝 `#1783FF`（焦点 / 链接）；发送键保持黑色实心；状态色
+  `#16C456` / `#FF9500` / `#FF3849` 只用于圆点与图标；
+- 动效沿用 Kimi：背景 / 颜色 `.15s`、图标底色 `.3s ease-in-out`、位移
+  `cubic-bezier(.23,1,.32,1)`；加载是 5 点螺旋透明度动画，等待额度用 shimmer。
 - UI 正文 13px，聊天 Markdown 16/26；哈希、时间戳与预算数字等宽 + tabular-nums；
 - `?desktop=1` 时套用 Kimi 测量比例：侧栏 240、阅读宽度 768、输入区 16/24、
-  操作行 36、聊天头部 52；测量与取舍见 `docs/desktop-design.md`；
+  操作行 36、聊天头部 52；测量见 `docs/desktop-design.md`，色号与动效见
+  `docs/kimi-skin.md`；
 - 页面不向外部网络发送数据；模型调用只到达你本机 `server.py` 拉起的 runtime。
 
 ## 测试

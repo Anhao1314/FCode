@@ -234,7 +234,7 @@ def main() -> int:
         width=1500,
         height=950,
         min_size=(1080, 680),
-        background_color="#FAFAFB",
+        background_color="#FBFAF9",
         js_api=Bridge(),
     )
     log("window created")

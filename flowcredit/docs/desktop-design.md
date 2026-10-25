@@ -6,8 +6,8 @@
 ## 1. 参照测量
 
 2026-10-25 在 kimi.com 实测，窗口 1600×1000（Chrome，DPR 1），
-首页与对话页各一次。几何值与主题无关；Kimi 当时是深色主题，FCode 继续使用
-自己的 Console Light / Paper & Proof 浅色体系。
+首页与对话页各一次。几何值与主题无关；FCode 的色号与动效已改为 Kimi 实测皮肤
+（见 `kimi-skin.md`），审计底稿与证据区仍保留 Paper & Proof。
 
 | 部件 | Kimi 实测 | 备注 |
 | --- | --- | --- |
@@ -78,7 +78,7 @@
 - `flowcredit/viewer/index.html`：`?desktop=1` 时在 `<html>` 上加 `desktop-app`，
   确保首帧就是桌面比例；加载 `desktop.css`。
 - `desktop/app.py`：窗口 URL 追加 `&desktop=1`；窗口 1500×950，最小 1080×680，
-  背景 `#FAFAFB`，使用原生标题栏（macOS 红绿灯/Windows 标题栏保持系统行为）。
+  背景 `#FBFAF9`，使用原生标题栏（macOS 红绿灯/Windows 标题栏保持系统行为）。
 - `flowcredit/viewer/server.py`：token 引导重定向只剥掉 `token`，保留
   `desktop=1` 等其他查询参数。否则桌面标识会在第一次 302 后丢失。
 

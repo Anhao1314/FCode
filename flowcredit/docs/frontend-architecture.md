@@ -127,6 +127,7 @@ function renderMode(mode, payload = {}) { ... }
 | `design.css` | 2,139 行 |
 | `app.css` | 326 行 |
 | `chat.css` | 326 行 |
+| `kimi.css` | 467 行 |
 | `desktop.css` | 48 行 |
 | `core/format.js` | 45 行 |
 | `core/chat-format.js` | 92 行 |
