@@ -1,167 +1,170 @@
-# Fcode · flowcredit console — 实时 Agent 控制台
+# Fcode · flowcredit console — 对话优先的 Agent 控制台
 
-一个零依赖、零构建、可离线的 flowcredit agent 控制台（界面里的 agent 名字是 **Fcode**）：既能**真实运行任务**（接到 Python Runtime 上，
-事件流式进入页面），也能**只读回放**已签名的 trace。形态为「对话主视图 + 右侧常驻证据栏」，
-客户端只是 index.html + app.css + app.js + report.js 四个静态文件，由标准库 server 直接托管。
+一个零依赖、零构建、可离线的 Agent 控制台。主视图是**对话**：回答流式吐出，
+可以追问、重新生成、编辑上一条、挂文本附件、随时停止；同一个页面也能发起
+**委托运行**（审批 / 插话 / 调预算 / 续跑），并只读回放任意已签名 trace。
+
+前端是原生 ES modules，没有框架、打包器或字体请求；服务端只用 Python 标准库。
 
 ```
 flowcredit/viewer/
-  index.html          ← 前端外壳（零依赖、零构建）
+  index.html          ← 外壳（零依赖、零构建）
   app.css             ← design tokens（浅色三层表面 / 单强调色 / 语义色）+ 外壳布局
-  app.js              ← 全部前端逻辑（回放 / 直播 / 建单向导 / 运行管理）
-  report.js           ← 自包含审计报告生成器（结论 / 账单 / 证据 / 人工决定 / 链附录）
-  server.py           ← 本地控制台服务（标准库）：静态文件 + JSON/SSE API + 运行管理
-  runs/               ← 每次真实运行的产物（task.sqlite + trace.json + meta.json，不入库）
+  design.css          ← 组件视觉
+  chat.css            ← 对话消息 / 气泡 / 代码块 / 附件 / 设置卡片
+  desktop.css         ← ?desktop=1 时的桌面比例覆盖（Kimi 测量值）
+  app.js              ← 页面逻辑（对话 / 委托 / 回放 / 运行管理）
+  core/format.js      ← canonical JSON、SHA-256、链验证、格式化（纯函数）
+  core/chat-format.js ← Markdown 渲染与 SSE 分帧（纯函数，Node 可测）
+  report.js           ← 自包含审计报告生成器
+  icons-doodle.js     ← 图标与涂鸦
+  server.py           ← 标准库服务：静态文件 + JSON/SSE API + 运行管理
+  tests/              ← 前端纯函数测试（node --test）
+  runs/               ← 运行产物（task.sqlite / trace.json / meta.json，不入库）
+  chat.sqlite         ← 对话事件库（不入库）
   docs/console-live.png
-  README.md
 ```
-
-> 不再随仓库打包示例场景 trace。需要演示数据时用 `python demo.py` 生成到
-> `work/demo/`（或拷贝到 `viewer/traces/`），经 `?trace=` 加载。
 
 ## 快速开始
 
 在仓库根目录：
 
 ```sh
-python3 flowcredit/viewer/server.py --repo . --pace 0.7
+python3 flowcredit/viewer/server.py --repo . --port 8642
 # 浏览器打开 http://127.0.0.1:8642/
+# 桌面比例视图（Kimi 测量值）
+open 'http://127.0.0.1:8642/?desktop=1'
 ```
 
-- `--pace 0.7`：每轮模拟思考时长（秒），默认 0.7，`0` 则全速跑完；
-- `--approval-timeout 300`：审批等待秒数，超时自动拒绝（默认 300）；
-- `--repo` 指向仓库根（`flowcredit/src` 所在的位置），也可以用 `FLOWAGENT_REPO` 环境变量；
-- 找不到 runtime 时服务仍然可用：页面退化为**静态回放模式**（composer 禁用），`/api/health` 会说明原因；
-- 只想要静态回放：`cd flowcredit && python demo.py --serve`（打开 `viewer/index.html`，无实时运行）。
+- `--pace 0.8`：委托运行每轮模拟思考时长（秒），`0` 全速；
+- `--approval-timeout 300`：审批等待秒数，超时自动拒绝；
+- `--repo` 指向仓库根（`flowcredit/src` 所在位置），也可用 `FLOWAGENT_REPO`；
+- `--local-endpoint`：Ollama 兼容地址，启用本地 Qwen 模型项；
+- `--host 0.0.0.0` 必须同时给 `--token`，否则服务拒绝启动；桌面壳会自动生成 token；
+- 找不到 runtime 时服务仍可用：页面退化为**静态回放模式**，`/api/health` 说明原因。
 
-## 它能做什么
+## 对话
 
-```
-┌──────────────┬──────────────────────────────────┬──────────────────┐
-│ FCode    ⌘K  │ 运行 · 预算耗尽 [corpus][task] ✔ 链验证通过 · 24 events │ 事件 │ 链 │ 原始 │
-│ ＋ 新建委托   │──────────────────────────────────│──────────────────│
-│ 🔍 搜索运行记录│  任务 · console-operator          │ #1 ● task_created│
-│ 今天          │  «你输入的目标文本»               │ #2 ● model_started│
-│ ● 判断恒星…   │  ┌ Plan ────────────────────────┐ │ #3 ● plan_validated│
-│ 昨天          │  └──────────────────────────────┘ │ …                │
-│ ● 运行中…     │  ┌ 预算 calls ▓▓░ 4/12 · reads… ┐ │                  │
-│              │  #4 read_document(doc_fy2024) PASS │                  │
-│──────────────│     ⎿ FY2024 · 万元 · IFRS（折叠行）│                 │
-│ ● 可运行      │  #5 未完成的轮次        TERMINATED │                  │
-│              │  ┌ 结果 failed BUDGET_EXCEEDED ─┐ │                  │
-│              │  │ [重试] [复制诊断]              │ │                  │
-│              │  ▢ 任务…   ▤ 完整研究   ◉/■     │ │                  │
-└──────────────┴──────────────────────────────────┴──────────────────┘
-```
+- **流式回答**：每个对话轮次是一次模型调用（不调用工具），SSE 增量渲染；
+- **追问 / 重新生成 / 编辑上一条**：编辑或重生成会 supersede 旧分支，活跃分支由事件推导；
+- **附件**：纯文本，最多 3 个，每个 ≤64 KiB；图片 / PDF / Office 不在 v1；
+- **停止**：`⌘.` 或发送键旁的停止按钮；已产生的内容与收据保留；
+- **归档与分页**：侧栏列表分页，删除是两步确认，服务端写归档墓碑而不是抹掉事件；
+- **模型选择**：菜单可选 offline-mock / Kimi / DeepSeek / 本地端点；默认 mock，
+  无需密钥即可验证整条流式链路。
 
-- **composer 真的能派活**：输入任务 → Enter 发送 → Runtime 现场执行，
-  Plan、预算、逐轮工具卡、事件日志**边产生边渲染**（Server-Sent Events 推送 trace 快照）。
-- **三步建单向导**：点侧栏「＋ 新建委托」或 composer 的 `＋`（或空态 CTA）打开「类型 → 说明 → 审批」向导，
-  7 个模板卡标出标准委托 / 演示、预算与轮次；提交后自动开跑并建会话标签，不必先记住模板名。
-- **模板选择器**（`▤ 完整研究 ⌄`）：7 个场景模板决定授权、预算与故障注入
-  （越权拒绝 / 预算耗尽 / 预算追加续跑 / 真实 SIGKILL 崩溃恢复 / 未知对账 / 计划受阻）。
-- **运行中插话**：运行中 composer 仍可输入，消息排队到下一个轮次边界，
-  以 `operator_message` 写入同一条哈希链；排队 / 入链 / 未送达三种状态都在气泡上标明。
-- **多会话并行**：每次委托一个会话标签，后台会话保持 SSE 流式，切换标签不丢画面；
-  后台完成时用 Notification 提醒（默认关闭，可在 `⌘K` 里开启）。
-- **审批门**（`🔒 关键审批 ⌄`）：默认只在关键工具（`reconcile_basis`、`report_blocked`）执行前暂停；
-  也可切到「逐步审批」或「自动」。审批卡显示倒计时、参数与策略，允许 / 拒绝都写入哈希链；
-  拒绝会终止运行（`OPERATOR_DENIED`），超时自动拒绝；可勾选「本次运行内不再询问该工具」。
-- **人工控制**：运行中可调整计划（跳过 / 提前某个 todo）、追加预算（只能调高，下一轮生效）；
-  失败于 `BUDGET_EXCEEDED` / `ROUND_LIMIT` 时，结果卡提供「追加预算并继续」，
-  从事件日志续跑，不重发已付的读取。右侧证据栏可只看人工事件（审批 / 修订 / 预算 / 续跑 / 消息）。
-- **随时停止**：运行中 composer 发送键变为 ↑（发送消息），顶栏的「运行中」胶囊点击后在**轮次边界**停止，
-  终态记为 `failed · STOPPED_BY_OPERATOR`，已产生的事件与哈希链依然完整可验。
-- **工具卡按 runtime 的工具词汇渲染**（`read_document` / `calculate_margin` / `report_blocked` …）：
-  默认折叠成「工具 + 参数 + 判定 + 一行结果预览」；运行中的卡自动展开，完成后自动收起
-  （手动展开过的轮次不会被自动收起）。行内提供文档列表、文档正文、口径换算、重述对比、
-  毛利率三联指标等结构化细节，`原始数据` 折叠里是全量 JSON。
-- **运行记录**（服务端持久化在 `runs/*/meta.json`）：按今天 / 昨天 / 更早分组；搜索、悬停 ☆ 固定置顶、✎ 或双击重命名；「更早」默认显示 5 条，可展开/收起。状态点区分 succeeded / failed / denied / 运行中。
-- **失败运行可操作**：结果卡里的「重试」以同一目标 + 模板重新提交；「复制诊断」生成一段
-  可直接粘贴的诊断文本（运行 id、模板、终态、失败码、链验证、时间）。
-- **审计报告**：运行结束后的「签发报告」生成自包含 HTML 工作底稿（结论、账单、证据、
-  人工决定、链附录），内嵌预览可打印 / 存 PDF / 下载；下载件不依赖本机即可打开与转发。
-- **完成通知**：Notification API，默认关闭（⌘K 里开启），仅在页面不聚焦时提醒。
+每次对话都写入同一条 SHA-256 事件链并取得 HMAC 收据；预算在调用前扣减，
+默认每线程 60 次调用 / 300,000 µUSD / 200,000 tokens（`FCODE_CHAT_MAX_*` 可调）。
+界面不把回答标成“已验证”——它的可信性来自调用收据与事件链，不来自 verifier。
 
-### 键盘与命令面板
+### 模型配置（设置页）
+
+`⌘,` 打开设置，或从用户菜单进入。配置优先级：**设置页 > 环境变量 > 默认值**。
+
+- 设置页保存的 `chat-config.json` 位于用户配置目录（macOS 为
+  `~/Library/Application Support/FCode`），权限 `0600`，可用 `FCODE_CONFIG_DIR` 覆盖；
+- API key 只存本地，API 响应只返回 `api_key_set` 与末 4 位掩码，从不回传明文；
+- 远程 provider 的 `base_url` 不可在设置页改写，避免把密钥发往任意主机；
+- Kimi 使用 `max_completion_tokens`；组织 RPM 限制通过进程内 pacing 表现为 `wait` 事件。
+
+## 委托运行
+
+- **8 个模板**：`通用委托`（抓取公开来源 → 写 `research.md` / 写脚本 → 受限运行 → 修复 → 复跑），
+  以及 7 个财务参考负载上的故障注入（越权、预算耗尽、预算追加、崩溃恢复、未知结果、
+  目标无法完成、完整研究）。
+- **审批门**：默认只在关键工具前暂停；可切「逐步审批」或「自动」。允许 / 拒绝 / 超时都入链。
+- **运行中插话**：消息排队到下一轮边界，以 `operator_message` 写入同一条链；
+  排队 / 入链 / 未送达三种状态都在气泡上标明。
+- **计划与预算**：可跳过 / 提前某个 todo；预算只能调高，下一轮生效。
+- **续跑**：仅接受 `BUDGET_EXCEEDED` / `ROUND_LIMIT`，从事件日志续写，已付的读取不重发。
+- **随时停止**：轮次边界停止，终态 `STOPPED_BY_OPERATOR`，链仍完整可验。
+- **工具卡按运行时词汇渲染**：通用工具是 `ls_workspace` / `read_file` / `write_file` /
+  `edit_file` / `run_command` / `fetch_url`；财务参考负载另有结构化细节卡
+  （文档正文、口径换算、重述对比、毛利率三联指标）。未知工具按通用卡渲染。
+- **审计报告**：运行结束后签发自包含 HTML 底稿（结论、账单、证据、人工决定、链附录）。
+- **运行记录**：按今天 / 昨天 / 更早分组，搜索、置顶、重命名；失败运行可重试或复制诊断。
+
+## 键盘
 
 | 键 | 行为 |
 | --- | --- |
-| `⌘K` / `Ctrl+K` | 命令面板：动作（重试 / 导出 / 重放 / 验链 / 展开折叠 / 通知开关）+ 运行记录 |
-| 点击顶栏链徽章 | 重新验证当前 trace 的签名链 |
-| `⌘.` / `Ctrl+.` | 停止当前运行 |
-| `⌘↵` / `Ctrl+Enter` | 允许当前审批 |
-| `⌘⌫` / `Ctrl+Backspace` | 拒绝当前审批（终止运行） |
+| `⌘K` / `Ctrl+K` | 命令面板 |
+| `⌘N` / `Ctrl+N` | 新对话 |
+| `⌘,` / `Ctrl+,` | 设置 |
+| `⌘.` / `Ctrl+.` | 停止当前回答或运行 |
+| `⌘↵` / `⌘⌫` | 允许 / 拒绝当前审批 |
+| `1` / `2` / `3` | 审批直选：允许 / 允许并记住 / 拒绝 |
 | `Enter` / `⇧Enter` | 发送 / 换行 |
 | `R` | 重放当前场景（静态回放） |
-| `Esc` | 关闭命令面板 / 建单向导 / 报告预览 / 模板菜单 / 审批菜单 / 收起浮动证据栏 |
+| `↑` / `↓` | 运行列表导航；输入框首行为历史 |
+| `Esc` | 关闭面板 / 菜单 / 设置 / 报告 |
 
 ## API（`server.py`，标准库实现）
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | GET | `/api/health` | live 是否可用、runtime 路径、pace |
-| GET | `/api/templates` | 7 个场景模板（标题 / 目标 / 故事 / 预算 / 轮数上限） |
+| GET | `/api/templates` | 8 个场景模板（标题 / 目标 / 故事 / 预算 / 模块） |
+| GET | `/api/modules` | 已注册领域模块 |
+| GET | `/api/models` | 模型目录与可用性 |
+| GET | `/api/tools` | 当前工具词汇 |
 | GET | `/api/runs` | 运行历史（含 `tracePath` / `name` / `pinned` / `approval`） |
-| POST | `/api/runs` | `{"objective": "…", "template": "full", "approval": "consequential"}` → `{"id": "run-…"}` |
-| GET | `/api/runs/{id}/stream` | SSE：`hello / snapshot / done / failed`，快照含 `pending` / `approval` |
+| POST | `/api/runs` | `{"objective": "…", "template": "full", "approval": "consequential"}` |
+| GET | `/api/runs/{id}/stream` | SSE：`hello / snapshot / done / failed` |
 | POST | `/api/runs/{id}/stop` | 在下一个轮次边界停止 |
-| POST | `/api/runs/{id}/decision` | `{"approvalId": "…", "allow": true, "remember": false}` → 放行或拒绝 |
-| POST | `/api/runs/{id}/messages` | `{"text": "…"}` → 运行中插话；排队到下一轮边界写入 `operator_message` |
-| POST | `/api/runs/{id}/plan` | `{"action": "skip"\|"promote", "todoId": "t4"}` → 下一轮生效 |
-| POST | `/api/runs/{id}/budget` | `{"maxCalls": 20, "maxReads": 30, "maxCostMicrousd": 30000}` → 只能调高，下一轮生效 |
-| POST | `/api/runs/{id}/resume` | 追加预算并续跑：`{"maxCalls": …, "maxReads": …, "maxCostMicrousd": …, "extraRounds": 6}` |
-| POST | `/api/runs/{id}/meta` | `{"name": "…", "pinned": true}` → 更新并持久化运行记录 |
+| POST | `/api/runs/{id}/decision` | 放行或拒绝审批 |
+| POST | `/api/runs/{id}/messages` | 运行中插话，排队到下一轮边界 |
+| POST | `/api/runs/{id}/steer` | 排队一条引导指令 |
+| POST | `/api/runs/{id}/queue` | 查看待处理的人工输入 |
+| POST | `/api/runs/{id}/plan` | `{"action": "skip"\|"promote", "todoId": "t4"}` |
+| POST | `/api/runs/{id}/budget` | 只能调高，下一轮生效 |
+| POST | `/api/runs/{id}/resume` | 追加预算并续跑 |
+| POST | `/api/runs/{id}/meta` | 重命名 / 置顶 |
+| GET | `/api/chat/models` | 对话可用模型（含设置覆盖与可用原因） |
+| GET | `/api/chat/threads?limit=&offset=` | 活跃对话，`total` / `limit` / `offset` |
+| POST | `/api/chat/send` | `{"threadId"?, "text", "attachments", "model"}` → SSE |
+| POST | `/api/chat/threads/{id}/edit` | 编辑上一条并重答 → SSE |
+| POST | `/api/chat/threads/{id}/regenerate` | 重新生成最后一条 → SSE |
+| DELETE | `/api/chat/threads/{id}` | 归档（墓碑），事件链保留 |
+| GET/POST | `/api/settings/chat-config` | 读取（脱敏）/ 保存模型配置 |
 
-实现要点：运行在服务进程内的线程中驱动真实 runtime；观察者线程每 ~120ms 从 SQLite 的
-WAL 只读连接上取已提交事件，重建 trace 快照（recorder 的轮次数据与事件链合并）并推给浏览器；
-`runs/{id}/task.sqlite` 与 demo 的库结构一致（同样可用 `sqlite3` 直接查证）。
-静态文件（html/css/js）一律 `Cache-Control: no-cache`，改完刷新即生效。
+实现要点：运行在服务进程内的线程中驱动真实 runtime；观察者线程每 ~120ms 从 SQLite
+WAL 只读连接取已提交事件，重建快照推给浏览器。静态文件一律 `Cache-Control: no-cache`，
+改完刷新即生效。
 
-## 人工控制语义
+## 安全边界
 
-| 动作 | 生效时机 | 边界 |
-| --- | --- | --- |
-| 审批 allow / deny | 立即解除阻塞；暂停点在 `gate` 之后、`execute` 之前 | 拒绝 = 终止运行（`OPERATOR_DENIED`）；超时自动拒绝；`remember` 只在本次运行内对同一工具生效 |
-| 计划 `skip` / `promote` | 下一轮开始时重建计划 | 跳过不可撤销；被拒绝的指令写 `control_rejected`；跳过必要步骤会得到诚实的 `INSUFFICIENT_EVIDENCE` |
-| 预算调整 | 下一轮开始时 | 只能调高；发送前扣减的语义不变 |
-| 运行中消息 | 下一轮 `before_round` | 只写入事件链，不打断当前工具调用；消息过长或运行已结束会被拒 |
-| 续跑 | 仅接受 `BUDGET_EXCEEDED` 或 `ROUND_LIMIT` | 从旧 trace 重建工作记忆并续写同一哈希链，已付的读取不重发 |
+- 静态服务拒绝配置、数据库与临时文件（`*config*.json`、`*.sqlite*`、`*.log`、`*.pem`、
+  `*.key`、点文件等），命中直接 404；
+- 所有写操作要求 `application/json` 且同源（`Origin` / `Sec-Fetch-Site`），跨站表单无效；
+- 请求体上限 1 MiB，超限在读取前返回 413 并关闭连接；
+- 非回环地址必须带 `--token`；token 只用于建立 cookie，随后从 URL 中剥离；
+- 对话配置不在静态根内，API 从不返回 API key 明文；远程 provider 的 `base_url` 不可改。
 
-所有人工决定都进签名链：`approval_requested / approval_granted / approval_denied / approval_aborted /
-plan_steered / budget_adjusted / control_rejected / task_resumed / operator_message`。右侧证据栏的「人工」筛选只显示这些事件。
+## 设计
 
-## 只读回放模式
+- 浅色三层表面（画布 `#FAFAFB` / 面板 `#F4F4F6` / 悬浮 `#FFFFFF`），1px 黑 8% 描边，
+  8px 圆角（composer 舞台 24px）；
+- 强调色只有近黑 `#18181B`；状态语义用绿 / 红 / 琥珀小圆点，白底对比度已校准；
+- UI 正文 13px，聊天 Markdown 16/26；哈希、时间戳与预算数字等宽 + tabular-nums；
+- `?desktop=1` 时套用 Kimi 测量比例：侧栏 240、阅读宽度 768、输入区 16/24、
+  操作行 36、聊天头部 52；测量与取舍见 `docs/desktop-design.md`；
+- 页面不向外部网络发送数据；模型调用只到达你本机 `server.py` 拉起的 runtime。
 
-不启动 `server.py` 时，页面就是纯回放查看器：
+## 测试
 
-- **链自检**：与 Runtime 相同的 canonical JSON 算法在浏览器里 SHA-256 重算全链，
-  顶栏 `✔ 链验证通过 · N events`，篡改一个字节即变红；盾牌按钮手动重验。
-- **每轮卡片**：见上文的工具卡说明；`PASS / DENIED · 错误码`、收据 chips
-  （tokens / µUSD / latency / `账单 not-verified`）、预算用量、原始数据折叠。
-- **unknown 语义可视化**：模型调用未知卡片（不重发、不退费、不换供应商）+ 后续轮次
-  「已对账 · receipt …」蓝 chip；终态前未完成的轮次标 `TERMINATED`。
-- **交互**：拖放 trace JSON、`?trace=` 参数、`r` 重放、`⌘K` 面板、`Esc` 收起浮动面板。
-- 轨迹路径自动探测：`traces/{key}.trace.json` → `../work/demo/{key}.trace.json` → `work/demo/{key}.trace.json`。
+```sh
+# 后端 + 场景
+cd flowcredit && python3 -m unittest discover -s tests -v
 
-## 设计说明
+# 前端纯函数（Node 内置 test runner，无测试框架依赖）
+node --test flowcredit/viewer/tests/*.test.js
+```
 
-- 浅色控制台语言（设计令牌集中在 `app.css` 顶部，组件视觉在 `design.css`）：
-  画布 `#0A0A0B`、面板 `#131316`、悬浮 `#1A1A1F`，统一 1px 白 8% 描边与 8px 圆角。
-- 强调色只有一个 `#6C7CFF`，仅用于连接状态、焦点环与进行中动画；
-  语义色（PASS `#34C77B` / DENIED `#F5545D` / unknown `#F5B83D`）配小圆点表达状态，不做大色块徽章。
-- UI 文字 13px 基准、行高 1.6，层级只用 12 / 13 / 15 / 20 四档；分组标题 11px 全大写；
-  哈希、时间戳与预算数字一律等宽 + tabular-nums。
-- 颜色只表达状态语义，不做装饰；层级靠间距与字重；内容默认折叠、按需展开；
-  动效统一 150ms ease、新内容 200ms 淡入——「简洁可以让人用的很久」。
-- 零依赖、零构建、完全离线：无字体 / 框架 / 打包步骤（系统字体栈 + ui-monospace），
-  与项目「标准库 + 可离线」的约束一致。
-- 页面不向外部网络发送任何数据；模型调用只会到达你本机 `server.py` 拉起的 runtime。
-- 改版前后对比截图见 `assets/viewer-restyle/`（事件流 / 审批门 / 预算耗尽 / 链校验）。
+## 数据
 
-## 数据是从哪来的
-
-演示数据不再随仓库提供。需要时由 Python Runtime 的离线 demo 生成，经 `?trace=` 加载：
+运行产物在 `viewer/runs/{id}/`（`task.sqlite` + `trace.json` + `meta.json`），对话在
+`viewer/chat.sqlite`，两者都不入库。演示数据由 runtime 生成：
 
 ```sh
 cd flowcredit && python demo.py all
