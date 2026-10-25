@@ -203,6 +203,7 @@ let modelBudget = { template: "", models: null };
    三项都是真实委托输入：scope 与 budget 随 spec 提交并被 run 线程消费。 */
 const attach = {
   open: false,
+  openGroup: null,       // 手风琴单开：null | tpl | sources | tools | budget
   corpus: [],
   tools: [],
   loadedTemplate: "",
@@ -3939,39 +3940,49 @@ function renderAttachPanel() {
   const tplItems = templateGroups().map(group =>
     group.items.map(t => `
       <button class="attach-tpl${t.key === tplKey ? " active" : ""}" data-attach-tpl="${esc(t.key)}">
-        <span class="t">${esc(t.title)}</span>
+        <span class="t">${esc(t.title.split("：")[0])}</span>
         <span class="d">${esc(t.story)}</span>
         ${t.key === tplKey ? '<span class="tick">✓ 当前</span>' : ""}
       </button>`).join("")
   ).join("");
-  panel.innerHTML = `
-    <div class="attach-caption">委托附加面</div>
-    <section class="attach-group">
-      <header><span>委托模板</span><span class="attach-note">决定授权、预算与故障注入</span></header>
-      <div class="attach-tpls">${tplItems}</div>
-    </section>
-    ${general ? sourcesGroup : `
-    <section class="attach-group">
-      <header><span>资料选择</span><span class="attach-note">不选 = 全语料（默认）</span></header>
-      <div class="attach-docs">${docs || '<div class="attach-empty">正在读取语料库…</div>'}</div>
-      ${attach.scope.size ? `<div class="attach-selected">已限定 ${attach.scope.size} 份：任务创建后读取范围真实受限</div>` : ""}
-    </section>`}
-    ${general ? mcpGroup : ""}
-    <section class="attach-group">
-      <header><span>工具注册表</span><span class="attach-note">${attach.tools.length} 个已注册工具</span></header>
-      <div class="attach-tools">${tools || '<div class="attach-empty">正在读取注册表…</div>'}</div>
-      <div class="attach-rule">工具由主机注册；任何调用须经门控与预算</div>
-    </section>
-    <section class="attach-group">
-      <header><span>预算微调</span><span class="attach-note">默认 = 所选模型价格重算后的上限</span></header>
-      <div class="attach-budget">
+  const curTpl = String((templates.find(t => t.key === tplKey) || {}).title || tplKey).split("：")[0];
+  const groups = [
+    { key: "tpl", label: "委托模板", note: "决定授权、预算与故障注入",
+      summary: esc(curTpl),
+      body: `<div class="attach-tpls">${tplItems}</div>` },
+    general
+      ? { key: "sources", label: "外部来源", note: "fetch_url 可访问",
+          summary: attach.sources.length ? `${attach.sources.length} 个来源` : "未添加",
+          body: sourcesGroup }
+      : { key: "sources", label: "资料选择", note: "不选 = 全语料（默认）",
+          summary: attach.scope.size ? `已限定 ${attach.scope.size} 份` : "全语料（默认）",
+          body: `<div class="attach-docs">${docs || '<div class="attach-empty">正在读取语料库…</div>'}</div>`
+            + (attach.scope.size ? `<div class="attach-selected">已限定 ${attach.scope.size} 份：任务创建后读取范围真实受限</div>` : "") },
+    { key: "tools", label: "工具注册表", note: "全部经门控与预算",
+      summary: `${attach.tools.length} 个已注册工具`,
+      body: `<div class="attach-tools">${tools || '<div class="attach-empty">正在读取注册表…</div>'}</div>${general ? mcpGroup : ""}<div class="attach-rule">工具由主机注册；任何调用须经门控与预算</div>` },
+    { key: "budget", label: "预算微调", note: raised ? "已上调" : "默认 = 模型价格重算的上限",
+      summary: `${budget.maxCalls} calls · ${budget.maxReads} reads · ${num(budget.maxCostMicrousd)} µ`,
+      body: `<div class="attach-budget">
         <label>calls <input type="number" min="1" inputmode="numeric" data-attach-budget="maxCalls" value="${Number(budget.maxCalls)}"></label>
         <label>reads <input type="number" min="1" inputmode="numeric" data-attach-budget="maxReads" value="${Number(budget.maxReads)}"></label>
         <label>µUSD <input type="number" min="1" inputmode="numeric" data-attach-budget="maxCostMicrousd" value="${Number(budget.maxCostMicrousd)}"></label>
       </div>
-      <div class="attach-warning${raised ? " on" : ""}">${raised ? "上调将放宽治理上限；实际计费仍以收据为准" : "下调立即收紧；实际计费仍以收据为准"}</div>
-    </section>
-  `;
+      <div class="attach-warning${raised ? " on" : ""}">${raised ? "上调将放宽治理上限；实际计费仍以收据为准" : "下调立即收紧；实际计费仍以收据为准"}</div>` },
+  ];
+  // 手风琴：四组默认收成单行摘要（当前配置一览），单开展开——对齐 kimi 的
+  // 空间纪律：+ 菜单只占浮层，从不占据页面流。
+  panel.innerHTML = groups.map(g => {
+    const open = attach.openGroup === g.key;
+    return `<section class="attach-group${open ? " open" : ""}">
+      <button class="attach-sum" data-attach-sum="${g.key}" aria-expanded="${open}">
+        <span class="sum-label">${esc(g.label)}</span>
+        <span class="sum-value">${g.summary}</span>
+        <span class="chev">${open ? "▾" : "▸"}</span>
+      </button>
+      ${open ? `<div class="attach-body">${g.body}</div>` : ""}
+    </section>`;
+  }).join("");
 }
 
 async function refreshAttachData() {
@@ -5172,6 +5183,14 @@ function bind() {
     if (attach.open) refreshAttachData();
   });
   attachPanel.addEventListener("click", event => {
+    const sum = event.target.closest("[data-attach-sum]");
+    if (sum) {
+      event.stopPropagation();
+      const key = sum.dataset.attachSum;
+      attach.openGroup = attach.openGroup === key ? null : key;
+      renderAttachPanel();
+      return;
+    }
     const tplSel = event.target.closest("[data-attach-tpl]");
     if (tplSel) {
       event.stopPropagation();
