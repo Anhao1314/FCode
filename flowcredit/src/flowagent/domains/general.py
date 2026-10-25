@@ -38,6 +38,10 @@ GENERAL_INSTRUCTION = (
     "用受限终端运行白名单命令（run_command）、抓取已声明的来源（fetch_url）。"
     "提议未列出的工具会被权限门控拒绝并终止本次运行，"
     "所以不确定时选 tools 里最接近的那个，而不是发明一个工具名。"
+    "如果关键信息缺失（日期、对象、目标文件……）且猜错代价高，"
+    "用 ask_operator 问操作员一句再继续——它会带着答案回到你的下一轮。"
+    "如果问了没人回答，而你仍然无法完成：把已知信息与缺口如实写进产出文件，"
+    "在文件里说明缺什么——不要提议未列出的工具（那会被门控拒绝并终止整个运行）。"
 )
 
 APPROVAL_TOOLS = ("write_file", "edit_file", "run_command")
@@ -47,13 +51,17 @@ def create_world(partial: bool = False, spec: dict[str, Any] | None = None, **kw
     """``partial`` is accepted for interface parity; a general delegation has
     no corpus to withhold. ``sandbox``/``fetcher``/``command_runner``/
     ``command_config`` may be injected by the console so the world shares the
-    run directory's workspace and the host's command whitelist."""
+    run directory's workspace and the host's command whitelist, and
+    ``ask_operator`` carries the operator channel the question tool waits on.
+    Whatever this function does not forward does not exist: the channel was
+    dropped here once, and a real run asked a question nobody could answer."""
     return GeneralWorld(
         spec,
         sandbox=kwargs.get("sandbox"),
         fetcher=kwargs.get("fetcher"),
         command_runner=kwargs.get("command_runner"),
         command_config=kwargs.get("command_config"),
+        ask_operator=kwargs.get("ask_operator"),
     )
 
 

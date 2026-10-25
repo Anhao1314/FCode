@@ -1429,7 +1429,26 @@ function genericToolDetail(obs) {
 function renderToolDetail(obs, kind = "brief") {
   if (kind === "diff") return writeDiffHtml(obs);
   if (kind === "removed") return removedResultHtml(obs);
+  if (kind === "qa") return askAnswerHtml(obs);
   return (TOOL_RENDERERS[obs.tool] || genericToolDetail)(obs);
+}
+
+/* 提问与回答：运行把问题交给人，答案回到模型下一轮的上下文里。
+   未回答也如实呈现——那不是失败，是"操作员没答，模型自己判断"。 */
+function askAnswerHtml(obs) {
+  const result = obs.result || {};
+  const question = String(result.asked || (obs.arguments || {}).question || "");
+  const why = String((obs.arguments || {}).why || "");
+  const answered = !!result.answered;
+  const answer = answered ? String(result.answer || "") : "";
+  const note = answered
+    ? ""
+    : `<div class="qa-note">${result.timed_out ? "等待超时" : "操作员未回答"} · ${esc(result.reason || "模型据此自行判断")}</div>`;
+  return `<div class="qa-block">
+    <div class="qa-line q"><span class="qa-who">问操作员</span><span class="qa-text">${esc(question)}</span></div>
+    ${why ? `<div class="qa-why">${esc(why)}</div>` : ""}
+    ${answered ? `<div class="qa-line a"><span class="qa-who">回答</span><span class="qa-text">${esc(answer)}</span></div>` : note}
+  </div>`;
 }
 
 /* ================================================== 执行结果四块（对照官方 DisplayBlocks）
@@ -1454,6 +1473,7 @@ const RESULT_BLOCK_KINDS = {
   edit_file: "diff",
   run_command: "brief",
   fetch_url: "brief",
+  ask_operator: "qa",
 };
 
 function resultBlockKind(round) {
@@ -3093,12 +3113,72 @@ function paintApproval() {
   const slot = document.getElementById("approval-slot");
   if (!slot) return;
   const s = activeSession();
-  slot.innerHTML = s && s.pending ? renderApproval(s.pending, s.deciding) : "";
+  if (!s || !s.pending) { slot.innerHTML = ""; return; }
+  slot.innerHTML = s.pending.kind === "question"
+    ? renderQuestion(s.pending, s.answering)
+    : renderApproval(s.pending, s.deciding);
+}
+
+/* 运行反过来问你。与审批卡同一个位置（线程尾部=实时边沿）、同一条等待语义：
+   答案随工具结果入链，模型下一轮读到它；跳过/超时如实写成"未回答"。 */
+function renderQuestion(pending, answering) {
+  const busy = !!answering;
+  const countdown = pending.expiresIn
+    ? `<span class="apv-count" data-countdown>${fmtCountdown(pending.expiresIn)}</span>`
+    : "";
+  return `<div class="card approval question" data-question="${esc(pending.id)}">
+    <div class="card-head">
+      <span class="card-title">${doodleSvg("message")} 运行需要你确认一件事</span>
+      <span class="grow"></span>
+      <span class="badge warn"><span class="dot"></span>${busy ? "已提交" : "等待回答"}</span>
+      ${countdown}
+    </div>
+    <div class="approval-body">
+      <div class="apv-line"><span class="rno">#${esc(pending.round)}</span><span class="q-text">${esc(pending.question)}</span></div>
+      ${pending.why ? `<div class="apv-why">${esc(pending.why)}</div>` : ""}
+      <textarea class="q-input" rows="2" maxlength="600" placeholder="回答一句即可（≤600 字）；空着提交等于跳过"${busy ? " disabled" : ""}
+        data-question-input></textarea>
+      <div class="apv-choices" role="group" aria-label="回答选项">
+        <button class="apv-choice" data-question-skip${busy ? " disabled" : ""}>跳过（让模型自行判断）</button>
+        <button class="apv-choice primary" data-question-submit${busy ? " disabled" : ""}>提交回答</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+async function answerQuestion(skip) {
+  const s = activeSession();
+  if (!s || !s.pending || s.pending.kind !== "question" || s.answering) return;
+  const pending = s.pending;
+  const input = document.querySelector("[data-question-input]");
+  const text = skip ? "" : String(input ? input.value : "").trim();
+  if (!skip && !text) { await answerQuestion(true); return; }
+  s.answering = true;
+  paintApproval();
+  try {
+    const response = await fetch(`/api/runs/${encodeURIComponent(s.id)}/answer`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(skip
+        ? { questionId: pending.id, skip: true }
+        : { questionId: pending.id, text }),
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.error || `HTTP ${response.status}`);
+    }
+    s.answering = false;
+    toast(skip ? "已跳过 · 模型自行判断" : "已提交回答 · 运行继续");
+  } catch (error) {
+    s.answering = false;
+    paintApproval();
+    toast("回答未送达：" + error.message);
+  }
 }
 
 async function decideApproval(allow, remember = false) {
   const s = activeSession();
-  if (!s || !s.pending || s.deciding) return;
+  if (!s || !s.pending || s.pending.kind === "question" || s.deciding) return;
   const pending = s.pending;
   s.deciding = { allow, remember };
   paintApproval();
@@ -7387,6 +7467,10 @@ function bind() {
         return;
       }
     }
+    const questionSubmit = event.target.closest("[data-question-submit]");
+    if (questionSubmit) { answerQuestion(false); return; }
+    const questionSkip = event.target.closest("[data-question-skip]");
+    if (questionSkip) { answerQuestion(true); return; }
     const decision = event.target.closest("[data-decision]");
     if (decision) {
       const choice = decision.dataset.decision;

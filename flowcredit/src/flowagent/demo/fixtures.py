@@ -193,6 +193,9 @@ SCENARIOS: dict[str, Scenario] = {
             "edit_file",
             "run_command",
             "fetch_url",
+            # Asking the operator is a host-granted capability like any other:
+            # a general delegation with no way to ask has to guess.
+            "ask_operator",
         ),
         grant={
             "grant_id": "general-host-grant",
@@ -204,6 +207,7 @@ SCENARIOS: dict[str, Scenario] = {
                 "edit_file",
                 "run_command",
                 "fetch_url",
+                "ask_operator",
             ],
             # The host names the effect classes this delegation may use. A
             # finance grant omits the key and keeps the read-only promise.

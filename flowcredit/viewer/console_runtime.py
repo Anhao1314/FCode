@@ -484,6 +484,10 @@ class RunControl:
         with self._lock:
             if self._approval is None or self._approval.get("id") != approval_id:
                 return False
+            # The two pending kinds share the slot; an approval decision must not
+            # resolve a question (it would read as "not answered").
+            if self._approval.get("kind") == "question":
+                return False
             if self._decision is not None:
                 return False
             self._decision = {"allow": allow, "remember": remember}
@@ -493,6 +497,105 @@ class RunControl:
     def pending(self) -> dict | None:
         with self._lock:
             return dict(self._approval) if self._approval else None
+
+    # ------------------------------------------------------------------ asking
+    #
+    # ``ask_operator`` is a tool, so the model asks *inside* a tool call: the
+    # run thread parks here exactly like the approval gate does, and the answer
+    # comes back as that tool's observation. The console owns the human
+    # channel, the kernel owns the accounting.
+
+    def ask(self, *, question: str, why: str = "") -> dict:
+        """Publish one question, wait for the operator, return the answer.
+
+        The audit trail is the tool call itself, not a side event: the harness
+        has already written ``tool_started`` with the question in its arguments,
+        and it writes ``tool_succeeded`` with the answer in its result. Adding
+        events from inside a tool body would break the store's optimistic
+        sequencing (the loop holds a task snapshot) — and it would be less
+        honest, because the tool call *is* the unit an auditor reads.
+
+        A timeout is reported as a timeout — the model is told it is on its own
+        rather than handed an invented answer. A stop request ends the question
+        the same way it ends an approval.
+        """
+        text = str(question or "").strip()[:400]
+        if not text:
+            raise AgentError("ASK_QUESTION_EMPTY", "question must not be empty")
+        with self._lock:
+            if self._approval is not None:
+                # One human decision at a time: the gate and the question share
+                # the pending slot and the UI renders whichever is live.
+                return {"answered": False, "reason": "another question or approval is already pending"}
+            round_no = max(0, int(self.run.rounds or 0)) + 1
+            ask_id = f"ask-{round_no}-{uuid.uuid4().hex[:6]}"
+            self._approval = {
+                "kind": "question",
+                "id": ask_id,
+                "round": round_no,
+                "question": text,
+                "why": str(why or "")[:200],
+                "expiresIn": int(self.timeout),
+                "requestedAt": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            }
+            self._decision = None
+            self._wake.clear()
+        self._publish()
+
+        deadline = time.monotonic() + self.timeout
+        stopped = False
+        try:
+            while True:
+                if self.run.stop_requested:
+                    stopped = True
+                    break
+                if self._wake.wait(0.1):
+                    break
+                if time.monotonic() >= deadline:
+                    with self._lock:
+                        self._decision = {"answered": False, "timeout": True}
+                    break
+        finally:
+            with self._lock:
+                answer = self._decision
+                self._approval = None
+            self._publish()
+
+        if stopped:
+            raise StopRequested()
+        answered = bool(answer and answer.get("answered"))
+        reply = str((answer or {}).get("answer") or "")[:600]
+        if answered:
+            return {"answered": True, "answer": reply}
+        return {
+            "answered": False,
+            "timed_out": bool((answer or {}).get("timeout")),
+            "reason": "the operator did not answer in time",
+        }
+
+    def answer(self, question_id: str, text: str) -> bool:
+        """Record the operator's answer to the pending question."""
+        with self._lock:
+            pending = self._approval
+            if pending is None or pending.get("kind") != "question" or pending.get("id") != question_id:
+                return False
+            if self._decision is not None:
+                return False
+            self._decision = {"answered": True, "answer": str(text or "").strip()[:600]}
+            self._wake.set()
+            return True
+
+    def skip_question(self, question_id: str) -> bool:
+        """The operator declines to answer: the run continues without one."""
+        with self._lock:
+            pending = self._approval
+            if pending is None or pending.get("kind") != "question" or pending.get("id") != question_id:
+                return False
+            if self._decision is not None:
+                return False
+            self._decision = {"answered": False, "declined": True}
+            self._wake.set()
+            return True
 
     def current_limits(self) -> dict:
         return self.harness.limits.to_dict()

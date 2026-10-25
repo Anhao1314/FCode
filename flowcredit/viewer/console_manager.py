@@ -749,6 +749,22 @@ class RunManager:
                     "command_config": os.environ.get("FCODE_COMMANDS_CONFIG")
                     or str(rt.repo / "commands.json"),
                 }
+                # The operator channel is the console's: the tool waits in the
+                # run's control, exactly where approvals wait. The control is
+                # built *after* the world (it needs the harness, which needs the
+                # world), so the binding is a late lookup rather than a captured
+                # value — by the time a tool can call it, the run exists. An
+                # assembly with no control answers honestly instead of hanging.
+                ask_holder: dict[str, Any] = {}
+
+                def _ask_channel(**kwargs: Any) -> dict[str, Any]:
+                    control_now = ask_holder.get("control")
+                    if control_now is None:
+                        return {"answered": False, "reason": "this deployment has no operator channel"}
+                    return control_now.ask(**kwargs)
+
+                ask_holder_ready = ask_holder
+                world_kwargs["ask_operator"] = _ask_channel
             world = module.create_world(
                 partial=scenario.partial_corpus, spec=run.spec or {}, **world_kwargs,
             )
@@ -897,6 +913,10 @@ class RunManager:
                 classify_consequential=_classify_consequential,
             )
             run.controller = control
+            if general:
+                # The world's ask tool resolves the channel here, once there is
+                # a control to ask through.
+                ask_holder_ready["control"] = control
             if resume_limits:
                 task = store.load(run.task_id)
                 task = harness.resume(

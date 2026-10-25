@@ -16,8 +16,12 @@ from pathlib import Path
 from typing import Any
 
 from ...core.contracts import AgentError
+from dataclasses import replace
+
 from ..base import Observation, ToolSpec
+from .ask import build_ask_tool
 from .commands import CommandRunner, load_command_config
+from .summaries import summarize_ask_operator
 from .fetch import UrlFetcher
 from .recall import build_recall_tool
 from .sandbox import WorkspaceSandbox
@@ -50,6 +54,7 @@ class GeneralWorld:
         fetcher: UrlFetcher | None = None,
         command_runner: CommandRunner | None = None,
         command_config: str | None = None,
+        ask_operator: Any = None,
     ) -> None:
         self.spec = dict(spec or {})
         self.mode = "script" if str(self.spec.get("mode") or "") == "script" else "research"
@@ -72,6 +77,10 @@ class GeneralWorld:
         #: code default whitelist; never replaces it.
         self.command_runner = command_runner
         self.command_config = command_config or os.environ.get("FCODE_COMMANDS_CONFIG") or None
+        #: The operator channel (see the class attribute below). Wired by the
+        #: console once the run's control exists; assignments after construction
+        #: also work, because the tool resolves it when a question is asked.
+        self.ask_operator = ask_operator
 
     #: Optional provider of this run's compressed observation records; set by
     #: the assembly so ``recall_observation`` reads exactly what working memory
@@ -80,6 +89,11 @@ class GeneralWorld:
     #: The loop publishes the live WorkingMemory here each run; the provider
     #: closes over it. An assembly may also leave both unset to skip the tool.
     recall_holder: Any = None
+    #: The operator channel this run can ask through: ``ask(question=…, why=…)
+    #: -> {"answered": bool, …}``. The console wires it to the run's control
+    #: (where approvals wait); CLI and offline deployments leave it unset and
+    #: the tool answers "no operator channel" instead of hanging.
+    ask_operator: Any = None
 
     def build_tools(self) -> list[ToolSpec]:
         runner = self.command_runner
@@ -87,6 +101,18 @@ class GeneralWorld:
             runner = CommandRunner(self.sandbox, load_command_config(self.command_config))
             self.command_runner = runner
         tools = build_general_tools(self.sandbox, self.fetcher, command_runner=runner)
+        # The tool is always registered; the *channel* is resolved when a
+        # question is actually asked. Assemblies wire it after the world exists
+        # (the console's control needs the harness, which needs the world), and
+        # a deployment with no operator gets the honest answer instead of a
+        # tool the gate would refuse as unregistered.
+        def channel(**kwargs: Any) -> dict[str, Any]:
+            current = self.ask_operator
+            if current is None:
+                return {"answered": False, "reason": "this deployment has no operator channel"}
+            return current(**kwargs)
+
+        tools.append(replace(build_ask_tool(channel), summarize=summarize_ask_operator))
         if self.memory_records_provider is not None:
             tools.append(build_recall_tool(self.memory_records_provider))
         return tools

@@ -83,7 +83,27 @@ def summarize_fetch_url(result: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def summarize_ask_operator(result: dict[str, Any]) -> dict[str, Any]:
+    """The answer is steering input, not bulk: it survives compression whole.
+
+    Everything else a tool returns gets trimmed to a head; an operator's answer
+    is the one thing a later round must not lose — dropping it would make the
+    agent ask the same question twice.
+    """
+    out: dict[str, Any] = {
+        "asked": str(result.get("asked") or "")[:400],
+        "answered": bool(result.get("answered")),
+    }
+    if result.get("answered"):
+        out["answer"] = str(result.get("answer") or "")[:600]
+    else:
+        out["timed_out"] = bool(result.get("timed_out"))
+        out["reason"] = str(result.get("reason") or "")[:200]
+    return out
+
+
 GENERAL_SUMMARIZERS: dict[str, Any] = {
+    "ask_operator": summarize_ask_operator,
     "ls_workspace": summarize_ls_workspace,
     "read_file": summarize_read_file,
     "write_file": summarize_write_file,

@@ -206,6 +206,39 @@ git 快照。操作者批准的脚本能做其解释器能做的任何事（读�
 git 快照记录文件效应，这些让"批准什么"可审阅，但不构成 OS 级隔离。
 容器/seccomp 级隔离是另一个立项。
 
+## 4c. 运行提问：`ask_operator`（2026-10 第三批）
+
+不会提问的通用 agent 只能猜。这个工具把"停下来问人"做成了一次受治理调用：
+
+- **它是真工具**：进注册表、过权限门控、计一次读预算、和别的调用一样写进签名链。
+  它**不**过审批——问一句不是有后果的动作（`before_tool` 只对 `write_file`/
+  `edit_file`/`run_command` 生效）。
+- **链条自己就是审计**：`tool_started` 的 arguments 是问题，`tool_succeeded` 的
+  result 是回答（`{"asked", "answered", "answer"}`）或如实标注的未回答
+  （`{"answered": false, "timed_out": true, "reason": …}`）。没有额外事件类型：
+  从工具体内部再写事件会破坏 store 的乐观序号（循环持有的是任务快照），而且
+  一次工具调用本来就是一个审计单元。
+- **人的通道是控制台的，不是内核的**：世界携带一个 `ask` 回调，控制台把它接到
+  运行自己的 control 上（与审批等待同一处：同一个 pending 槽、同一个 `_wake`、
+  同一个 300 秒超时）。等待中停止运行 = 抛出 `StopRequested`，与审批被停止一致。
+- **没有通道就如实说**：CLI demo、离线测试这类没有操作员的部署，工具返回
+  `"this deployment has no operator channel"`，模型据此自行判断，而不是挂住。
+- **答案回到下一轮**：结果就是工具的 observation，`WorkingMemory` 的摘要器
+  **完整保留**回答（唯一不截断的字段——丢了它模型会把同一个问题问第二遍）。
+  单元测试直接在 provider 收到的第二个 context 里断言回答可见。
+- **提问不是逃生门**：通用域指令同时写明"问了没人答而仍然无法完成时，把已知
+  信息与缺口如实写进产出文件"，避免模型转头去提议未注册的工具（那会被门控
+  拒绝并终止整个运行——真实运行里发生过两次）。
+
+端点：`POST /api/runs/{id}/answer {questionId, text}`（或 `{questionId, skip: true}`），
+与 `/decision` 同形；前端把问题渲染成与审批卡同一位置的卡片（线程尾部=实时边沿），
+回答后在同一轮次里留下 Q&A 块。
+
+验收：`tests/test_ask_operator.py`（12 项：工具形状、无通道、超时、跳过、预算、
+计划步骤、答案进下一轮 context）；一次脚本化 provider 的活运行
+（`work/kimi-e2e/ask-operator-live/`）：问题与回答是一次链上工具调用，浏览器里
+的卡片提交后运行继续到 6 轮，产物文件里的内容证明回答进入了模型下一轮的上下文。
+
 ## 5. 验收与证据
 
 - 第二批离线测试：`tests/test_capability_baseline.py`（edit_file 唯一

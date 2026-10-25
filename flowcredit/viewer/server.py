@@ -836,6 +836,31 @@ class Handler(SimpleHTTPRequestHandler):
             ):
                 return self._json({"error": "no pending approval with that id"}, 409)
             return self._json({"ok": True})
+        if path.startswith("/api/runs/") and path.endswith("/answer"):
+            run_id = path[len("/api/runs/") : -len("/answer")]
+            run = mgr.get(run_id)
+            if run is None:
+                return self._json({"error": "no such run"}, 404)
+            body = self._read_body()
+            question_id = str(body.get("questionId") or "").strip()
+            if not question_id:
+                return self._json({"error": "questionId is required"}, 400)
+            text = body.get("text")
+            skip = bool(body.get("skip"))
+            control = getattr(run, "controller", None)
+            if control is None:
+                return self._json({"error": "this run is not accepting answers"}, 409)
+            if skip:
+                ok = control.skip_question(question_id)
+            else:
+                if not isinstance(text, str) or not text.strip():
+                    return self._json({"error": "text is required unless skip is set"}, 400)
+                if len(text) > 600:
+                    return self._json({"error": "text must be at most 600 characters"}, 400)
+                ok = control.answer(question_id, text)
+            if not ok:
+                return self._json({"error": "that question is not pending"}, 409)
+            return self._json({"ok": True, "questionId": question_id, "skipped": skip})
         if path.startswith("/api/runs/") and path.endswith("/messages"):
             run_id = path[len("/api/runs/") : -len("/messages")]
             run = mgr.get(run_id)
