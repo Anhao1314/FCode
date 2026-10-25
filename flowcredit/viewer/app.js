@@ -1510,34 +1510,53 @@ function renderRound(round, index, ann = {}, prevRound = null) {
   const empty = !round.proposal && !round.decision && !round.observation && !round.receipt;
   if (empty && ann.terminal) {
     return `<article class="round turn terminal" data-open="false">
-      <header class="turn-head"><span class="turn-no">第 ${round.index} 轮</span><span class="turn-budget">TERMINATED</span></header>
-      <div class="proposal-card muted">
-        <div class="proposal-label">模型提议</div>
-        <div class="proposal-tool">未完成的轮次</div>
-        <div class="proposal-args">任务在此终结（${esc(ann.terminal)}）——没有提议落进签名链</div>
+      <button class="turn-summary" type="button" data-toggle>
+        <span class="t-ic">${ICON.term}</span>
+        <span class="turn-no">第 ${round.index} 轮</span>
+        <span class="turn-tool dim">未完成的轮次</span>
+        <span class="turn-state pending"><i class="ev-dot info"></i>TERMINATED</span>
+        <span class="turn-budget"></span>
+        <span class="chev">▾</span>
+      </button>
+      <div class="turn-body">
+        <div class="proposal-card muted">
+          <div class="proposal-args">任务在此终结（${esc(ann.terminal)}）——没有提议落进签名链</div>
+        </div>
       </div>
     </article>`;
   }
   if (empty && !ann.unknown) {
     return `<article class="round turn live" data-open="true">
-      <header class="turn-head"><span class="turn-no">第 ${round.index} 轮</span><span class="turn-budget">运行中</span></header>
-      <div class="proposal-card muted">
-        <div class="proposal-label">模型提议</div>
-        <div class="proposal-tool">等待提议…</div>
+      <button class="turn-summary" type="button" data-toggle>
+        <span class="t-ic">${ICON.term}</span>
+        <span class="turn-no">第 ${round.index} 轮</span>
+        <span class="turn-tool dim">等待提议…</span>
+        <span class="turn-state pending"><i class="ev-dot info"></i>运行中</span>
+        <span class="turn-budget"></span>
+        <span class="chev">▾</span>
+      </button>
+      <div class="turn-body">
+        <div class="gate-line pending"><span class="ev-dot info"></span><span>等待模型返回</span></div>
       </div>
-      <div class="gate-line pending"><span class="ev-dot info"></span><span>等待模型返回</span></div>
     </article>`;
   }
   if (empty) {
     const cause = ann.unknown || "UNKNOWN";
     return `<article class="round turn unknown" data-open="true">
-      <header class="turn-head"><span class="turn-no">第 ${round.index} 轮</span><span class="turn-budget">UNKNOWN</span></header>
-      <div class="proposal-card muted">
-        <div class="proposal-label">模型调用</div>
-        <div class="proposal-tool">${esc(cause)}</div>
-        <div class="proposal-args">未知不等于失败；不自动重发、不退费、不换供应商。</div>
+      <button class="turn-summary" type="button" data-toggle>
+        <span class="t-ic">${ICON.term}</span>
+        <span class="turn-no">第 ${round.index} 轮</span>
+        <span class="turn-tool dim">模型调用</span>
+        <span class="turn-state warn"><i class="ev-dot warn"></i>${esc(cause)}</span>
+        <span class="turn-budget"></span>
+        <span class="chev">▾</span>
+      </button>
+      <div class="turn-body">
+        <div class="proposal-card muted">
+          <div class="proposal-args">未知不等于失败；不自动重发、不退费、不换供应商。</div>
+        </div>
+        <div class="gate-line pending"><span class="ev-dot warn"></span><span>等待匹配的签名收据显式对账</span></div>
       </div>
-      <div class="gate-line pending"><span class="ev-dot warn"></span><span>等待匹配的签名收据显式对账</span></div>
     </article>`;
   }
 
@@ -1578,46 +1597,44 @@ function renderRound(round, index, ann = {}, prevRound = null) {
       <div class="removed-why">${esc(decision.code || "DENIED")}${decision.reason ? " · " + esc(decision.reason) : ""}</div>
     </div>` : "";
 
+  const gateShort = denied ? "DENIED" : round.observation ? "PASS" : "等待";
+  const dotClass = denied ? "bad" : round.observation ? "ok" : "info";
   return `<article class="round turn${!round.observation && !denied ? " live" : ""}" data-open="${denied ? "true" : "false"}">
-    <header class="turn-head">
+    <button class="turn-summary" type="button" data-toggle>
+      <span class="t-ic">${icon}</span>
       <span class="turn-no">第 ${round.index} 轮</span>
+      <span class="turn-tool">${esc(tool)}</span>
+      <span class="turn-state ${gateClass}"><i class="ev-dot ${dotClass}"></i>${gateShort}</span>
       <span class="turn-budget">${esc(turnBudgetDelta(round))}</span>
-    </header>
-
-    <div class="proposal-card">
-      <div class="proposal-label">模型提议</div>
-      <div class="proposal-main">
-        <span class="t-ic">${icon}</span>
-        <span class="tool">${esc(tool)}</span>
-        ${args ? `<code class="args">${args}</code>` : '<code class="args dim">无参数</code>'}
+      <span class="chev">▾</span>
+    </button>
+    <div class="turn-body">
+      ${args ? `<div class="turn-args"><code>${args}</code></div>` : ""}
+      <div class="gate-line ${gateClass}">
+        <span class="ev-dot ${dotClass}"></span>
+        <span class="gate-ico">${sealSvg(denied ? "gate-denied" : "gate-stamp", "stamp-in")}</span><span>${esc(gateText)}</span>
       </div>
+
+      ${round.observation ? `
+      <div class="tool-result" data-block="${esc(blockKind)}">
+        <div class="tool-result-head">
+          <span class="tool-result-title">执行结果 · ${esc(tool)}</span>
+          <span class="tool-result-summary">${esc(outcomeText(round, ann)).slice(0, 160)}</span>
+        </div>
+        <div class="tool-result-body">
+          ${renderToolDetail(obs, blockKind)}
+          <details class="raw"><summary>完整返回与收据</summary><pre>${esc(JSON.stringify(raw, null, 2))}</pre></details>
+        </div>
+      </div>` : removedBlock}
+
+      ${planTodoBlock(round, prevRound)}
+
+      <footer class="turn-receipt">
+        <code>${hash ? esc(hash) : "result hash pending"}</code>
+        <span class="receipt-meta">${esc(receiptMeta)}</span>
+        ${hash ? `<button class="copy-mini" type="button" data-copy="${esc(hash)}">复制</button>` : ""}
+      </footer>
     </div>
-
-    <div class="gate-line ${gateClass}">
-      <span class="ev-dot ${denied ? "bad" : round.observation ? "ok" : "info"}"></span>
-      <span class="gate-ico">${sealSvg(denied ? "gate-denied" : "gate-stamp", "stamp-in")}</span><span>${esc(gateText)}</span>
-    </div>
-
-    ${round.observation ? `
-    <div class="tool-result" data-block="${esc(blockKind)}">
-      <button class="tool-result-head" type="button" data-toggle>
-        <span class="tool-result-title">执行结果 · ${esc(tool)}</span>
-        <span class="tool-result-summary">${esc(outcomeText(round, ann)).slice(0, 132)}</span>
-        <span class="chev">▾</span>
-      </button>
-      <div class="tool-result-body">
-        ${renderToolDetail(obs, blockKind)}
-        <details class="raw"><summary>完整返回与收据</summary><pre>${esc(JSON.stringify(raw, null, 2))}</pre></details>
-      </div>
-    </div>` : removedBlock}
-
-    ${planTodoBlock(round, prevRound)}
-
-    <footer class="turn-receipt">
-      <code>${hash ? esc(hash) : "result hash pending"}</code>
-      <span class="receipt-meta">${esc(receiptMeta)}</span>
-      ${hash ? `<button class="copy-mini" type="button" data-copy="${esc(hash)}">复制</button>` : ""}
-    </footer>
   </article>`;
 }
 

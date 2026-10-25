@@ -546,6 +546,124 @@ html.desktop-app .side-user { height: 32px; padding: 4px 8px; }
 /* 设置输入框与操作行同高 */
 .chatcfg-field input { height: 36px; border-radius: 8px; font-size: 14px; }
 
+/* ================================================================ 运行证据视图
+   Kimi 对过程内容的形态：安静的摘要行 + 展开细节，没有盒中盒、没有时间线竖轨。
+   每轮一行摘要（图标 · 轮次 · 工具 · 门控状态 · 预算增量），展开才看
+   参数 / 门控 / 执行结果 / 收据；治理语义（PASS/DENIED/UNKNOWN、哈希、
+   收据数字）全部保留，只换呈现。 */
+#main[data-view="run"] {
+  max-width: 832px;
+  padding: 16px 16px 30px 4px;
+}
+.session-kicker {
+  font: 500 12px/18px var(--font-ui);
+  letter-spacing: 0; text-transform: none; color: var(--text-3);
+}
+.session-meta { font: 12px/18px var(--font-mono); }
+
+/* 时间线 → 平铺列表 */
+.turns { gap: 2px; padding: 4px 0; }
+.turns::before { display: none; }
+.round.turn { padding: 0; border-radius: 8px; }
+.round.turn::before { display: none; }
+
+/* 摘要行：图标 · 轮次 · 工具 · 状态 · 预算增量 */
+.turn-summary {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 4px 10px;
+  width: 100%; min-height: 40px; padding: 4px 10px;
+  border: 0; border-radius: 8px; background: transparent;
+  color: inherit; text-align: left; cursor: pointer;
+  transition: background-color .15s;
+}
+.turn-summary:hover { background: #F5F5F5; }
+.turn-summary .t-ic { color: var(--text-2); display: inline-flex; }
+.turn-summary .t-ic svg { width: 16px; height: 16px; }
+.turn-no { color: var(--text-2); font-size: 14px; line-height: 20px; white-space: nowrap; }
+.turn-tool {
+  font-family: var(--font-mono); font-size: 14px; line-height: 20px; color: var(--text-1);
+  max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.turn-tool.dim { color: var(--text-3); }
+.turn-state {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12px; line-height: 18px; color: var(--text-2); white-space: nowrap;
+}
+.turn-state .ev-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text-3); flex: none; }
+.turn-state.pass .ev-dot { background: var(--ok); }
+.turn-state.denied .ev-dot { background: var(--bad); }
+.turn-state.warn .ev-dot { background: var(--warn); }
+.turn-budget {
+  margin-left: auto; font: 12px/18px var(--font-mono); color: var(--text-3);
+  max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.turn-summary .chev { color: var(--text-3); font-size: 12px; transition: transform .15s var(--ease); }
+.round.turn[data-open="false"] .turn-summary .chev { transform: rotate(-90deg); }
+
+/* 展开体：缩进对齐摘要文字，无框 */
+.turn-body { padding: 2px 10px 10px 36px; }
+.round.turn[data-open="false"] .turn-body { display: none; }
+.round.turn[data-open="true"] .turn-body { animation: kimiFade .2s var(--ease) both; }
+.turn-args { margin: 4px 0 8px; }
+.turn-args code { font: 12px/18px var(--font-mono); color: var(--text-3); overflow-wrap: anywhere; }
+
+/* 门控行：圆点带语义色，文字保持 60% 中性 */
+.gate-line { font-size: 14px; line-height: 20px; color: var(--text-2); }
+.gate-line .ev-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text-3); flex: none; }
+.gate-line.pass, .gate-line.denied { color: var(--text-2); }
+.gate-line.pass .ev-dot { background: var(--ok); }
+.gate-line.denied .ev-dot { background: var(--bad); }
+
+/* 提议与结果：去盒 */
+.proposal-card { border: 0; background: transparent; padding: 0; margin: 0 0 8px; }
+.proposal-label { font: 500 12px/18px var(--font-ui); color: var(--text-3); margin: 0 0 4px; }
+.proposal-main .tool { font-size: 14px; line-height: 20px; }
+.proposal-main .args { font-size: 12px; line-height: 18px; }
+.proposal-args { margin: 0; color: var(--text-2); font-size: 14px; line-height: 22px; }
+
+.tool-result { border: 0; background: transparent; border-radius: 0; overflow: visible; }
+.tool-result-head {
+  display: flex; align-items: baseline; gap: 12px;
+  min-height: 28px; padding: 2px 0; border-radius: 0; background: transparent;
+}
+.tool-result-head:hover { background: transparent; }
+.tool-result-title { font: 500 14px/20px var(--font-ui); color: var(--text-1); }
+.tool-result-summary {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 12px; line-height: 18px; color: var(--text-3);
+}
+.round.turn[data-open="true"] .tool-result-summary { display: block; }
+.round.turn[data-open="false"] .tool-result-body { display: block; }
+.tool-result-body { border-top: 0; padding: 4px 0 8px; }
+
+/* 输出井与原始 JSON：F5F5F5 圆角井，去描边 */
+#main[data-view="run"] .out {
+  background: #F5F5F5; border: 0; border-radius: 8px;
+  font-size: 12px; line-height: 18px;
+}
+#main[data-view="run"] .raw summary {
+  font-size: 12px; line-height: 18px; color: var(--text-3); cursor: pointer;
+}
+#main[data-view="run"] .raw pre {
+  background: #F5F5F5; border: 0; border-radius: 8px;
+  font-size: 12px; line-height: 18px;
+}
+
+/* 收据行 12/18；复制按钮变安静文本按钮 */
+.turn-receipt { margin-top: 8px; font: 12px/18px var(--font-mono); color: var(--text-3); }
+.copy-mini {
+  border: 0; background: transparent; border-radius: 6px;
+  color: var(--text-3); font-size: 12px; line-height: 18px; padding: 0 8px;
+  transition: background-color .15s, color .15s;
+}
+.copy-mini:hover { background: #F5F5F5; color: var(--text-1); }
+
+/* 计划与预算、结论卡：同样的去盒处理 */
+#main[data-view="run"] .process-details { border: 0; background: transparent; border-radius: 8px; }
+#main[data-view="run"] .process-head { font-size: 14px; line-height: 20px; color: var(--text-1); }
+#main[data-view="run"] .result .card { border-color: var(--line-soft); background: transparent; }
+#main[data-view="run"] .block-removed { border: 0; background: transparent; }
+
 /* ================================================================ 窄屏 */
 @media (max-width: 900px) {
   .sidebar { padding: 8px; }
