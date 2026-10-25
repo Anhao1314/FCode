@@ -307,6 +307,9 @@ body { margin: 0; }
 .statusline .sl-right { margin-left: auto; }
 
 /* 主区切换：聊天 / 设置 */
+/* 全覆盖页面：接管整个界面（对齐 kimi 的设置页形态）——侧栏一并收起 */
+#app.settings-open .sidebar-frame { width: 0; overflow: hidden; }
+#app.settings-open .sidebar { opacity: 0; pointer-events: none; }
 #workspace.settings-open > .topbar,
 #workspace.settings-open > .tabs,
 #workspace.settings-open > .content,

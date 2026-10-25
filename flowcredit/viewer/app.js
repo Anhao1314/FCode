@@ -4734,6 +4734,7 @@ function openSettingsPage() {
   settingsScroll.main = document.getElementById("main").scrollTop;
   settingsScroll.rail = document.getElementById("rail-body").scrollTop;
   document.getElementById("workspace").classList.add("settings-open");
+  document.getElementById("app").classList.add("settings-open");
   document.getElementById("settings-page").hidden = false;
   document.getElementById("settings-back").textContent = "×";
   document.getElementById("settings-back").title = "关闭设置 (Esc)";
@@ -4751,6 +4752,7 @@ function closeSettingsPage(returnFocus = true) {
   settingsOpen = false;
   store.mode = document.getElementById("main")?.dataset.view || "run";
   document.getElementById("workspace").classList.remove("settings-open");
+  document.getElementById("app").classList.remove("settings-open");
   document.getElementById("settings-page").hidden = true;
   document.getElementById("settings-btn").removeAttribute("aria-current");
   requestAnimationFrame(() => {
