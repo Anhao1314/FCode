@@ -2061,3 +2061,18 @@ body.reduce-motion *, body.reduce-motion *::before, body.reduce-motion *::after 
   background: var(--raised); color: var(--text-1); font-size: 13px; cursor: pointer;
 }
 .attach-source-add button:hover { background: var(--active); }
+
+/* ============ 附加面板 · 委托模板组 ============ */
+.attach-tpls { display: flex; flex-direction: column; gap: 4px; }
+.attach-tpl {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  padding: 9px 12px; border: 1px solid transparent; border-radius: 8px;
+  background: none; color: var(--text-1); text-align: left; cursor: pointer;
+  transition: background-color var(--t) ease, border-color var(--t) ease;
+}
+.attach-tpl:hover { background: var(--active); }
+.attach-tpl.active { background: var(--active); border-color: var(--line-strong); }
+.attach-tpl .t { font-size: var(--fs-3); font-weight: 550; flex: none; }
+.attach-tpl .d { flex: 1; font-size: var(--fs-2); color: var(--text-2); overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; }
+.attach-tpl .tick { flex: none; font-size: 11px; color: var(--ok); font-family: var(--font-mono); }

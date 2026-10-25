@@ -3753,11 +3753,9 @@ async function refreshRuns() {
 function setTemplate(key) {
   tplKey = key;
   const template = templates.find(t => t.key === key);
-  const label = document.getElementById("template-label");
-  if (label) label.textContent = template ? template.title.split("：")[0] : (TPL_FALLBACK[key] || key);
   const ta = document.getElementById("composer-ta");
   if (template && ta && !ta.value) ta.placeholder = template.objective;
-  renderTemplateMenu();
+  if (attach.open) renderAttachPanel();
   refreshAttachData();
 }
 
@@ -3783,18 +3781,6 @@ function renderApprovalMenu() {
     <span class="t"><span>${esc(title)}</span><span class="m">${esc(key)}</span></span>
     <span class="d">${esc(desc)}</span>
   </button>`).join("") + `<div class="tpl-note">审批只发生在轮次边界，不打断工具执行；拒绝会终止运行并写入签名链。档位对新任务生效。</div>`;
-}
-
-function renderTemplateMenu() {
-  const menu = document.getElementById("tpl-menu");
-  if (!menu) return;
-  menu.innerHTML = templateGroups().map(group =>
-    `<div class="tpl-group">${esc(group.title)}</div>` +
-    group.items.map(t => `<button class="tpl-item${t.key === tplKey ? " active" : ""}" data-tpl="${esc(t.key)}">
-      <span class="t"><span>${esc(t.title)}</span><span class="m">${t.limits ? t.limits.max_calls : "?"} calls · ${t.max_rounds} rounds</span></span>
-      <span class="d">${esc(t.story)}</span>
-    </button>`).join("")
-  ).join("") + `<div class="tpl-note">离线 mock：任意目标都会执行同一套研究蓝图（作用于合成语料）；模块决定工具与验证，模板决定授权、预算与故障注入。</div>`;
 }
 
 /* ---------- 模型与思考强度选择器（composer 徽章） ---------- */
@@ -3950,8 +3936,20 @@ function renderAttachPanel() {
       ${required ? `<div class="params">必填：${esc(required)}</div>` : '<div class="params">无必填参数</div>'}
     </div>`;
   }).join("");
+  const tplItems = templateGroups().map(group =>
+    group.items.map(t => `
+      <button class="attach-tpl${t.key === tplKey ? " active" : ""}" data-attach-tpl="${esc(t.key)}">
+        <span class="t">${esc(t.title)}</span>
+        <span class="d">${esc(t.story)}</span>
+        ${t.key === tplKey ? '<span class="tick">✓ 当前</span>' : ""}
+      </button>`).join("")
+  ).join("");
   panel.innerHTML = `
     <div class="attach-caption">委托附加面</div>
+    <section class="attach-group">
+      <header><span>委托模板</span><span class="attach-note">决定授权、预算与故障注入</span></header>
+      <div class="attach-tpls">${tplItems}</div>
+    </section>
     ${general ? sourcesGroup : `
     <section class="attach-group">
       <header><span>资料选择</span><span class="attach-note">不选 = 全语料（默认）</span></header>
@@ -4104,7 +4102,6 @@ async function initLive() {
   if (!health.live) {
     const ta = document.getElementById("composer-ta");
     ta.placeholder = "静态回放模式 — 用 python3 server.py --repo … 启动控制台即可真实运行任务";
-    document.getElementById("template-btn").disabled = true;
     document.getElementById("approval-btn").disabled = true;
     const modelBtn = document.getElementById("model-btn");
     if (modelBtn) modelBtn.disabled = true;
@@ -5155,21 +5152,12 @@ function bind() {
       autosize(ta);
     }
   });
-  const tplBtn = document.getElementById("template-btn");
-  const tplMenu = document.getElementById("tpl-menu");
   const apvBtn = document.getElementById("approval-btn");
   const apvMenu = document.getElementById("approval-menu");
   const modelBtn = document.getElementById("model-btn");
   const modelMenu = document.getElementById("model-menu");
-  tplBtn.addEventListener("click", event => {
-    event.stopPropagation();
-    apvMenu.hidden = true;
-    modelMenu.hidden = true;
-    tplMenu.hidden = !tplMenu.hidden;
-  });
   apvBtn.addEventListener("click", event => {
     event.stopPropagation();
-    tplMenu.hidden = true;
     modelMenu.hidden = true;
     apvMenu.hidden = !apvMenu.hidden;
   });
@@ -5177,7 +5165,6 @@ function bind() {
   const attachPanel = document.getElementById("attach-panel");
   plusBtn.addEventListener("click", event => {
     event.stopPropagation();
-    tplMenu.hidden = true;
     apvMenu.hidden = true;
     modelMenu.hidden = true;
     attach.open = !attach.open;
@@ -5185,6 +5172,12 @@ function bind() {
     if (attach.open) refreshAttachData();
   });
   attachPanel.addEventListener("click", event => {
+    const tplSel = event.target.closest("[data-attach-tpl]");
+    if (tplSel) {
+      event.stopPropagation();
+      setTemplate(tplSel.dataset.attachTpl);
+      return;
+    }
     const doc = event.target.closest("[data-attach-doc]");
     if (doc) {
       event.stopPropagation(); // 重渲会移走原节点；先止泡，避免 document 误判为外部点击
@@ -5241,7 +5234,6 @@ function bind() {
       toast("运行中使用当前模型；选择器只对新委托生效");
       return;
     }
-    tplMenu.hidden = true;
     apvMenu.hidden = true;
     if (modelMenu.hidden) renderModelMenu();
     modelMenu.hidden = !modelMenu.hidden;
@@ -5270,7 +5262,6 @@ function bind() {
     }
   });
   document.addEventListener("click", event => {
-    if (!tplMenu.hidden && !tplBtn.contains(event.target) && !tplMenu.contains(event.target)) tplMenu.hidden = true;
     if (!apvMenu.hidden && !apvBtn.contains(event.target) && !apvMenu.contains(event.target)) apvMenu.hidden = true;
     if (!modelMenu.hidden && !modelBtn.contains(event.target) && !modelMenu.contains(event.target)) modelMenu.hidden = true;
     if (attach.open && !plusBtn.contains(event.target) && !attachPanel.contains(event.target)) {
@@ -5372,12 +5363,6 @@ function bind() {
     if (!item) return;
     const index = Number(item.dataset.idx);
     if (palActive !== index) { palActive = index; highlightPalette(); }
-  });
-  document.getElementById("tpl-menu").addEventListener("click", event => {
-    const button = event.target.closest("[data-tpl]");
-    if (!button) return;
-    setTemplate(button.dataset.tpl);
-    document.getElementById("tpl-menu").hidden = true;
   });
   document.getElementById("approval-menu").addEventListener("click", event => {
     const button = event.target.closest("[data-approval-mode]");

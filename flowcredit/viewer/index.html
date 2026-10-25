@@ -6,7 +6,7 @@
 <meta name="color-scheme" content="light">
 <title>Fcode · flowcredit console</title>
 <link rel="icon" type="image/svg+xml" href="brand/favicon.svg">
-<link rel="stylesheet" href="app.css?v=74">
+<script>window.__errs=[];window.addEventListener('error',e=>window.__errs.push((e.message||'')+'@'+e.lineno));window.addEventListener('unhandledrejection',e=>window.__errs.push('rej:'+(e.reason&&e.reason.message||e.reason)));</script><link rel="stylesheet" href="app.css?v=75">
 <link rel="stylesheet" href="design.css?v=75">
 </head>
 <body>
@@ -97,7 +97,6 @@
           <div class="composer">
             <div class="composer-box" id="composer-box">
               <div class="tpl-menu approval-menu" id="approval-menu" hidden></div>
-              <div class="tpl-menu" id="tpl-menu" hidden></div>
               <div class="tpl-menu model-menu" id="model-menu" hidden></div>
               <div class="attach-panel" id="attach-panel" hidden></div>
               <textarea class="composer-ta" id="composer-ta" rows="1"
@@ -106,11 +105,6 @@
                 <button class="c-icon" id="composer-open" title="资料 / 工具 / 预算" aria-expanded="false">
                   <span class="plus-glyph" aria-hidden="true">+</span>
                   <span class="close-glyph" aria-hidden="true">×</span>
-                </button>
-                <button class="c-btn" id="template-btn" title="选择任务模板（决定授权与预算）">
-                  <span data-doodle="list-checks"></span>
-                  <span id="template-label">完整研究</span>
-                  <svg class="i" viewBox="0 0 24 24" style="width:12px;height:12px"><path d="m6 9 6 6 6-6"/></svg>
                 </button>
                 <button class="c-btn" id="approval-btn" title="审批档位：只在需要你确认的地方暂停（对新任务生效）">
                   <span data-doodle="key"></span>
