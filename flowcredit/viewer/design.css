@@ -1770,7 +1770,14 @@ body.reduce-motion *, body.reduce-motion *::before, body.reduce-motion *::after 
 .live-note { margin:0 0 12px; color:var(--text-3); font-size:var(--fs-2); }
 
 /* 叙事时间轴 */
-.turns { position:relative; display:grid; gap:18px; padding:2px 0 8px; }
+.turns { position:relative; display:grid; gap:18px; padding:2px 0 8px;
+  grid-template-columns: minmax(0, 1fr); /* 阻断 grid 子项 min-width:auto 的内容撑轨 */
+}
+.round.turn, .round.turn > * { min-width: 0; }
+.round.turn { overflow-wrap: anywhere; } /* 长 URL 等不可断串强制可断 */
+.round.turn .tool-line, .round.turn .summary { overflow-wrap: anywhere; }
+/* min-width:0 的通配会让 flex 行内的短标签被挤成竖排——豁免之 */
+.round.turn .tool, .round.turn .t-ic { flex: none; white-space: nowrap; }
 .turns::before {
   content:""; position:absolute; left:7px; top:6px; bottom:8px; width:1px; background:var(--line);
 }
