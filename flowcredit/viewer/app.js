@@ -5457,9 +5457,16 @@ function renderChatConfig() {
   cardsSlot.innerHTML = Object.entries(CHATCFG_FIELDS).map(([provider, fields]) => {
     const stored = providers[provider] || {};
     const entry = chatModels.find(m => m.key === provider);
-    const status = entry && entry.available
-      ? `<span class="chatcfg-status ok">可用 · ${esc(entry.model)}</span>`
-      : `<span class="chatcfg-status bad">${esc(entry ? entry.reason : "未配置")}</span>`;
+    let status;
+    if (entry && entry.available) {
+      status = `<span class="chatcfg-status ok">可用 · ${esc(entry.model)}</span>`;
+    } else {
+      const reason = entry ? entry.reason : "未配置";
+      const missing = reason.includes("缺少")
+        ? (reason.split("缺少")[1].match(/、/g) || []).length + 1
+        : 1;
+      status = `<span class="chatcfg-status bad" title="${esc(reason)}">未配置 · 缺 ${missing} 项</span>`;
+    }
     const inputs = fields.map(([name, label, placeholder]) => {
       const value = name === "api_key" ? "" : String(stored[name] ?? "");
       const hint = name === "api_key"
