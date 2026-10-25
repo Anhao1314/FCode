@@ -4735,9 +4735,12 @@ function openSettingsPage() {
   settingsScroll.rail = document.getElementById("rail-body").scrollTop;
   document.getElementById("workspace").classList.add("settings-open");
   document.getElementById("settings-page").hidden = false;
+  document.getElementById("settings-back").textContent = "×";
+  document.getElementById("settings-back").title = "关闭设置 (Esc)";
   document.getElementById("settings-btn").setAttribute("aria-current", "page");
   renderSettings();
   document.getElementById("settings-content").scrollTop = 0;
+
   activateSettingsSection(settingsSection, "auto");
   refreshSettingsStats();
   document.getElementById("settings-back").focus({ preventScroll: true });
