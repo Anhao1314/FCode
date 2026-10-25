@@ -466,6 +466,14 @@ function openLedger() {
   renderLedger();
 }
 
+/* 运行轨迹一律走 API，而不是 `runs/<id>/trace.json` 这个静态路径：静态路径只在
+   运行目录恰好位于 viewer 检出内（本地开发默认）时才取得到，桌面版把运行放在
+   Application Support，于是重启后点开任何已结束的运行都是 404。服务端从运行目录
+   读并做 jail 校验，两种部署走同一条路。 */
+function runTraceUrl(runId) {
+  return `/api/runs/${encodeURIComponent(runId)}/trace`;
+}
+
 async function renderLedger() {
   const main = document.getElementById("main");
   if (!main || !ledgerOpen) return;
@@ -474,7 +482,7 @@ async function renderLedger() {
   const missing = runHistory.filter(run => !run.cost && run.tracePath);
   await Promise.all(missing.map(async run => {
     try {
-      const response = await fetch(run.tracePath, { cache: "no-store" });
+      const response = await fetch(runTraceUrl(run.id), { cache: "no-store" });
       if (!response.ok) return;
       const trace = await response.json();
       cache.set("run:" + run.id, trace);
@@ -1994,11 +2002,9 @@ function reviewErrorText(data, status) {
 /* 判断落链后后端会重建 trace；这里把新 trace 拉回来，报告才能带上刚追加的事件。 */
 const reviewTraceRefreshes = new Map();
 
-function refreshReviewedTrace(runId, tracePath) {
+function refreshReviewedTrace(runId) {
   if (!runId) return Promise.resolve(null);
-  const run = currentRun();
-  const path = tracePath || (run && run.tracePath) || `runs/${runId}/trace.json`;
-  const promise = fetch(path, { cache: "no-store" })
+  const promise = fetch(runTraceUrl(runId), { cache: "no-store" })
     .then(response => (response.ok ? response.json() : null))
     .then(trace => {
       if (!trace || !Array.isArray(trace.events)) return null;
@@ -2065,7 +2071,7 @@ async function submitReview(runId) {
     state.error = "";
     paintReviewPanel(runId);
     loadReviewProfile(shownTrace() || {}, { force: true });
-    refreshReviewedTrace(runId, data.tracePath);
+    refreshReviewedTrace(runId);
     const label = REVIEW_LABEL[state.recorded.decision] || state.recorded.decision;
     toast(`已记录 · ${label} · #${sequence === undefined || sequence === null ? "—" : sequence}`);
   } catch (error) {
@@ -4440,8 +4446,7 @@ async function selectRun(id) {
   }
   renderMain(`<div class="empty">加载运行记录…</div>`, { mode: "loading" });
   try {
-    const path = (run && run.tracePath) || `runs/${id}/trace.json`;
-    const trace = await fetch(path, { cache: "no-store" }).then(response => {
+    const trace = await fetch(runTraceUrl(id), { cache: "no-store" }).then(response => {
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       return response.json();
     });

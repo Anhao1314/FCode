@@ -24,6 +24,7 @@ from console_common import (
     CHAT_CONFIG_PATH,
     DOMAIN_KEY,
     EFFORT_LEVELS,
+    FINISHED_STATUS,
     REVIEWABLE_STATUS,
     RUNS_DIR,
     TERMINAL_STATUS,
@@ -327,31 +328,52 @@ class RunManager:
 
     # ------------------------------------------------------------- persistence
 
+    #: What a run interrupted by a restart is labelled with. The trace stops
+    #: where the process did; calling it ``running`` would promise work nobody
+    #: is doing, and calling it ``failed`` would contradict the kernel's
+    #: unknown-outcome rule.
+    INTERRUPTED_NOTE = "进程重启时这次运行还在进行；轨迹停在进程消失的那一刻"
+
     def _load_history(self) -> None:
+        """Make runs from earlier processes visible again, read-only.
+
+        The index, the trace and the task database all outlive the process, so
+        this rebuilds only the in-memory record: no thread, no observer, no
+        re-ingest, no snapshot. One damaged meta.json is skipped rather than
+        taking the console's boot down with it — a half-written file must not
+        hide the rest of the history.
+        """
         for meta_path in sorted(self.runs_dir.glob("run-*/meta.json")):
             try:
                 meta = json.loads(meta_path.read_text(encoding="utf-8"))
-            except (OSError, ValueError):
+                if not isinstance(meta, dict) or not str(meta.get("id") or "").strip():
+                    continue
+                recorded = str(meta.get("status") or "")
+                interrupted = recorded not in FINISHED_STATUS
+                run = Run(
+                    id=str(meta["id"]),
+                    template=str(meta.get("template") or "?"),
+                    objective=str(meta.get("objective") or ""),
+                    created=str(meta.get("created") or ""),
+                    pace=0.0,
+                    status="stopped" if interrupted else recorded,
+                    rounds=int(meta.get("rounds") or 0),
+                    event_count=int(meta.get("events") or 0),
+                    trace_path=str(meta.get("tracePath") or ""),
+                    trace_verified=bool(meta.get("verified", False)),
+                    name=str(meta.get("name") or ""),
+                    pinned=bool(meta.get("pinned", False)),
+                    approval=str(meta.get("approval") or "consequential"),
+                    task_id=str(meta.get("taskId") or ""),
+                    model=str(meta.get("model") or "mock"),
+                    effort=str(meta.get("effort") or ""),
+                    cost=meta.get("cost"),
+                    spec=meta.get("spec"),
+                    error=self.INTERRUPTED_NOTE if interrupted else str(meta.get("error") or ""),
+                    finished=True,
+                )
+            except (OSError, ValueError, TypeError):
                 continue
-            run = Run(
-                id=meta["id"],
-                template=meta.get("template", "?"),
-                objective=meta.get("objective", ""),
-                created=meta.get("created", ""),
-                pace=0.0,
-                status=meta.get("status", "error"),
-                rounds=int(meta.get("rounds", 0)),
-                event_count=int(meta.get("events", 0)),
-                trace_path=meta.get("tracePath", ""),
-                trace_verified=bool(meta.get("verified", False)),
-                name=meta.get("name", ""),
-                pinned=bool(meta.get("pinned", False)),
-                approval=meta.get("approval", "consequential"),
-                task_id=meta.get("taskId", ""),
-                cost=meta.get("cost"),
-                spec=meta.get("spec"),
-                finished=True,
-            )
             self.runs[run.id] = run
             self.order.append(run.id)
         self.order.sort(key=lambda rid: self.runs[rid].created, reverse=True)
@@ -359,6 +381,13 @@ class RunManager:
     def _write_meta(self, run: Run) -> None:
         meta = run.to_json()
         meta["verified"] = run.trace_verified
+        # Model and effort are not in the list payload (the menu does not need
+        # them per row) but they must survive a restart: without them a
+        # restored run resumed after the fact would silently fall back to the
+        # offline mock.
+        meta["model"] = run.model
+        meta["effort"] = run.effort
+        meta["error"] = run.error
         try:
             (self.runs_dir / run.id / "meta.json").write_text(
                 json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8"

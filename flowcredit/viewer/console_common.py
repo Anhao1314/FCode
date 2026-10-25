@@ -60,6 +60,29 @@ LEGACY_CHAT_CONFIG = VIEWER_DIR / "chat-config.json"
 MAX_REQUEST_BODY = 1_048_576
 
 
+def run_trace_path(runs_dir: Path | str, run_id: str) -> Path | None:
+    """The trace file of one run, or None if the id would leave the runs dir.
+
+    Traces are served through the API, not as static files: ``runs/`` only
+    resolves as a static path when the runs directory happens to sit inside the
+    viewer root (the development default), while the desktop bundle keeps its
+    runs in Application Support. This is the single place that decides which
+    file a run's trace is, and it refuses any id that is not exactly one
+    directory name inside the runs dir.
+    """
+    name = str(run_id or "").strip()
+    if not name or name.startswith(".") or name != Path(name).name:
+        return None
+    root = Path(runs_dir).resolve()
+    try:
+        resolved = (root / name / "trace.json").resolve()
+    except OSError:
+        return None
+    if resolved.parent.name != name or root not in resolved.parents:
+        return None
+    return resolved
+
+
 def forbidden_static_path(path: str) -> bool:
     """Paths the static handler must never serve (configs, databases, temp)."""
     name = Path(path).name
@@ -90,6 +113,13 @@ TERMINAL_STATUS = ("succeeded", "failed", "denied", "recovery_required")
 #: Run statuses a review may be recorded against. ``stopped`` and ``error`` are
 #: terminal in the console even though the task itself ends as ``failed``.
 REVIEWABLE_STATUS = ("succeeded", "failed", "denied", "stopped", "error")
+#: Statuses a finished run can be *recorded* with: the union of both terminal
+#: sets above (``recovery_required`` ends a task but is not reviewable, and a
+#: stopped run is reviewable but not terminal in the task sense). Anything else
+#: found in a meta.json means the process died mid-flight, and history is
+#: restored as ``stopped`` with a note — never as ``running``, because nobody
+#: is doing that work any more.
+FINISHED_STATUS = tuple(dict.fromkeys(TERMINAL_STATUS + REVIEWABLE_STATUS))
 
 
 # ---------------------------------------------------------------- model catalog

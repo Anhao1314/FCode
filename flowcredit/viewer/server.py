@@ -55,6 +55,7 @@ from console_common import (  # noqa: E402
     RUNS_DIR,
     forbidden_static_path,
     migrate_legacy_chat_config,
+    run_trace_path,
 )
 from console_manager import RunManager as _RunManager  # noqa: E402
 
@@ -336,6 +337,8 @@ class Handler(SimpleHTTPRequestHandler):
                 return self._json({"error": "no such run"}, 404)
             if action == "stream":
                 return self._stream(run)
+            if action == "trace":
+                return self._run_trace(run)
             if action == "":
                 return self._json(run.to_json(detail=True))
             if action == "queue":
@@ -362,6 +365,28 @@ class Handler(SimpleHTTPRequestHandler):
                 return self._json(record)
             return self._json({"error": "unknown action"}, 404)
         return self._json({"error": "unknown endpoint"}, 404)
+
+    def _run_trace(self, run: Run) -> None:
+        """One run's trace, read out of the manager's runs directory.
+
+        ``runs/<id>/trace.json`` is only reachable as a *static* path when the
+        runs directory happens to sit inside the viewer checkout (the
+        development default). The desktop bundle keeps runs in Application
+        Support, where the static handler cannot see them, so a finished run
+        opened after a restart used to answer 404. Serving it here gives both
+        deployments one code path, and the jail check in ``run_trace_path``
+        keeps the read inside the run's own directory.
+        """
+        path = run_trace_path(self.manager.runs_dir, run.id)
+        if path is None:
+            return self._json({"error": "refused: trace path is outside the runs directory"}, 400)
+        if not path.is_file():
+            return self._json({"error": "this run has no trace on disk yet"}, 404)
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError) as error:
+            return self._json({"error": f"trace is unreadable: {error}"}, 500)
+        return self._json(payload)
 
     def _stream(self, run: Run) -> None:
         self.send_response(200)
