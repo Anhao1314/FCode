@@ -209,6 +209,32 @@ class RunManager:
                 # fetch; refuse at creation instead of failing mid-run. A
                 # script delegation plans no fetch at all.
                 raise ValueError("a research delegation needs spec.sources (1 to 5 URLs)")
+            # Chat-to-work bridge: the conversation a delegation came from, so
+            # "周三/当天/到了后" resolve against what the user actually said.
+            # Capped hard — context travels, but cannot smuggle a payload.
+            origin = spec.get("origin_thread")
+            if origin is not None:
+                if not isinstance(origin, dict):
+                    raise ValueError("origin_thread must be an object")
+                if origin.get("threadId") is not None and not isinstance(origin["threadId"], str):
+                    raise ValueError("origin_thread.threadId must be a string")
+                for field in ("threadTitle",):
+                    if origin.get(field) is not None and not isinstance(origin[field], str):
+                        raise ValueError(f"origin_thread.{field} must be a string")
+                messages = origin.get("messages")
+                if messages is None:
+                    messages = []
+                if not isinstance(messages, list) or not all(
+                    isinstance(item, dict) and item.get("role") in ("user", "assistant")
+                    and isinstance(item.get("text"), str)
+                    for item in messages
+                ):
+                    raise ValueError("origin_thread.messages must be user/assistant objects")
+                if len(messages) > 24:
+                    raise ValueError("origin_thread carries at most 24 messages")
+                origin["messages"] = [
+                    {"role": item["role"], "text": item["text"][:600]} for item in messages[:24]
+                ]
         else:
             scope = spec.get("scope")
             if scope is not None:

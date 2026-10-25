@@ -2370,11 +2370,16 @@ function sessionHeadHtml(trace, title, note = "") {
     grant.grant_id ? `${grant.grant_id} · r${grant.revision ?? ""}` : "",
     note,
   ].filter(Boolean).map(item => esc(item)).join(" · ");
+  const origin = (binding.spec || {}).origin_thread || null;
+  const originChip = origin
+    ? `<button class="meta-button origin-chip" type="button" data-origin-thread="${esc(origin.threadId || "")}" title="来自对话${origin.threadTitle ? "：" + esc(origin.threadTitle) : ""} · 点击跳回">来自对话${origin.threadTitle ? " · " + esc(origin.threadTitle.slice(0, 18)) : ""}</button>`
+    : "";
   return `<header class="session-head">
     <p class="session-kicker">${esc(title || task.id || "运行")}</p>
     <h1 class="session-title">${esc(task.objective || "未命名委托")}</h1>
     <div class="session-meta">
       <span>${meta}</span>
+      ${originChip}
       <span class="grow"></span>
       <button class="meta-button" type="button" data-rail-open>事件 / 链验证</button>
     </div>
@@ -3367,6 +3372,7 @@ const intake = {
   snapshots: [],
   returnKey: null,
   returnLabel: "",
+  origin: null,
 };
 
 function intakeBadge(choice) {
@@ -3532,7 +3538,7 @@ function intakeSnapshot() {
   });
 }
 
-function startIntake(text = "") {
+function startIntake(text = "", extras = null) {
   if (!health || !health.live) {
     toast("回放模式：用 python3 viewer/server.py 启动后才能创建委托");
     return;
@@ -3549,6 +3555,7 @@ function startIntake(text = "") {
   intake.active = true;
   intake.messages = [];
   intake.spec = {};
+  intake.origin = extras && extras.origin ? extras.origin : null;
   intake.choices = [];
   intake.readyTask = null;
   intake.thinking = false;
@@ -3557,7 +3564,9 @@ function startIntake(text = "") {
   intake.returnLabel = document.getElementById("tb-title").textContent || "当前视图";
   document.getElementById("app").classList.add("intake-mode");
   document.getElementById("tb-title").textContent = "新委托 · 需求确认";
-  document.getElementById("tb-chips").innerHTML = `<span class="chip">需求确认</span>`;
+  document.getElementById("tb-chips").innerHTML = intake.origin
+    ? `<span class="chip">需求确认</span><span class="chip">含对话上下文 · ${intake.origin.messages.length} 条</span>`
+    : `<span class="chip">需求确认</span>`;
   const ta = document.getElementById("composer-ta");
   ta.value = "";
   autosize(ta);
@@ -3583,6 +3592,7 @@ function startIntake(text = "") {
 function closeIntake(restore = true) {
   if (!intake.active) return;
   intake.active = false;
+  intake.origin = null;
   document.getElementById("app").classList.remove("intake-mode");
   setComposerRunning(false);
   if (restore && intake.returnKey) {
@@ -3691,7 +3701,7 @@ async function startIntakeRun() {
         objective: task.objective,
         template: task.template,
         approval: task.approval,
-        spec: { ...task.spec, ...delegationSpecExtras() },
+        spec: { ...task.spec, ...delegationSpecExtras(), ...(intake.origin ? { origin_thread: intake.origin } : {}) },
         ...(modelChoice.key !== "mock"
           ? { model: modelChoice.key, effort: modelChoice.effort || "medium" }
           : {}),
@@ -3710,6 +3720,7 @@ async function startIntakeRun() {
     attach.mcp = { servers: attach.mcp.servers, loaded: false };
     renderAttachPanel();
     intake.active = false;
+    intake.origin = null;
     document.getElementById("app").classList.remove("intake-mode");
     setComposerRunning(false);
     toast("委托已受理 · 开始执行");
@@ -6270,7 +6281,16 @@ function delegateChatMessage(messageId) {
   if (!chat.current) return;
   const message = chat.current.messages.find(item => item.id === messageId);
   if (!message || message.role !== "user") return;
-  startIntake(message.text);
+  /* 转委托携带对话上下文：本轮目标是 message.text，但“周三/当天/到了后”
+     指代的是本线程前文——把活跃分支的消息一并带过去，规划器才能解析。 */
+  const origin = {
+    threadId: chat.current.id || null,
+    threadTitle: chat.current.title || "",
+    messages: (chat.current.messages || [])
+      .filter(item => item.status !== "error")
+      .map(item => ({ role: item.role, text: String(item.text || "").slice(0, 600) })),
+  };
+  startIntake(message.text, { origin });
 }
 
 function bindChatAttachments() {
@@ -6812,6 +6832,12 @@ function bind() {
     }
     const ledRow = event.target.closest("[data-led-row]");
     if (ledRow && !event.target.closest("[data-led-del]")) { selectRun(ledRow.dataset.ledRow); return; }
+    const originChip = event.target.closest("[data-origin-thread]");
+    if (originChip) {
+      const threadId = originChip.dataset.originThread;
+      if (threadId) { setUiMode("chat"); openChat(threadId); }
+      return;
+    }
     const toggleHead = event.target.closest("[data-toggle]");
     if (toggleHead) {
       const round = toggleHead.closest(".round");

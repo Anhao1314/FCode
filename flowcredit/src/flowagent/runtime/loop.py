@@ -261,11 +261,29 @@ class Loop:
     def restore(self, task: Task) -> WorkingMemory:
         """Rebuild working memory from committed observations."""
         prior_cases: list[dict[str, Any]] = []
+        # Chat → work bridge: the conversation this delegation was handed off
+        # from, frozen in the task binding. Sanitised by the console; filtered
+        # again here so a tampered binding cannot smuggle arbitrary roles.
+        spec = (task.binding or {}).get("spec") or {}
+        origin = spec.get("origin_thread") if isinstance(spec, dict) else None
+        conversation = None
+        if isinstance(origin, dict):
+            raw_messages = origin.get("messages")
+            if isinstance(raw_messages, list):
+                conversation = [
+                    {"role": item.get("role"), "text": item.get("text")}
+                    for item in raw_messages
+                    if isinstance(item, dict)
+                    and item.get("role") in ("user", "assistant")
+                    and isinstance(item.get("text"), str)
+                    and item.get("text")
+                ]
         memory = WorkingMemory(
             objective=task.objective,
             tool_catalog=self.harness.registry.catalog(),
             summarizers=dict(self.memory_summarizers or {}),
             state_fn=self.memory_state_fn,
+            conversation=conversation,
         )
         for event in self.harness.store.events(task.id):
             if event["type"] == "memory_recalled":

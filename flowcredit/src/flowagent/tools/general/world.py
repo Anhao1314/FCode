@@ -53,6 +53,13 @@ class GeneralWorld:
     ) -> None:
         self.spec = dict(spec or {})
         self.mode = "script" if str(self.spec.get("mode") or "") == "script" else "research"
+        # Chat-to-work bridge: the conversation this delegation came from, so
+        # temporal/place references ("周三", "当天", "到了后") in the objective
+        # resolve against what the user actually said. Sanitised upstream by
+        # the console (role/text pairs, capped); kept verbatim here so the
+        # chain carries exactly what the planner saw.
+        origin = self.spec.get("origin_thread")
+        self.origin_thread: dict[str, Any] | None = origin if isinstance(origin, dict) else None
         self.sources: list[str] = [
             str(url) for url in (self.spec.get("sources") or []) if str(url).strip()
         ]

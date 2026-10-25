@@ -102,6 +102,13 @@ class WorkingMemory:
     #: into a ``context_compacted`` chain event and clears the pending marker.
     folded_through: int = 0
     pending_compaction: dict[str, Any] | None = None
+    #: The conversation a delegation was handed off from (chat → work bridge).
+    #: Operator input, frozen in the task binding, sanitised by the console
+    #: (role/text pairs, capped) — carried so temporal/place references in the
+    #: objective ("周三", "当天", "到了后") resolve against what was actually
+    #: said. Absent for direct delegations; the key then never appears in the
+    #: context, so the finance v10 prompt bytes are untouched.
+    conversation: list[dict[str, Any]] | None = None
 
     def record(self, round_no: int, observation: Observation) -> ObservationRecord:
         record = ObservationRecord(
@@ -214,6 +221,12 @@ class WorkingMemory:
         }
         if index_rows:
             context["observation_index"] = index_rows
+        if self.conversation:
+            context["conversation"] = [
+                {"role": item.get("role"), "text": item.get("text")}
+                for item in self.conversation
+                if item.get("role") in ("user", "assistant") and item.get("text")
+            ]
         if self.prior_cases:
             context["prior_cases"] = [
                 {
