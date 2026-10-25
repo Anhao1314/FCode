@@ -118,15 +118,107 @@ object/union/非字符串数组等门控无法校验的类型 → 拒收并给�
 confirmed `MCP_SERVER_UNAVAILABLE`，发出后超时/失联为 unknown）。
 
 不做（v2 及以后）：HTTP 传输、MCP resources/prompts、外部计费工具定价
-（配置位 `billing` 已预留，值恒为 `not-configured`）、shell/终端工具
-（自由形态动作的审批与沙箱是独立设计，单独立项）、浏览器自动化、
-自进化、多 Agent 编排。
+（配置位 `billing` 已预留，值恒为 `not-configured`）、自进化、多
+Agent 编排。
+
+**2026-10 第二批修订**：原"shell/终端工具（单独立项）"已落地为受限
+版 `run_command`（白名单 + 参数策略 + 审批 + 收据，见 4b）；原"浏览
+器自动化（不自建）"已按分层决策经 MCP 导入 `playwright-mcp`（4b）。
+仍未做的：系统级沙箱（容器/seccomp）、自由形态 shell（无白名单的
+任意命令行）、HTTP 传输的 MCP。
 
 密钥纪律：`mcp.json` 的 env 值支持 `"env:VAR_NAME"` 从启动进程解析，
 密钥不落盘；配置内容不进 trace。
 
+## 4b. 能力基线三大件（2026-10 第二批）
+
+通用 Agent 的能力基线补齐为三件，全部走既有 门控→预算→执行→收据 路径：
+
+| 能力 | 形态 | 效果类 | 审批 | 收据 | 独立重算 |
+| --- | --- | --- | --- | --- | --- |
+| `edit_file` | 原生工具 | write | consequential（真实 diff 预览） | before/after blob sha256 + 行数变化 + git commit | 当前盘上哈希，或收据所指 git 历史状态 |
+| `run_command` | 原生工具（受限终端） | write（命令级 readonly 豁免） | consequential（完整命令行卡） | 完整 argv、退出码、耗时、截断标注的合并输出 | 输出语义不可重算 → 收据如实记录，文件效应看 git 快照 |
+| 浏览器自动化 | MCP 导入 `mcp__playwright__*` | write（全部 consequential） | 审批卡显示 URL/选择器参数 | 调用参数 + 返回文本摘要 | 不可独立重算 → not-verified |
+
+### edit_file：锚定替换，不许模糊
+
+`old_text` 必须在目标文件中**唯一**匹配，否则拒绝并返回候选行号（模型
+重试时能看到锚定歧义在哪）；文件不存在拒绝——创建是 `write_file` 的
+语义，编辑器不许混淆两者偷运新文件。每次编辑的改动行数（+/− 合计）
+上限 200，超限拒绝并提示拆分。修改照常自动 commit，因此审批界面天然
+展示这次编辑的真实 diff（与 write_file 同一展示路径）。
+
+### run_command：白名单注册表，不是 shell
+
+- **白名单**：代码默认集（python/python3/node/git/ls/cat/grep/find/
+  wc/diff/pytest/unittest）+ `commands.json`（与 mcp.json 同级，主机
+  审阅；只可加条目，不可弱化内置规则）。
+- **参数策略**：解释器只跑 workspace 内脚本文件（`-c`/`-e`/`-m` 一律
+  拒绝——内联代码是文件监狱看不见的逻辑逃逸）；git 只放行
+  status/diff/log/add/commit（无网络、无改史、无 `-C/--git-dir` 改址）；
+  只读工具的路径参数全部过沙箱监狱；任何参数含 shell 语法
+  （`;` `&&` `||` `|` `<` `>` 反引号 `$(`）直接拒绝——执行用
+  `subprocess` 数组 + `shell=False`，本来就没有 shell 可注入，拒绝是
+  政策声明：终端没有 shell，用 shell 语法书写的提议本就不合法。
+  （代价：grep 交替用多个 `-e`，不写 `a|b`。）
+- **执行**：cwd=workspace/{runId}/，截止默认 30s（参数上限 120s）；
+  stdout/stderr 合并捕获，64KB 截断并如实标注；退出码与耗时入收据
+  （非零退出码是**确定结果**，不是失败）；子进程环境剥离全部 provider
+  凭据，并注入与沙箱一致的 git 身份（无全局 git config 的主机也能
+  经终端 commit）。
+- **分类**：默认 consequential；命令注册表标 readonly 的纯读命令
+  （ls/cat/grep/find/wc/diff/git status|diff|log）免审批——与
+  read_document 同等待遇。分类权在主机注册表，不在模型提议。
+- **超时 = unknown（本批与治理叙事最强的连接点）**：命令已发出而未
+  归——杀整个进程组（不让任何残留继续改工作区），记 `COMMAND_TIMEOUT`
+  `outcome: unknown`，读取已计费，**绝不自动重跑**。对账凭据就是工作
+  区本身的 git 快照：命令实际改了什么，`git log` / `git diff` 一目
+  了然。这与模型侧 unknown（不重发、不退费、凭签名收据对账）同一
+  纪律——工具侧的对账通道不是签名收据，而是沙箱的版本化历史。
+
+### 浏览器（playwright-mcp）：导入而非自建
+
+配置步骤（主机操作）：
+
+1. `cp mcp.json.example mcp.json`，保留/裁剪 `playwright` 条目
+   （`npx @playwright/mcp@latest --stdio`）；
+2. 主机审阅清单：确认信任 `@playwright/mcp` 的包与版本（npx 首次会
+   下载包与浏览器内核——这是外部代码进入主机的过程，审阅发生在
+   这里）；确认要暴露给模型的 browser_* 工具面；`readonlyTools`
+   仅在主机确信某工具只读时标注（默认不标——浏览器动作天然有外部
+   副作用）；
+3. 重启 console，`/api/mcp` 如实报告导入结果与拒收理由。
+
+诚实边界：浏览器动作的**结果正确性不可独立重算**——runtime 复核的是
+调用是否过门控/预算/审批、收据是否完整（参数 + 返回文本摘要 +
+时延）；页面真的长什么样、点击真的发生了吗，不可复核，收据
+not-verified。这是治理框架对不可验证动作的既定答案。mock stdio
+冒烟（`tests/fixtures/mcp_playwright_mock.py`）锁定导入契约：
+命名 `mcp__playwright__browser_*`、全部 consequential（server 自述
+"read-only" 不被信任）、URL/选择器参数经门控 schema 校验、调用经
+桥接往返。
+
+### 诚实边界：受限终端不是系统级沙箱
+
+run_command 的"受限"是**命令级**的：白名单、参数策略、审批、收据、
+git 快照。操作者批准的脚本能做其解释器能做的任何事（读工作区外文件、
+开连接）——审批界面显示完整命令行、收据记录退出码与输出、工作区
+git 快照记录文件效应，这些让"批准什么"可审阅，但不构成 OS 级隔离。
+容器/seccomp 级隔离是另一个立项。
+
 ## 5. 验收与证据
 
+- 第二批离线测试：`tests/test_capability_baseline.py`（edit_file 唯一
+  匹配/歧义行号/锚不存在/不存在的文件/行数上限/删除语义/预览不落盘；
+  run_command 白名单外拒绝、python -c/-e/-m 拒绝、注入姿势拒绝、
+  路径参数监狱、git 子命令与全局 flag 拒绝、readonly 分类、真实执行
+  与退出码、非零退出为确定结果、超时→unknown 且进程组被杀、输出
+  截断、timeout 参数边界、经终端的 git commit 落进沙箱仓库；脚本
+  委托全流程 Loop 成功 + 双验证（当前盘上/git 历史）、超时路径
+  tool_unknown 只派发一次；commands.json 只加不减；playwright mock
+  stdio 冒烟：命名空间导入、全部 consequential、server 自述不被信任、
+  URL 参数门控校验、调用往返、主机 readonly 标注生效）。全量 361 项
+  通过（原 328 零回归）。
 - 离线测试：`tests/test_general_capabilities.py`（沙箱逃逸矩阵、SSRF
   各地址段、DNS 重绑定、钉住连接、超时→unknown、前置拒绝为 confirmed、
   1 MiB 上限、重定向再校验、收据字段与 not-verified、门控效果类、

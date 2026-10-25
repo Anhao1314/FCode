@@ -521,9 +521,11 @@ class RunManager:
         """Validate operator delegation overrides before a run exists.
 
         Finance delegations carry ``scope`` (which corpus documents this run may
-        read) and ``budget``. General delegations carry ``sources`` (the URLs
-        fetch_url may visit) and ``budget``. Both are facts in the task
-        binding, consumed by the run thread — not decorative UI state.
+        read) and ``budget``. General delegations carry a mode: ``research``
+        needs ``sources`` (the URLs fetch_url may visit); ``script`` needs
+        neither (the plan writes and runs a script in the sandbox). ``budget``
+        applies to both. All of it is fact in the task binding, consumed by
+        the run thread — not decorative UI state.
         """
         if spec is None:
             return None
@@ -531,6 +533,17 @@ class RunManager:
             raise ValueError("spec must be an object")
         general = getattr(scenario, "module", DOMAIN_KEY) != DOMAIN_KEY
         if general:
+            mode = str(spec.get("mode") or "research")
+            if mode not in ("research", "script"):
+                raise ValueError("mode must be research or script")
+            script_path = spec.get("scriptPath")
+            if script_path is not None and (
+                not isinstance(script_path, str)
+                or not script_path.strip()
+                or "/" in script_path
+                or script_path.startswith(".")
+            ):
+                raise ValueError("scriptPath must be a bare workspace filename")
             sources = spec.get("sources")
             if sources is not None:
                 if not isinstance(sources, list) or not all(isinstance(item, str) for item in sources):
@@ -543,10 +556,11 @@ class RunManager:
                     parsed = urlparse(url)
                     if parsed.scheme not in ("http", "https") or not parsed.hostname:
                         raise ValueError(f"sources contains a non-http(s) URL: {url[:120]!r}")
-            elif "scope" not in spec:
-                # A general delegation without sources cannot plan a single
-                # fetch; refuse at creation instead of failing mid-run.
-                raise ValueError("a general delegation needs spec.sources (1 to 5 URLs)")
+            elif mode == "research" and "scope" not in spec:
+                # A research delegation without sources cannot plan a single
+                # fetch; refuse at creation instead of failing mid-run. A
+                # script delegation plans no fetch at all.
+                raise ValueError("a research delegation needs spec.sources (1 to 5 URLs)")
         else:
             scope = spec.get("scope")
             if scope is not None:
@@ -926,11 +940,17 @@ class RunManager:
             general = module.key != DOMAIN_KEY
             # The general module keeps its workspace sandbox inside the run
             # directory, next to the chain it feeds; files survive restarts.
+            # commands.json lives next to mcp.json (repo root): the host's
+            # extension of the terminal whitelist, injected here.
             world_kwargs = {}
             sandbox = None
             if general:
                 sandbox = rt.WorkspaceSandbox(run_dir / "workspace")
-                world_kwargs = {"sandbox": sandbox}
+                world_kwargs = {
+                    "sandbox": sandbox,
+                    "command_config": os.environ.get("FCODE_COMMANDS_CONFIG")
+                    or str(rt.repo / "commands.json"),
+                }
             world = module.create_world(
                 partial=scenario.partial_corpus, spec=run.spec or {}, **world_kwargs,
             )
@@ -1016,22 +1036,65 @@ class RunManager:
                 approval_tools += tuple(mcp_bridge.approval_names())
 
             def _approval_preview(tool: str, arguments: dict) -> dict | None:
-                if sandbox is None or tool != "write_file":
+                """主机在执行前算好的审批预览：write_file/edit_file 的真实
+                diff、run_command 的完整命令行。预览与执行共用同一套沙箱
+                校验——预览被沙箱拒绝的，执行也会被拒绝，且原因如实上屏。"""
+                if sandbox is None:
                     return None
-                path = str(arguments.get("path") or "")
-                content = str(arguments.get("content") or "")
-                if not path or not content:
-                    return None
-                try:
-                    return sandbox.diff_preview(path, content)
-                except Exception as error:  # noqa: BLE001 — 审批预览必须先于执行；沙箱拒绝也要如实上屏
-                    return {"path": path, "created": True, "additions": 0,
-                            "removals": 0, "truncated": False, "diff": "",
-                            "error": f"{getattr(error, 'code', type(error).__name__)}: {error}"}
+                if tool == "write_file":
+                    path = str(arguments.get("path") or "")
+                    content = str(arguments.get("content") or "")
+                    if not path or not content:
+                        return None
+                    try:
+                        return sandbox.diff_preview(path, content)
+                    except Exception as error:  # noqa: BLE001 — 审批预览必须先于执行；沙箱拒绝也要如实上屏
+                        return {"path": path, "created": True, "additions": 0,
+                                "removals": 0, "truncated": False, "diff": "",
+                                "error": f"{getattr(error, 'code', type(error).__name__)}: {error}"}
+                if tool == "edit_file":
+                    path = str(arguments.get("path") or "")
+                    old_text = str(arguments.get("old_text") or "")
+                    if not path or not old_text:
+                        return None
+                    try:
+                        return sandbox.edit_preview(path, old_text, str(arguments.get("new_text") or ""))
+                    except Exception as error:  # noqa: BLE001
+                        return {"path": path, "created": False, "additions": 0,
+                                "removals": 0, "truncated": False, "diff": "",
+                                "error": f"{getattr(error, 'code', type(error).__name__)}: {error}"}
+                if tool == "run_command":
+                    command = str(arguments.get("command") or "")
+                    if not command:
+                        return None
+                    argv = [command, *(arguments.get("args") or [])]
+                    return {
+                        "command": " ".join(argv),
+                        "timeout": arguments.get("timeout_seconds") or 30,
+                        "note": "白名单内命令；无 shell、参数逐个校验；超时记 unknown 不重跑",
+                    }
+                return None
+
+            def _classify_consequential(tool: str, arguments: dict) -> bool:
+                """run_command 的命令级分类：注册表标 readonly 的纯读命令
+                （ls/cat/grep/find/wc/diff/git status|diff|log）免审批——与
+                read_document 同等待遇；其余命令一律过审批。分类权在主机
+                的命令注册表，不在模型提议。"""
+                if tool != "run_command" or world is None:
+                    return True
+                runner = getattr(world, "command_runner", None)
+                if runner is None:
+                    return True
+                verdict = runner.policy.classify(
+                    str(arguments.get("command") or ""),
+                    list(arguments.get("args") or []),
+                )
+                return True if verdict is None else verdict
 
             control = RunControl(
                 run, harness, rt, approval_tools, self.approval_timeout,
                 preview=_approval_preview if sandbox is not None else None,
+                classify_consequential=_classify_consequential,
             )
             run.controller = control
             if resume_limits:
@@ -1287,6 +1350,7 @@ class RunControl:
         approval_tools,
         timeout: float,
         preview=None,
+        classify_consequential=None,
     ) -> None:
         self.run = run
         self.harness = harness
@@ -1296,9 +1360,15 @@ class RunControl:
         self.ToolControl = runtime.ToolControl
         self.approval_tools = set(approval_tools)
         #: Optional host hook: (tool, arguments) -> a preview payload the
-        #: approval dialog renders (write_file's real diff). Host-side by
-        #: construction; nothing executes before the decision.
+        #: approval dialog renders (write_file/edit_file's real diff,
+        #: run_command's full command line). Host-side by construction;
+        #: nothing executes before the decision.
         self.preview = preview
+        #: Optional host hook: (tool, arguments) -> True when this specific
+        #: call is consequential. The command registry uses it to classify
+        #: run_command per program (readonly utilities skip the approval);
+        #: every other tool falls back to the approval set.
+        self.classify_consequential = classify_consequential
         self.timeout = max(5.0, float(timeout))
         self._lock = threading.Lock()
         self._commands: deque[dict] = deque()
@@ -1423,6 +1493,14 @@ class RunControl:
         mode = self.run.approval
         tool = step["tool"]
         required = mode == "all" or (mode == "consequential" and tool in self.approval_tools)
+        if required and mode == "consequential" and self.classify_consequential is not None:
+            # 命令级豁免：主机注册表判定为纯读的调用（如 run_command 的
+            # ls/cat/git status）与读工具同等待遇，不过审批。
+            try:
+                if self.classify_consequential(tool, step.get("arguments") or {}) is False:
+                    required = False
+            except Exception:  # noqa: BLE001 — 分类失败按需要审批处理
+                required = True
         if not required:
             return self.ToolControl(task=task, allowed=True)
         if tool in self._remembered:

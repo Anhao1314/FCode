@@ -29,11 +29,15 @@ from typing import Any
 
 from ...core.contracts import AgentError
 
-__all__ = ["WorkspaceSandbox", "MAX_WRITE_CHARS", "DIFF_PREVIEW_LINES"]
+__all__ = ["WorkspaceSandbox", "MAX_WRITE_CHARS", "MAX_EDIT_LINES", "DIFF_PREVIEW_LINES"]
 
 #: One write is bounded well below the 96 KiB plan-argument ceiling, so a
 #: proposal can never smuggle a payload the tool would refuse after approval.
 MAX_WRITE_CHARS = 65_536
+#: One edit is bounded in *changed lines* (additions + removals from the
+#: unified diff), not bytes: a bounded, reviewable change is the whole point
+#: of edit_file. Larger refactors must be split into separate proposals.
+MAX_EDIT_LINES = 200
 #: The approval dialog shows the head of the diff; the chain keeps everything.
 DIFF_PREVIEW_LINES = 240
 
@@ -209,6 +213,112 @@ class WorkspaceSandbox:
             "commit": commit,
             "changed": changed,
         }
+
+    # ------------------------------------------------------------------- edit
+
+    def edit(self, path: str, old_text: str, new_text: str) -> dict[str, Any]:
+        """Replace one unique anchor block; commit and receipt like a write.
+
+        The anchor must match exactly once — a fuzzy or many-way match would
+        make the *approval* (which shows the diff for this exact edit) a lie.
+        Missing files are refused here: creating is ``write_file``'s contract,
+        and blurring the two would let an "edit" smuggle a new file.
+        """
+        target, relative = self.resolve(path)
+        if not target.exists() or target.is_dir():
+            raise AgentError("SANDBOX_EDIT_TARGET_MISSING", f"{relative!r} does not exist; edits never create files")
+        current = target.read_text(encoding="utf-8", errors="replace")
+        new_content, changed_lines, _candidates = self._apply_anchor(current, old_text, new_text, relative)
+        if changed_lines > MAX_EDIT_LINES:
+            raise AgentError(
+                "SANDBOX_EDIT_TOO_LARGE",
+                f"this edit changes {changed_lines} lines; the cap is {MAX_EDIT_LINES} — split it into smaller edits",
+            )
+        additions, removals, _total = self._diff_stat(current, new_content)
+        record = self.write(relative, new_content)
+        record.update({"lines_added": additions, "lines_removed": removals})
+        return record
+
+    def edit_preview(self, path: str, old_text: str, new_text: str) -> dict[str, Any]:
+        """The approval-side twin of :meth:`edit`: nothing is written.
+
+        Returns the diff of the edit this proposal would make, or the refusal
+        the execution would get (missing file, no match, ambiguous anchor,
+        oversized change) so the operator approves exactly what can run.
+        """
+        try:
+            target, relative = self.resolve(path)
+            if not target.exists() or target.is_dir():
+                raise AgentError("SANDBOX_EDIT_TARGET_MISSING", f"{relative!r} does not exist")
+            current = target.read_text(encoding="utf-8", errors="replace")
+            new_content, changed_lines, _candidates = self._apply_anchor(current, old_text, new_text, relative)
+            if changed_lines > MAX_EDIT_LINES:
+                raise AgentError(
+                    "SANDBOX_EDIT_TOO_LARGE",
+                    f"this edit changes {changed_lines} lines; the cap is {MAX_EDIT_LINES}",
+                )
+            preview = self.diff_preview(relative, new_content)
+        except AgentError as error:
+            return {"path": path, "created": False, "additions": 0, "removals": 0,
+                    "truncated": False, "diff": "", "error": f"{error.code}: {error.message}"}
+        preview["edit"] = True
+        return preview
+
+    def _apply_anchor(
+        self, current: str, old_text: str, new_text: str, relative: str
+    ) -> tuple[str, int, list[int]]:
+        """Locate the anchor, enforce uniqueness, return the new content."""
+        if not old_text:
+            raise AgentError("SANDBOX_EDIT_ANCHOR_INVALID", "old_text must be a non-empty anchor block")
+        occurrences: list[int] = []
+        start = 0
+        while True:
+            found = current.find(old_text, start)
+            if found < 0:
+                break
+            occurrences.append(found)
+            start = found + 1  # overlapping anchors count separately: they are still ambiguous
+            if len(occurrences) > 8:
+                break
+        if not occurrences:
+            line = self._nearest_line_hint(current, old_text)
+            hint = f" (nearest anchor starts near line {line})" if line else ""
+            raise AgentError(
+                "SANDBOX_EDIT_ANCHOR_NOT_FOUND",
+                f"old_text does not appear in {relative!r}{hint}",
+            )
+        if len(occurrences) > 1:
+            lines = [current.count("\n", 0, offset) + 1 for offset in occurrences[:8]]
+            raise AgentError(
+                "SANDBOX_EDIT_ANCHOR_AMBIGUOUS",
+                f"old_text matches {len(occurrences)} places in {relative!r} "
+                f"(first at lines {lines}); make the anchor unique",
+            )
+        new_content = current.replace(old_text, new_text, 1)
+        return new_content, self._diff_stat(current, new_content)[2], occurrences
+
+    @staticmethod
+    def _nearest_line_hint(current: str, old_text: str) -> int | None:
+        """Best-effort line hint from the anchor's first surviving line."""
+        first_line = next((line.strip() for line in old_text.splitlines() if line.strip()), "")
+        if not first_line:
+            return None
+        offset = current.find(first_line)
+        if offset < 0:
+            return None
+        return current.count("\n", 0, offset) + 1
+
+    @staticmethod
+    def _diff_stat(current: str, new_content: str) -> tuple[int, int, int]:
+        """(additions, removals, total changed lines) from a unified diff."""
+        diff_lines = list(difflib.unified_diff(
+            current.splitlines(keepends=True),
+            new_content.splitlines(keepends=True),
+            n=0,
+        ))
+        additions = sum(1 for line in diff_lines if line.startswith("+") and not line.startswith("+++"))
+        removals = sum(1 for line in diff_lines if line.startswith("-") and not line.startswith("---"))
+        return additions, removals, additions + removals
 
     # ----------------------------------------------------------------- preview
 

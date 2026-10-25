@@ -182,6 +182,8 @@ SCENARIOS: dict[str, Scenario] = {
             "ls_workspace",
             "read_file",
             "write_file",
+            "edit_file",
+            "run_command",
             "fetch_url",
         ),
         grant={
@@ -191,6 +193,8 @@ SCENARIOS: dict[str, Scenario] = {
                 "ls_workspace",
                 "read_file",
                 "write_file",
+                "edit_file",
+                "run_command",
                 "fetch_url",
             ],
             # The host names the effect classes this delegation may use. A
@@ -203,7 +207,7 @@ SCENARIOS: dict[str, Scenario] = {
         },
         limits=BudgetLimits(12, 20, 20_000, 60_000),
         max_rounds=12,
-        approval_tools=("write_file",),
+        approval_tools=("write_file", "edit_file", "run_command"),
         module="general-work",
     ),
 }

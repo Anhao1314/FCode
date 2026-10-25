@@ -163,26 +163,42 @@ def _task(spec: dict[str, str], original: str) -> dict[str, Any]:
 
 
 GENERAL_TEMPLATE = "general-research"
+_SCRIPT_INTENT = re.compile(r"脚本|script|fibonacci|运行.{0,12}(写|产出)|python|node")
 
 
 def _general_turn(message: str, spec: dict[str, Any] | None) -> dict[str, Any]:
     """The general delegation needs no finance questionnaire.
 
-    The objective is the operator's message; sources and budget come from the
-    attach panel (spec.sources / spec.budget at submission). Intake therefore
-    confirms readiness immediately instead of asking margin questions that do
-    not apply.
+    Two modes, inferred from the objective (the deterministic clarifier's
+    house style — the same way it infers finance intent today):
+
+    * ``script`` — "写一个脚本并运行"：write → run → edit → re-run → results;
+    * ``research`` (default) — sources come from the attach panel and the
+      plan fetches them into a research note.
+
+    The objective is the operator's message; sources, budget and the command
+    whitelist extension are host-side inputs confirmed in the attach panel.
     """
     base = str(message or "").strip()
+    mode = "script" if _SCRIPT_INTENT.search(base) else "research"
     objective = base[:600] or (
         "调研指定的公开主题，把来源摘录与结论写成 research.md 放进工作区"
     )
-    return {
-        "reply": (
+    if mode == "script":
+        reply = (
+            "通用委托（脚本模式）已就绪：写脚本 → 受限终端运行 → 锚定修复 → 复跑 → "
+            "results.md 归档；写入/编辑/命令全部过审批与收据。确认后开始。"
+        )
+        thought = "通用模板：脚本模式；命令白名单与审批全程生效。"
+    else:
+        reply = (
             "通用委托已就绪：来源 URL 与预算在 + 附加面里确认，"
             "抓取与写入全程过门控、预算与收据。确认后开始。"
-        ),
-        "thought": "通用模板：无需财务问卷，来源在附加面板指定。",
+        )
+        thought = "通用模板：无需财务问卷，来源在附加面板指定。"
+    return {
+        "reply": reply,
+        "thought": thought,
         "choices": [],
         "spec": {"original": base[:2000]} if base else {},
         "ready": True,
@@ -193,6 +209,7 @@ def _general_turn(message: str, spec: dict[str, Any] | None) -> dict[str, Any]:
             "spec": {
                 "version": "fcode.intake/v1",
                 "task": "general-research",
+                "mode": mode,
                 "source": "console-intake",
             },
         },
