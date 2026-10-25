@@ -23,17 +23,16 @@ shutil.copytree(ROOT / "flowcredit" / "src", repo_dir / "src")
 
 viewer_dir = repo_dir / "viewer"
 viewer_dir.mkdir()
-for name in (
-    "index.html", "app.css", "design.css", "app.js", "report.js",
-    "icons-doodle.js", "server.py",
-):
-    shutil.copy2(viewer_src / name, viewer_dir / name)
-core = viewer_src / "core"
-if core.exists():
-    shutil.copytree(core, viewer_dir / "core")
-traces = viewer_src / "traces"
-if traces.exists():
-    shutil.copytree(traces, viewer_dir / "traces")
+# Copy every root-level runtime asset instead of a hand-maintained list: a new
+# stylesheet or ES module is then part of the bundle the moment index.html
+# references it. Runtime data (runs/, memory/, *.sqlite) and docs stay out.
+for item in sorted(viewer_src.iterdir()):
+    if item.is_file() and (item.suffix in {".html", ".css", ".js"} or item.name == "server.py"):
+        shutil.copy2(item, viewer_dir / item.name)
+for name in ("core", "brand", "icons", "traces"):
+    directory = viewer_src / name
+    if directory.exists():
+        shutil.copytree(directory, viewer_dir / name)
 
 a = Analysis(
     [str(DESKTOP / "app.py")],
