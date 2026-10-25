@@ -266,7 +266,8 @@ const runLabel = run => run.name || shortObjective(run.objective);
 const stateClass = status =>
   status === "succeeded" ? "ok" : (status === "denied" || status === "failed") ? "bad" : "warn";
 const stateText = status =>
-  ({ succeeded: "成功", failed: "失败", denied: "拒绝" }[status] || (status || "?"));
+  ({ succeeded: "成功", failed: "失败", denied: "拒绝",
+     recovery_required: "待恢复", running: "运行中", stopped: "已停止" }[status] || (status || "?"));
 
 function lastBudget(trace) {
   const rounds = trace.rounds || [];
@@ -575,6 +576,9 @@ async function renderReviews() {
   if (nav) nav.classList.add("active");
   document.getElementById("tb-title").textContent = "判断记录";
   document.getElementById("tb-chips").innerHTML = "";
+  setFoot("判断记录 · 只读汇总", "");
+  const ta = document.getElementById("composer-ta");
+  if (ta) ta.value = "";
   renderMain('<div class="empty">读取判断记录…</div>', { mode: "reviews" });
   let d;
   try {
@@ -615,6 +619,7 @@ function renderScheduledPage() {
   if (nav) nav.classList.add("active");
   document.getElementById("tb-title").textContent = "定时任务";
   document.getElementById("tb-chips").innerHTML = "";
+  setFoot("定时任务 · 草稿在本机", "");
   const list = scheduledList();
   const rows = list.map((t, i) => '<div class="sch-row">'
     + '<div class="sch-main"><b>' + esc(t.objective || "（未命名）") + '</b>'
@@ -5342,7 +5347,9 @@ function bind() {
       store.trace = null;
       renderNav();
       renderMain(stageEmptyHtml(hasRuns ? "描述你想做的分析，我先帮你确认清楚" : ""), { mode: "empty" });
-      document.getElementById("tb-title").textContent = "新委托";
+      const stageTa = document.getElementById("composer-ta");
+      if (stageTa) { stageTa.value = ""; autosize(stageTa); }
+      document.getElementById("tb-title").textContent = "FCode";
       document.getElementById("tb-chips").innerHTML = "";
       const newTa = document.getElementById("composer-ta");
       if (newTa) { newTa.value = ""; autosize(newTa); newTa.focus(); }
