@@ -6,6 +6,7 @@ import {
 import { parseSseFrame, renderMarkdown } from "./core/chat-format.js";
 import { chatMessageHtml } from "./core/chat-view.js";
 import { actionCardHtml, mirrorFrom, runMirrorHtml } from "./core/run-card.js";
+import { foldRuns, foldSummary, isQuietRound } from "./core/round-fold.js";
 
 /* =================================================================== 边界声明
    本轮结构重构只允许改“生成 DOM 的渲染函数”。
@@ -1521,7 +1522,7 @@ function turnBudgetDelta(round) {
 function renderRound(round, index, ann = {}, prevRound = null) {
   const empty = !round.proposal && !round.decision && !round.observation && !round.receipt;
   if (empty && ann.terminal) {
-    return `<article class="round turn terminal" data-open="false">
+    return `<article class="round turn terminal" data-quiet="0" data-open="false">
       <button class="turn-summary" type="button" data-toggle>
         <span class="t-ic">${ICON.term}</span>
         <span class="turn-no">第 ${round.index} 轮</span>
@@ -1538,7 +1539,7 @@ function renderRound(round, index, ann = {}, prevRound = null) {
     </article>`;
   }
   if (empty && !ann.unknown) {
-    return `<article class="round turn live" data-open="true">
+    return `<article class="round turn live" data-quiet="0" data-open="true">
       <button class="turn-summary" type="button" data-toggle>
         <span class="t-ic">${ICON.term}</span>
         <span class="turn-no">第 ${round.index} 轮</span>
@@ -1554,7 +1555,7 @@ function renderRound(round, index, ann = {}, prevRound = null) {
   }
   if (empty) {
     const cause = ann.unknown || "UNKNOWN";
-    return `<article class="round turn unknown" data-open="true">
+    return `<article class="round turn unknown" data-quiet="0" data-open="true">
       <button class="turn-summary" type="button" data-toggle>
         <span class="t-ic">${ICON.term}</span>
         <span class="turn-no">第 ${round.index} 轮</span>
@@ -1611,16 +1612,22 @@ function renderRound(round, index, ann = {}, prevRound = null) {
 
   const gateShort = denied ? "DENIED" : round.observation ? "PASS" : "等待";
   const dotClass = denied ? "bad" : round.observation ? "ok" : "info";
-  return `<article class="round turn${!round.observation && !denied ? " live" : ""}" data-open="${denied ? "true" : "false"}">
+  // ``data-quiet`` is what the folding pass reads: a settled, passed round with
+  // nothing the operator must see at rest. The pass also checks the annotation
+  // and whether an interjection landed here, so this is only the round's own
+  // half of the answer.
+  const quiet = isQuietRound(round, ann) ? "1" : "0";
+  return `<article class="round turn${!round.observation && !denied ? " live" : ""}" data-open="${denied ? "true" : "false"}" data-quiet="${quiet}">
     <button class="turn-summary" type="button" data-toggle>
       <span class="t-ic">${icon}</span>
       <span class="turn-no">第 ${round.index} 轮</span>
       <span class="turn-tool">${esc(tool)}</span>
       <span class="turn-state ${gateClass}"><i class="ev-dot ${dotClass}"></i>${gateShort}</span>
-      <span class="turn-budget">${esc(turnBudgetDelta(round))}</span>
+      <span class="group-size" hidden></span>
       <span class="chev">▾</span>
     </button>
     <div class="turn-body">
+      <div class="turn-meta">${esc(turnBudgetDelta(round))}</div>
       ${args ? `<div class="turn-args"><code>${args}</code></div>` : ""}
       <div class="gate-line ${gateClass}">
         <span class="ev-dot ${dotClass}"></span>
@@ -2403,9 +2410,10 @@ function sessionHeadHtml(trace, title, note = "") {
   const originChip = origin
     ? `<button class="meta-button origin-chip" type="button" data-origin-thread="${esc(origin.threadId || "")}" title="来自对话${origin.threadTitle ? "：" + esc(origin.threadTitle) : ""} · 点击跳回">来自对话${origin.threadTitle ? " · " + esc(origin.threadTitle.slice(0, 18)) : ""}</button>`
     : "";
+  const name = (currentRun() && currentRun().name) || shortObjective(task.objective || "") || "未命名委托";
   return `<header class="session-head">
     <p class="session-kicker">${esc(title || task.id || "运行")}</p>
-    <h1 class="session-title">${esc(task.objective || "未命名委托")}</h1>
+    <h1 class="session-title">${esc(name)}</h1>
     <div class="session-meta">
       <span>${meta}</span>
       ${originChip}
@@ -2469,8 +2477,7 @@ async function render(trace, title) {
 
   renderMain(`
     ${sessionHeadHtml(trace, title, note)}
-    <div id="approval-slot"></div>
-    <div id="queued-slot"></div>
+    ${objectiveMsgHtml(trace)}
     <details class="process-details" id="thought">
       <summary class="process-head">
         <span>计划与预算</span>
@@ -2485,9 +2492,12 @@ async function render(trace, title) {
     </details>
     <section class="turns" id="turns" aria-label="运行时间轴">
       <div id="rounds-slot">${rounds.map((r, i) => roundWrapHtml(messagesByRound(trace), r, anns[i], i > 0 ? rounds[i - 1] : null)).join("")}</div>
+      <div id="approval-slot"></div>
+      <div id="queued-slot"></div>
     </section>
     <div id="result-slot">${terminal && terminal.status ? renderResult(trace) : ""}</div>
   `, { mode: "run" });
+  applyRoundFolding();
 
   if (terminal && terminal.status) loadReviewProfile(trace);
   setFoot(
@@ -2518,8 +2528,7 @@ function liveShell(trace) {
   const task = trace.task || {};
   renderMain(`
     ${sessionHeadHtml(trace, "运行 · " + tplTitle(trace.task && trace.task.binding ? trace.task.binding.scenario : ""), "已提交，等待 Runtime 启动…")}
-    <div id="approval-slot"></div>
-    <div id="queued-slot"></div>
+    ${objectiveMsgHtml(trace)}
     <p class="live-note" id="live-note" aria-live="polite">已提交，等待 Runtime 启动…</p>
     <details class="process-details" id="thought" open>
       <summary class="process-head">
@@ -2535,10 +2544,13 @@ function liveShell(trace) {
     </details>
     <section class="turns" id="turns" aria-label="运行时间轴">
       <div id="rounds-slot"></div>
+      <div id="approval-slot"></div>
+      <div id="queued-slot"></div>
     </section>
     <div id="result-slot"></div>`, { mode: "run" });
   const summary = document.querySelector("#thought > summary");
   if (summary) summary.addEventListener("click", () => { const s = activeSession(); if (s) s.thoughtPinned = true; });
+  applyRoundFolding();
 }
 
 function liveNote(trace) {
@@ -2746,6 +2758,24 @@ function messagesByRound(trace) {
   return map;
 }
 
+/* 线程的开头是任务本身：Kimi 里它是用户那条消息，我们此前把它当文档标题。 */
+function objectiveMsgHtml(trace) {
+  const task = trace.task || {};
+  const objective = String(task.objective || "").trim();
+  if (!objective) return "";
+  const binding = task.binding || {};
+  const spec = binding.spec || {};
+  const chips = [
+    spec.mode ? `<span class="msg-chip">${esc(spec.mode === "script" ? "脚本" : "研究")}</span>` : "",
+    spec.sources && spec.sources.length ? `<span class="msg-chip">${spec.sources.length} 个来源</span>` : "",
+    binding.scenario ? `<span class="msg-chip">${esc(tplTitle(binding.scenario))}</span>` : "",
+  ].filter(Boolean).join("");
+  return `<div class="msg objective" data-objective="1">
+    <div class="msg-head"><span class="msg-who">任务</span>${chips ? `<span class="msg-chips">${chips}</span>` : ""}</div>
+    <div class="msg-text">${esc(objective)}</div>
+  </div>`;
+}
+
 function roundWrapHtml(msgMap, round, ann, prevRound = null) {
   const msgs = msgMap.get(round.index) || [];
   const bubbles = msgs.map(m => `<div class="msg op${m.steered ? " steered" : ""}">
@@ -2753,6 +2783,55 @@ function roundWrapHtml(msgMap, round, ann, prevRound = null) {
     <div class="msg-text">${esc(m.text)}</div>
   </div>`).join("");
   return `<div class="round-wrap">${bubbles}${renderRound(round, round.index - 1, ann, prevRound)}</div>`;
+}
+
+/* 折叠：连续"安静"的轮次收成一行摘要（Kimi 的 toolcall-rollup 形状）。
+   安静 = 已执行、已通过、没有插话、不是拒绝/未知/进行中——任何需要操作员看见
+   的轮次都不折。折叠只改 DOM 的可见性，不动 data-* 契约，所以增量打补丁那条
+   路径（syncLiveRounds 按索引替换）完全不受影响。 */
+function applyRoundFolding() {
+  const slot = document.getElementById("rounds-slot");
+  if (!slot) return;
+  const wraps = Array.from(slot.children);
+  const trace = shownTrace() || {};
+  const anns = annotateRounds(trace);
+  const msgMap = messagesByRound(trace);
+  const rounds = trace.rounds || [];
+  const quiet = wraps.map((wrap, index) => {
+    const card = wrap.querySelector(".round");
+    const round = rounds[index] || {};
+    const hasMsg = ((msgMap.get(round.index) || []).length > 0);
+    return !!card && card.dataset.quiet === "1" && isQuietRound(round, anns[index] || {}, hasMsg);
+  });
+  // 先全部还原，再按当前分组折叠——状态变化（例如某轮被拒绝）不会留下残留。
+  wraps.forEach(wrap => {
+    const card = wrap.querySelector(".round");
+    if (card) card.dataset.folded = "";
+    wrap.hidden = false;
+    const chip = card && card.querySelector(".group-size");
+    if (chip) { chip.hidden = true; chip.textContent = ""; }
+  });
+  foldRuns(quiet).forEach(({ start, size }) => {
+    const head = wraps[start];
+    const headCard = head && head.querySelector(".round");
+    if (!headCard) return;
+    const expanded = headCard.dataset.open === "true";
+    const summary = foldSummary(rounds.slice(start, start + size), size);
+    headCard.querySelector(".turn-summary").setAttribute("aria-expanded", String(expanded));
+    const chip = headCard.querySelector(".group-size");
+    if (chip) {
+      chip.hidden = false;
+      chip.textContent = `${summary.label} · ${summary.verdict} · ${summary.tools}`;
+      chip.title = summary.tools;
+    }
+    for (let i = start; i < start + size; i++) {
+      const wrap = wraps[i];
+      if (!wrap) continue;
+      const card = wrap.querySelector(".round");
+      if (card) card.dataset.folded = "1";
+      if (i > start && !expanded) wrap.hidden = true;
+    }
+  });
 }
 
 function syncLiveRounds(s, trace) {
@@ -2793,6 +2872,7 @@ function syncLiveRounds(s, trace) {
     }
     s.roundHtml[i] = html;
   }
+  applyRoundFolding();
 }
 
 function setComposerRunning(running) {
@@ -7272,6 +7352,9 @@ function bind() {
       if (round) {
         round.dataset.open = round.dataset.open === "true" ? "false" : "true";
         round.dataset.user = "1";
+        // A folded run opens with its head: the summary line and its parts are
+        // one disclosure, so toggling the head re-runs the fold.
+        if (round.dataset.folded === "1") applyRoundFolding();
         return;
       }
     }
