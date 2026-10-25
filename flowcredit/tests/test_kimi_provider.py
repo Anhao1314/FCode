@@ -16,6 +16,7 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
 from flowagent.core.contracts import AgentError  # noqa: E402
+from flowagent.pacing import reset  # noqa: E402
 from flowagent.providers.kimi import (  # noqa: E402
     KimiPriceSnapshot,
     KimiProvider,
@@ -103,6 +104,12 @@ class KimiSettingsTests(unittest.TestCase):
 
 
 class KimiProviderTests(unittest.TestCase):
+    def setUp(self) -> None:
+        reset()
+
+    def tearDown(self) -> None:
+        reset()
+
     def _fake(self, payload: dict):
         seen: dict[str, object] = {}
 

@@ -69,6 +69,9 @@ export LMSTUDIO_MIN_CALL_INTERVAL_SECONDS=0     # 云端有 RPM 限制时按需�
 export FCODE_OPENAI_COMPAT_PROVIDERS="LMSTUDIO" # 声明（多个用逗号分隔）
 ```
 
+间隔预约表是进程级的，键是 provider + base URL；同一端点的对话与委托运行共享
+一张表，不会各自计时后同时越过组织 RPM。
+
 重启 console。模型菜单里出现该端点，预算预览按其价格快照重算
 （0 元即模板草案）。此后创建委托选择它即可——门控、审批、收据、
 unknown 语义、链验证与任何 provider 完全一致。

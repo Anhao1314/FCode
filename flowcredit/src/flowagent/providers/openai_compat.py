@@ -49,6 +49,7 @@ from pathlib import Path
 from typing import Any, Callable, Mapping
 
 from ..core.contracts import PLAN_VERSION, AgentError
+from ..pacing import pace_key, reserve_slot
 from .base import Proposal
 from .prompt import PROMPT_VERSION, parse_proposal_text, render_prompt
 
@@ -608,6 +609,7 @@ class OpenAICompatProvider:
     ) -> None:
         self.label = label or self.name
         self.name = self.label  # the provider identity receipts carry
+        self.base_url = base_url
         self.client = CompatClient(
             label=self.label,
             api_key=api_key,
@@ -630,7 +632,6 @@ class OpenAICompatProvider:
         if min_call_interval_seconds < 0:
             raise ValueError("min_call_interval_seconds must be non-negative")
         self.min_call_interval_seconds = min_call_interval_seconds
-        self._last_call_at: float | None = None
         self.calibration = PromptCalibration.load(calibration_path)
         self.issue_receipt = issue_receipt
         self.raw_sink = raw_sink
@@ -689,24 +690,20 @@ class OpenAICompatProvider:
         )
 
     def _pace(self) -> None:
-        """Space dispatches out to respect the host's org-level RPM ceiling.
+        """Reserve a dispatch slot on the endpoint's shared rate limiter.
 
-        This is transport rate shaping before the send, not a retry. A fresh
-        process conservatively assumes a sibling or resumed worker may have
-        just called, so its first dispatch waits a full interval.
+        This is transport rate shaping before the send, not a retry. The slot
+        table is process-wide, so a chat answer that just used the same
+        endpoint also counts; the first agent dispatch keeps its conservative
+        full-interval wait when nobody has called yet.
         """
-        if self.min_call_interval_seconds <= 0:
-            return
-        if self._last_call_at is None:
-            time.sleep(self.min_call_interval_seconds)
-            return
-        wait = self.min_call_interval_seconds - (time.monotonic() - self._last_call_at)
+        wait = reserve_slot(
+            pace_key(self.label, self.base_url),
+            self.min_call_interval_seconds,
+            first_call_waits=True,
+        )
         if wait > 0:
             time.sleep(wait)
-
-    def _mark_call(self) -> None:
-        if self.min_call_interval_seconds > 0:
-            self._last_call_at = time.monotonic()
 
     def propose(self, context: dict[str, Any]) -> Proposal:
         system, user = render_prompt(context)
@@ -714,10 +711,7 @@ class OpenAICompatProvider:
         reserved_prompt_tokens = self.calibration.estimate(system, user)
         self._pace()
         started = time.monotonic()
-        try:
-            content, usage, request_id = self.client.chat(system, user)
-        finally:
-            self._mark_call()
+        content, usage, request_id = self.client.chat(system, user)
         latency_ms = int((time.monotonic() - started) * 1000)
 
         if self.raw_sink is not None:

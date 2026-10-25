@@ -94,7 +94,9 @@ API：`GET/POST /api/settings/chat-config`、`GET /api/chat/models`。
 - **附件只收纯文本**（代码、Markdown、JSON、CSV 等）。图片/PDF/Office 不在 v1；IAB 的文件选择器本身也不支持上传。
 - **每线程预算**默认 60 次调用 / 300,000 µUSD / 200,000 tokens；可用 `FCODE_CHAT_MAX_*` 调整。
 - **没有图片理解、没有跨线程记忆、没有并行工具调用**。这些仍属于委托/评估那条线。
-- **pacing 是进程内按 provider key 计的**；对话与委托运行各自持有节流状态，共享同一个 Kimi 组织 RPM 时需要人工错峰。
+- **pacing 是进程级、按端点计的**（provider + base URL）；对话与委托运行共享同一张
+  预约表，同一个 Kimi 组织 RPM 不会被两条调用路径同时打满。对话首调立即开跑，
+  委托运行首调保守等一个间隔。
 - 对话回答不可“独立重算”；它的可信性来自模型调用收据与事件链，不来自 verifier。界面不把回答标成“已验证”。
 
 ## 验收

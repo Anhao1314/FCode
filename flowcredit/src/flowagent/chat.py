@@ -34,6 +34,7 @@ from urllib.parse import urlsplit
 from .core.contracts import AgentError, Task
 from .core.receipts import ReceiptStore
 from .core.store import TaskStore, utc_now
+from .pacing import pace_key, reserve_slot
 from .runtime.budget import Budget, BudgetLimits
 
 __all__ = [
@@ -412,24 +413,6 @@ def parse_sse_data(line: str | bytes) -> dict[str, Any] | None:
     except ValueError:
         return None
     return value if isinstance(value, dict) else None
-
-
-_PACE_LOCK = threading.Lock()
-_LAST_CALL: dict[str, float] = {}
-
-
-def _pace_wait(key: str, interval: float) -> float:
-    if interval <= 0:
-        return 0.0
-    now = time.monotonic()
-    with _PACE_LOCK:
-        last = _LAST_CALL.get(key, 0.0)
-    return max(0.0, interval - (now - last))
-
-
-def _mark_call(key: str) -> None:
-    with _PACE_LOCK:
-        _LAST_CALL[key] = time.monotonic()
 
 
 def _estimate_tokens(messages: list[dict[str, Any]]) -> int:
@@ -1126,14 +1109,16 @@ CREATE TABLE IF NOT EXISTS chat_thread_meta (
             "budget": budget.snapshot(),
         }
 
-        wait = _pace_wait(config.key, config.min_interval_seconds)
+        wait = reserve_slot(
+            pace_key(config.key, config.base_url),
+            config.min_interval_seconds,
+        )
         if wait > 0:
             yield {"type": "wait", "seconds": int(wait + 0.999), "provider": config.label}
             remaining = wait
             while remaining > 0:
                 time.sleep(min(0.25, remaining))
                 remaining -= 0.25
-        _mark_call(config.key)
 
         text_parts: list[str] = []
         reasoning_parts: list[str] = []

@@ -23,6 +23,7 @@ from flowagent.chat import (  # noqa: E402
     resolve_chat_provider,
 )
 from flowagent.core.contracts import AgentError  # noqa: E402
+from flowagent.pacing import reset  # noqa: E402
 
 
 class ChatServiceTests(unittest.TestCase):
@@ -32,8 +33,10 @@ class ChatServiceTests(unittest.TestCase):
         patcher = mock.patch.dict(os.environ, {"FCODE_CHAT_MOCK_DELAY": "0"}, clear=False)
         patcher.start()
         self.addCleanup(patcher.stop)
+        reset()
         self.service = ChatService(pathlib.Path(self._tmp.name) / "chat.sqlite")
         self.addCleanup(self.service.close)
+        self.addCleanup(reset)
 
     def send(self, text: str, thread_id: str | None = None, **kwargs):
         return list(self.service.send(thread_id=thread_id, text=text, model="mock", **kwargs))
@@ -280,6 +283,12 @@ class ChatFailureAndPayloadTests(unittest.TestCase):
 
 class RemoteStreamTests(unittest.TestCase):
     """The OpenAI-compatible SSE client, against a local fake provider."""
+
+    def setUp(self) -> None:
+        reset()
+
+    def tearDown(self) -> None:
+        reset()
 
     def test_kimi_stream_uses_sse_and_kimi_completion_field(self) -> None:
         captured: dict = {}
