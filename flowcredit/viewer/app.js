@@ -184,6 +184,7 @@ let tplKey = "full";    // selected template
 let chatThreads = [];   // /api/chat/threads（侧栏「对话」）
 let chatModels = [];    // /api/chat/models（对话模式模型菜单）
 let chatConfig = null;  // /api/settings/chat-config（脱敏后的配置）
+let chatConfigSource = null; // 这份配置从哪来、是否比进程里的新（见 config_source）
 const CHAT_MODEL_KEY = "fa.chatModel";
 function loadChatModelChoice() {
   try {
@@ -4364,6 +4365,16 @@ function delegationSpecExtras() {
   return spec;
 }
 
+/* 浮窗默认向上展开（Kimi 的锚点规则）；但舞台态 composer 贴近页面下沿时，
+   向上会顶出画布顶部——最上面几行就点不到了。量一次：放不下就向下展开。 */
+function placeModelMenu() {
+  const menu = document.getElementById("model-menu");
+  if (!menu) return;
+  menu.classList.remove("drop-down");
+  const rect = menu.getBoundingClientRect();
+  if (rect.top < 8) menu.classList.add("drop-down");
+}
+
 function renderModelMenu() {
   const menu = document.getElementById("model-menu");
   if (!menu) return;
@@ -4385,9 +4396,10 @@ function renderModelMenu() {
     <div class="me-opts">${EFFORT_LEVELS.map(level =>
       `<button class="me-opt${modelChoice.key === effortHost.key && modelChoice.effort === level ? " active" : ""}" data-effort-pick="${level}">${EFFORT_LABEL[level]}</button>`
     ).join("")}</div>
-    <span class="me-note">默认中；以你选择的档位发送</span>
+    <span class="me-note">不选 = 用 provider 默认档（Kimi 为低）；选了就按档位发送</span>
   </div>` : "";
   menu.innerHTML = items + effortBlock + `<div class="tpl-note">模型由操作者选择；门控 / 预算 / 审计对任何模型同等生效</div>`;
+  if (!menu.hidden) placeModelMenu();
 }
 
 async function initLive() {
@@ -5549,17 +5561,22 @@ async function syncChatConfig() {
     const data = await fetch("/api/settings/chat-config", { cache: "no-store" }).then(r => r.ok ? r.json() : null);
     if (!data) return;
     chatConfig = data.config || { providers: {}, default_model: "mock" };
+    chatConfigSource = data.source || null;
     chatModels = Array.isArray(data.models) ? data.models : chatModels;
     renderChatConfig(true);
   } catch { /* 设置页会显示加载失败 */ }
 }
 
+/* 一组设置同时喂两个面：对话与委托运行。价格与日期是必填项——预算顶不能
+   建立在猜来的价格上，这条规则委托侧一直有，现在对话侧也一致。 */
 const CHATCFG_FIELDS = {
   kimi: [
     ["model", "模型", "kimi-k2.6"],
     ["api_key", "API Key", ""],
     ["input_price_microusd_per_mtok", "输入价 µUSD/MTok", "950000"],
     ["output_price_microusd_per_mtok", "输出价 µUSD/MTok", "4000000"],
+    ["price_as_of", "价格日期（YYYY-MM-DD）", "2026-10-25"],
+    ["price_source", "价格来源", "moonshot-cn-published"],
     ["min_interval_seconds", "最小间隔（秒）", "22"],
     ["max_completion_tokens", "最大补全 tokens", "2048"],
   ],
@@ -5568,6 +5585,8 @@ const CHATCFG_FIELDS = {
     ["api_key", "API Key", ""],
     ["input_price_microusd_per_mtok", "输入价 µUSD/MTok", ""],
     ["output_price_microusd_per_mtok", "输出价 µUSD/MTok", ""],
+    ["price_as_of", "价格日期（YYYY-MM-DD）", ""],
+    ["price_source", "价格来源", ""],
     ["min_interval_seconds", "最小间隔（秒）", "0"],
     ["max_completion_tokens", "最大补全 tokens", "2048"],
   ],
@@ -5600,7 +5619,15 @@ function renderChatConfig(preserveInputs = false) {
       <span class="dot${usable ? " ok" : ""}"></span>${esc(fallbacks[key])}
     </button>`;
   }).join("");
-  cardsSlot.innerHTML = Object.entries(CHATCFG_FIELDS).map(([provider, fields]) => {
+  const sourceLine = (() => {
+    if (!chatConfigSource || !chatConfigSource.path) return "";
+    const fmt = seconds => seconds ? new Date(seconds * 1000).toLocaleString() : "—";
+    const stale = chatConfigSource.stale
+      ? `<b class="bad">配置文件比本进程新（本进程加载于 ${esc(fmt(chatConfigSource.loadedAt))}）——重启后生效</b>`
+      : `<span class="dim">本进程已加载最新配置</span>`;
+    return `<p class="chatcfg-source">配置文件：<code>${esc(chatConfigSource.path)}</code> · 最后修改 ${esc(fmt(chatConfigSource.fileMtime))} · ${stale}</p>`;
+  })();
+  cardsSlot.innerHTML = sourceLine + Object.entries(CHATCFG_FIELDS).map(([provider, fields]) => {
     const stored = providers[provider] || {};
     const entry = chatModels.find(m => m.key === provider);
     let status;
@@ -5626,6 +5653,7 @@ function renderChatConfig(preserveInputs = false) {
     }).join("");
     return `<div class="chatcfg-card" data-chatcfg-card="${provider}">
       <div class="chatcfg-card-head"><b>${esc(fallbacks[provider])}</b>${status}</div>
+      <p class="chatcfg-scope">同时用于对话与委托运行（设置 &gt; 环境 &gt; 默认）。云端端点固定为官方地址，不能在这里改。</p>
       <div class="chatcfg-grid">${inputs}</div>
       <div class="chatcfg-actions">
         <button type="button" class="chat-act strong" data-chatcfg-save="${provider}">保存</button>
@@ -5661,6 +5689,7 @@ async function saveChatConfig(provider) {
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
     chatConfig = data.config;
+    chatConfigSource = data.source || chatConfigSource;
     chatModels = Array.isArray(data.models) ? data.models : chatModels;
     renderChatConfig(true);
     paintModelBadge();
@@ -5680,6 +5709,7 @@ async function clearChatConfigKey(provider) {
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
     chatConfig = data.config;
+    chatConfigSource = data.source || chatConfigSource;
     chatModels = Array.isArray(data.models) ? data.models : chatModels;
     renderChatConfig(true);
     paintModelBadge();
@@ -5699,6 +5729,7 @@ async function setDefaultChatModel(key) {
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
     chatConfig = data.config;
+    chatConfigSource = data.source || chatConfigSource;
     chatModels = Array.isArray(data.models) ? data.models : chatModels;
     if (!chatModelTouched) {
       const entry = chatModels.find(m => m.key === key && m.available);
@@ -6442,8 +6473,10 @@ async function startCardRun(messageId) {
         body: JSON.stringify({
           messageId, goal, mode, sources,
           approval: approvalMode,
-          model: chatModelChoice.key || "mock",
-          effort: chatModelChoice.effort || "",
+          // 这次调用创建的是**委托运行**，模型必须来自 Work 侧的目录。
+          // 以前送的是对话侧的 key：委托目录里没有它，确认必然 400。
+          model: modelChoice.key || "mock",
+          effort: modelChoice.effort || "",
         }),
       },
     );
@@ -6824,6 +6857,7 @@ function bind() {
       }
     }
     modelMenu.hidden = !modelMenu.hidden;
+    if (!modelMenu.hidden) placeModelMenu();
   });
   modelMenu.addEventListener("click", event => {
     const chatSettings = event.target.closest("[data-chatmodel-settings]");

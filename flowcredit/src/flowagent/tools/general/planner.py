@@ -5,12 +5,12 @@ The deterministic (mock) provider follows these blueprints the way it follows
 the finance one. In research mode the write todo starts as a placeholder and
 every successful fetch revises its content, so the report the model finally
 *proposes* is composed from the evidence that actually arrived. In script
-mode the blueprint is the honest shape of a first attempt: the agent writes a
-script (with the kind of off-by-one a first draft has), the restricted
-terminal runs it, an anchored edit fixes what the output showed was wrong,
-the fixed script runs again, and the outputs are filed with their hashes and
-the fix note. A real provider is free to propose its own steps; the gate,
-the approvals and the file-state verifier treat them identically.
+mode the blueprint is the honest shape of a first attempt: write, run, fix
+what the output showed was wrong, re-run, file the results — with the content
+and the edit anchors left to the proposer. The deterministic mock fills them
+from its own fixture (``providers/mock.py``); a real model fills them from the
+objective. The gate, the approvals and the file-state verifier treat both
+identically.
 """
 
 from __future__ import annotations
@@ -58,38 +58,21 @@ def _report(goal: str, sections: list[dict[str, Any]]) -> str:
 
 # --- script mode -----------------------------------------------------------
 #
-# The deliberate bug is the point: the milestone demonstrates the *full*
-# loop — write, run, read the wrong output, fix it with an anchored edit,
-# re-run, file the results. A perfect first draft would skip the edit and
-# the second run, and prove nothing about the terminal or the editor.
-
-SCRIPT_BUG = "    for _ in range(n - 1):  # first draft: one iteration short"
-SCRIPT_FIX = "    for _ in range(n):  # fixed: n iterations for fib(n)"
-
-
-def _first_draft(script_path: str) -> str:
-    return "\n".join([
-        "def fib(n):",
-        "    \"\"\"Return fib(n): fib(0)=0, fib(1)=1.\"\"\"",
-        "    if n < 0:",
-        "        raise ValueError('n must be >= 0')",
-        "    a, b = 0, 1",
-        SCRIPT_BUG,
-        "        a, b = b, a + b",
-        "    return a",
-        "",
-        "",
-        "if __name__ == \"__main__\":",
-        "    for n in range(1, 11):",
-        "        print(f\"fib({n}) = {fib(n)}\")",
-        "",
-    ])
+# The blueprint is the *shape* of the work: write a script, run it, fix what
+# the output showed was wrong, re-run, file the results. It carries intent —
+# the script's path, the command — and **not** authored content: what goes
+# inside the file, and which anchor the edit replaces, are the model's to
+# propose. Pre-filling them here made every real delegation execute this
+# checkout's milestone fixture instead of the operator's task (observed on a
+# real Kimi run: the objective asked for one script, the file written was the
+# demo's fibonacci draft). The deterministic mock, which cannot author
+# anything, supplies its own fixture in ``providers/mock.py``.
 
 
-def _results(goal: str, runs: list[dict[str, Any]]) -> str:
+def _results(goal: str, runs: list[dict[str, Any]], edits: list[dict[str, Any]] | None = None) -> str:
     lines = [f"# 运行结果：{goal}", ""]
     lines.append("脚本在受限终端（白名单 run_command）中执行，输出与退出码逐次记录如下；")
-    lines.append("修复以 edit_file 的唯一锚定替换完成，前后 blob 哈希与 git commit 均在链上。")
+    lines.append("修复以 edit_file 的锚定替换完成，前后 blob 哈希与 git commit 均在链上。")
     lines.append("")
     for index, run in enumerate(runs, start=1):
         label = "首次运行（修复前）" if index == 1 else f"第 {index} 次运行"
@@ -100,11 +83,30 @@ def _results(goal: str, runs: list[dict[str, Any]]) -> str:
         lines.append(run["output"].rstrip() or "(no output)")
         lines.append("```")
         lines.append("")
-    if len(runs) >= 2:
-        lines.append("## 判读")
+    if edits:
+        lines.append("## 修复记录（提议者提交的锚点）")
         lines.append("")
-        lines.append("首次输出最后一行 fib(10) = 34，与 fib(9) 一致——差一轮迭代；")
-        lines.append("锚定替换 `range(n - 1)` → `range(n)` 后复跑，fib(10) = 55，数列完整。")
+        for index, edit in enumerate(edits, start=1):
+            old_head = " ".join(str(edit.get("old_text") or "").split())[:80]
+            new_head = " ".join(str(edit.get("new_text") or "").split())[:80]
+            lines.append(f"- 第 {index} 次替换：`{old_head}` → `{new_head}`")
+        lines.append("")
+    if len(runs) >= 2:
+        # Mechanically derived, never interpreted: the runtime files what the
+        # terminal printed and what differed. Reading the numbers is the
+        # model's job (and the operator's) — an earlier version asserted a
+        # fibonacci-specific conclusion here for every run, including ones
+        # whose script had nothing to do with fibonacci.
+        lines.append("## 两次运行的差异（逐行比对，不解释语义）")
+        lines.append("")
+        first = (runs[0].get("output") or "").splitlines()
+        second = (runs[-1].get("output") or "").splitlines()
+        changed = [f"- 第 {i + 1} 行：`{a}` → `{b}`"
+                   for i, (a, b) in enumerate(zip(first, second)) if a != b]
+        if changed:
+            lines.extend(changed[:20])
+        else:
+            lines.append("- 两次输出逐行一致")
         lines.append("")
     lines.append("---")
     lines.append("")
@@ -137,11 +139,13 @@ class GeneralPlanner:
         self.script_path = script_path
         self._sections: list[dict[str, Any]] = []
         self._runs: list[dict[str, Any]] = []
+        self._edits: list[dict[str, Any]] = []
 
     def decompose(self, goal: str) -> Plan:
         self._sections = []
         self._runs = []
         if self.mode == "script":
+            self._edits = []
             return Plan(goal=goal, todos=self._script_todos(), revision=1)
         if not self.sources:
             raise ValueError("a research delegation needs at least one source URL")
@@ -165,15 +169,15 @@ class GeneralPlanner:
 
     def _script_todos(self) -> list[Todo]:
         return [
-            Todo("t1", f"写出第一版脚本 {self.script_path}", "write_file",
+            Todo("t1", f"写出第一版脚本 {self.script_path}（内容由提议者撰写）", "write_file",
                  f"written:{self.script_path}",
-                 {"path": self.script_path, "content": _first_draft(self.script_path)}),
+                 {"path": self.script_path}),
             Todo("t2", f"在受限终端运行 {self.script_path}", "run_command",
                  f"ran:{self.script_path}",
                  {"command": "python3", "args": [self.script_path]}),
-            Todo("t3", "用锚定替换修复差一轮的迭代", "edit_file",
+            Todo("t3", f"用锚定替换修复 {self.script_path} 里输出暴露的问题", "edit_file",
                  f"edited:{self.script_path}",
-                 {"path": self.script_path, "old_text": SCRIPT_BUG, "new_text": SCRIPT_FIX}),
+                 {"path": self.script_path}),
             Todo("t4", f"复跑修复后的 {self.script_path}", "run_command",
                  f"ran-fixed:{self.script_path}",
                  {"command": "python3", "args": [self.script_path]}),
@@ -190,6 +194,7 @@ class GeneralPlanner:
             updated = self._settle_sequential(plan, "run_command", observation)
             return self._compose_results(updated, observation)
         if observation.tool == "edit_file":
+            self._edits.append(dict(observation.arguments))
             return self._settle_sequential(plan, "edit_file", observation)
         if observation.tool == "write_file":
             return self._settle_write(plan, observation)
@@ -250,7 +255,7 @@ class GeneralPlanner:
         )
         if existing is None or existing.status in ("done", "abandoned"):
             return plan
-        content = _results(plan.goal, self._runs)
+        content = _results(plan.goal, self._runs, self._edits)
         revised = replace(
             existing,
             arguments={

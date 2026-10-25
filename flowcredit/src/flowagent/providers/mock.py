@@ -98,6 +98,13 @@ class MockProvider:
         """
         return {"id": "s9", "tool": "write_document", "arguments": {"doc_id": "doc_fy2024"}}
 
+    #: Authored content a real model would produce. The blueprint deliberately
+    #: leaves it out (otherwise every real delegation would execute this
+    #: checkout's fixture — which is exactly what happened before); the mock
+    #: cannot author anything, so it supplies the milestone fixture here.
+    SCRIPT_BUG = "    for _ in range(n - 1):  # first draft: one iteration short"
+    SCRIPT_FIX = "    for _ in range(n):  # fixed: n iterations for fib(n)"
+
     def _follow_plan(self, context: dict[str, Any]) -> tuple[dict[str, Any], str | None]:
         """Take the first open todo and turn it into an action.
 
@@ -111,7 +118,43 @@ class MockProvider:
         if not open_todos:
             return self._step("stop", "report_blocked", {"reason": "insufficient_evidence"}), None
         todo = open_todos[0]
-        return self._step(todo["id"], todo["tool"], todo.get("arguments") or {}), todo["id"]
+        arguments = self._authored(todo["tool"], dict(todo.get("arguments") or {}))
+        return self._step(todo["id"], todo["tool"], arguments), todo["id"]
+
+    def _authored(self, tool: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        """Fill the arguments a proposer is supposed to author, and only those.
+
+        Content the plan already carries (a report composed from real fetches,
+        results filed from real runs) is left alone.
+        """
+        if tool == "write_file" and not str(arguments.get("content") or "").strip():
+            path = str(arguments.get("path") or "")
+            if path.endswith(".py"):
+                arguments["content"] = self._first_draft()
+        elif tool == "edit_file" and not str(arguments.get("old_text") or "").strip():
+            arguments["old_text"] = self.SCRIPT_BUG
+            arguments["new_text"] = self.SCRIPT_FIX
+        return arguments
+
+    @classmethod
+    def _first_draft(cls) -> str:
+        """The milestone's first attempt: one iteration short, on purpose."""
+        return "\n".join([
+            "def fib(n):",
+            "    \"\"\"Return fib(n): fib(0)=0, fib(1)=1.\"\"\"",
+            "    if n < 0:",
+            "        raise ValueError('n must be >= 0')",
+            "    a, b = 0, 1",
+            cls.SCRIPT_BUG,
+            "        a, b = b, a + b",
+            "    return a",
+            "",
+            "",
+            "if __name__ == \"__main__\":",
+            "    for n in range(1, 11):",
+            "        print(f\"fib({n}) = {fib(n)}\")",
+            "",
+        ])
 
     @staticmethod
     def _step(step_id: str, tool: str, arguments: dict[str, Any]) -> dict[str, Any]:

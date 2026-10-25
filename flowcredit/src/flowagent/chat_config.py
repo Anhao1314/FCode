@@ -81,6 +81,11 @@ class ChatProviderConfig:
     timeout_seconds: float = 120.0
     max_completion_tokens: int = DEFAULT_MAX_COMPLETION
     completion_field: str = "max_tokens"
+    #: When the prices above were read, and from where. Mandatory for the same
+    #: reason the delegation presets demand it: an undated price turns the
+    #: budget ceiling into a guess. One settings page, one contract.
+    price_as_of: str = ""
+    price_source: str = ""
 
     @property
     def remote(self) -> bool:
@@ -128,6 +133,8 @@ def _remote_config(
     in_price_env: str,
     out_price_env: str,
     interval_env: str,
+    price_as_of_env: str = "",
+    price_source_env: str = "",
 ) -> ChatProviderConfig:
     """Resolve one remote provider: settings override > environment > default.
 
@@ -169,6 +176,13 @@ def _remote_config(
             missing.append(out_price_env)
     elif output_price <= 0:
         raise AgentError("CHAT_CONFIG_INVALID", "output price must be positive")
+    # Prices are only half the fact: the date they were read makes them
+    # auditable, and the delegation side already refuses to guess it.
+    price_as_of = _ov_str(overrides, "price_as_of") or (
+        os.environ.get(price_as_of_env, "").strip() if price_as_of_env else ""
+    )
+    if not price_as_of and price_as_of_env:
+        missing.append(f"{price_as_of_env}（价格日期）")
     if missing:
         raise AgentError(
             "CHAT_PROVIDER_UNAVAILABLE",
@@ -195,6 +209,9 @@ def _remote_config(
         timeout_seconds=_env_float("CHAT_STREAM_TIMEOUT_SECONDS", 120.0),
         max_completion_tokens=max_completion,
         completion_field="max_completion_tokens" if key == "kimi" else "max_tokens",
+        price_as_of=price_as_of,
+        price_source=_ov_str(overrides, "price_source")
+        or (os.environ.get(price_source_env, "").strip() if price_source_env else ""),
     )
 
 
@@ -211,6 +228,8 @@ def _kimi_config(overrides: dict[str, Any]) -> ChatProviderConfig:
         in_price_env="KIMI_INPUT_PRICE_MICROUSD_PER_MTOK",
         out_price_env="KIMI_OUTPUT_PRICE_MICROUSD_PER_MTOK",
         interval_env="KIMI_MIN_CALL_INTERVAL_SECONDS",
+        price_as_of_env="KIMI_PRICE_AS_OF",
+        price_source_env="KIMI_PRICE_SOURCE",
     )
 
 
@@ -227,6 +246,8 @@ def _deepseek_config(overrides: dict[str, Any]) -> ChatProviderConfig:
         in_price_env="DEEPSEEK_INPUT_PRICE_MICROUSD_PER_MTOK",
         out_price_env="DEEPSEEK_OUTPUT_PRICE_MICROUSD_PER_MTOK",
         interval_env="DEEPSEEK_MIN_CALL_INTERVAL_SECONDS",
+        price_as_of_env="DEEPSEEK_PRICE_AS_OF",
+        price_source_env="DEEPSEEK_PRICE_SOURCE",
     )
 
 

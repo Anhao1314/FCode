@@ -550,8 +550,21 @@ class CompatClient:
         choices = payload.get("choices") or []
         if not choices:
             raise AgentError("MODEL_CALL_FAILED", f"{self.label} returned no choices")
-        content = ((choices[0].get("message") or {}).get("content")) or ""
+        message = choices[0].get("message") or {}
+        content = message.get("content") or ""
         if not isinstance(content, str) or not content.strip():
+            # A reasoning model whose completion budget ran out during the
+            # reasoning channel returns reasoning_content and no content. That
+            # is not "no answer": it is a budget that was too small, and the
+            # operator can fix exactly one number.
+            reasoning = str(message.get("reasoning_content") or "")
+            if reasoning.strip():
+                raise AgentError(
+                    "MODEL_CALL_FAILED",
+                    f"{self.label} 的补全预算被推理占满"
+                    f"（reasoning {len(reasoning)} 字，content 为空）；"
+                    f"把 {self.label.upper()}_MAX_COMPLETION_TOKENS 调大后重试",
+                )
             raise AgentError("MODEL_CALL_FAILED", f"{self.label} returned empty content")
         return content, dict(payload.get("usage") or {}), str(payload.get("id") or "")
 

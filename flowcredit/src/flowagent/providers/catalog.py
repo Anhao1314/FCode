@@ -24,7 +24,79 @@ from .openai_compat import (
     load_compat_settings,
 )
 
-__all__ = ["provider_catalog", "compat_settings_for", "PROVIDER_PRESETS"]
+__all__ = [
+    "PROVIDER_PRESETS",
+    "compat_settings_for",
+    "merged_env",
+    "provider_catalog",
+    "settings_as_env",
+]
+
+#: Settings-page field names → the preset environment names the engine reads.
+#: One settings page configures both surfaces: a key typed in the app must be
+#: able to start a *delegation*, not just a conversation.
+_SETTINGS_ENV_FIELDS: dict[str, dict[str, str]] = {
+    "kimi": {
+        "api_key": "KIMI_API_KEY",
+        "model": "KIMI_MODEL",
+        "input_price_microusd_per_mtok": "KIMI_INPUT_PRICE_MICROUSD_PER_MTOK",
+        "output_price_microusd_per_mtok": "KIMI_OUTPUT_PRICE_MICROUSD_PER_MTOK",
+        "price_as_of": "KIMI_PRICE_AS_OF",
+        "price_source": "KIMI_PRICE_SOURCE",
+        "min_interval_seconds": "KIMI_MIN_CALL_INTERVAL_SECONDS",
+        "max_completion_tokens": "KIMI_MAX_COMPLETION_TOKENS",
+    },
+    "deepseek": {
+        "api_key": "DEEPSEEK_API_KEY",
+        "model": "DEEPSEEK_MODEL",
+        "input_price_microusd_per_mtok": "DEEPSEEK_INPUT_PRICE_MICROUSD_PER_MTOK",
+        "output_price_microusd_per_mtok": "DEEPSEEK_OUTPUT_PRICE_MICROUSD_PER_MTOK",
+        "price_as_of": "DEEPSEEK_PRICE_AS_OF",
+        "price_source": "DEEPSEEK_PRICE_SOURCE",
+    },
+}
+
+
+def settings_as_env(providers: Mapping[str, Any] | None) -> dict[str, str]:
+    """The settings page's provider values, written as preset env names.
+
+    ``base_url`` is deliberately absent from the table: cloud endpoints may not
+    be redirected from the settings page (an exfiltration path), so a settings
+    value can never move where a key is sent.
+    """
+    out: dict[str, str] = {}
+    for key, values in (providers or {}).items():
+        fields = _SETTINGS_ENV_FIELDS.get(str(key).lower())
+        if not fields or not isinstance(values, Mapping):
+            continue
+        for field, env_name in fields.items():
+            value = values.get(field)
+            if value is None:
+                continue
+            text = str(value).strip()
+            if text:
+                out[env_name] = text
+    return out
+
+
+def merged_env(
+    settings_env: Mapping[str, str] | None = None,
+    *,
+    env: Mapping[str, str] | None = None,
+) -> dict[str, str]:
+    """Environment with settings values laid over it — the console's order.
+
+    Precedence is settings → environment → preset defaults, the same rule the
+    conversation side documents: what the operator typed in the app wins over
+    the shell the process was started from. Blank settings never erase a
+    configured environment.
+    """
+    base = dict(os.environ if env is None else env)
+    for name, value in (settings_env or {}).items():
+        text = str(value).strip()
+        if text:
+            base[name] = text
+    return base
 
 
 def _entry_from_settings(key: str, label: str, settings: CompatSettings) -> dict[str, Any]:
@@ -41,6 +113,19 @@ def _entry_from_settings(key: str, label: str, settings: CompatSettings) -> dict
         },
         "maxCompletionTokens": settings.max_completion_tokens,
     }
+
+
+def _incomplete_reason(key: str, error: Exception, from_settings: set[str]) -> str:
+    """Say which surface is incomplete, because that is where it gets fixed.
+
+    The engine names the exact missing variable. When the settings page already
+    contributed some of this provider's fields, the operator should look there
+    — not in a shell they may never have opened.
+    """
+    names = set(_SETTINGS_ENV_FIELDS.get(key, {}).values())
+    if names & from_settings:
+        return f"设置页配置不完整：{error}"
+    return f"Host 配置不完整：{error}"
 
 
 def _unavailable(key: str, label: str, model: str, reason: str, supports_effort: bool = False) -> dict[str, Any]:
@@ -64,16 +149,21 @@ PROVIDER_PRESETS = ("kimi", "deepseek")
 def provider_catalog(
     *,
     env: Mapping[str, str] | None = None,
+    settings_env: Mapping[str, str] | None = None,
     local_endpoint: str | None = None,
     local_probe=None,
 ) -> list[dict[str, Any]]:
     """Enumerate every provider the host has (or tried to) configure.
 
-    ``local_probe`` is an optional callable the console supplies for the
-    Ollama-style endpoint health check; offline callers pass ``None`` and the
-    local entry reports its reason without touching the network.
+    ``settings_env`` carries the values the operator saved in the app (see
+    ``settings_as_env``); they win over the environment, so a key typed in the
+    settings page is enough to run a delegation. ``local_probe`` is an optional
+    callable the console supplies for the Ollama-style endpoint health check;
+    offline callers pass ``None`` and the local entry reports its reason
+    without touching the network.
     """
-    source = os.environ if env is None else env
+    source = merged_env(settings_env, env=env)
+    from_settings = set((settings_env or {}).keys())
     entries: list[dict[str, Any]] = [
         {
             "key": "mock",
@@ -102,7 +192,7 @@ def provider_catalog(
     except ValueError as error:
         entries.append(_unavailable(
             "kimi", "Kimi 云端", source.get("KIMI_MODEL", "").strip() or "kimi-k2.6",
-            f"Host 未配置完整：{error}", supports_effort=True,
+            _incomplete_reason("kimi", error, from_settings), supports_effort=True,
         ))
 
     try:
@@ -111,7 +201,7 @@ def provider_catalog(
     except ValueError as error:
         entries.append(_unavailable(
             "deepseek", "DeepSeek 云端", source.get("DEEPSEEK_MODEL", "").strip() or "deepseek-chat",
-            f"Host 未配置完整：{error}",
+            _incomplete_reason("deepseek", error, from_settings),
         ))
 
     for prefix in declared_compat_prefixes(source):

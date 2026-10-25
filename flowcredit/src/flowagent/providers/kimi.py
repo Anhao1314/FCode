@@ -70,7 +70,13 @@ _DEFAULT_BASE_URL = "https://api.moonshot.cn/v1"
 #: for accounts with access.
 _DEFAULT_MODEL = "kimi-k2.6"
 _DEFAULT_TIMEOUT = 180.0
-_DEFAULT_MAX_COMPLETION_TOKENS = 512
+#: 512 is enough for a chat-style answer and *not* enough for a reasoning
+#: model. Measured on real delegation runs: 512 produced an empty content (the
+#: reasoning channel ate the whole budget), so did 4096 on a longer round
+#: (9653 characters of reasoning). 8192 is the working headroom; the settings
+#: page's ``max_completion_tokens`` overrides it, and the failure message names
+#: the knob when it is still too small.
+_DEFAULT_MAX_COMPLETION_TOKENS = 8192
 _DEFAULT_REASONING_EFFORT = "low"
 
 #: The calibration machinery is engine-owned; the historical preset name stays

@@ -223,6 +223,11 @@ class ChatService:
         # enter the event chain, traces or logs.
         self._config_path = config_path
         self._config = load_chat_config(config_path)
+        #: When this process read the file. The settings page shows it next to
+        #: the file's mtime, because a key saved by *another* process (or
+        #: before this one started) is invisible here until a restart — the
+        #: confusion that made a configured Kimi look unconfigured.
+        self._config_loaded_at = time.time()
         # Archiving is a tombstone, not a delete: the event chain and receipts
         # stay verifiable; only the sidebar hides the thread.
         self.store._conn.executescript("""
@@ -274,7 +279,32 @@ CREATE TABLE IF NOT EXISTS chat_thread_meta (
             "config": redact_chat_config(self._config),
             "models": self.chat_models(),
             "default": self.default_model(),
+            "source": self.config_source(),
         }
+
+    def config_source(self) -> dict[str, Any]:
+        """Where the running process got its provider configuration.
+
+        ``stale`` is the honest part: the file on disk is newer than what this
+        process loaded, so an edit made elsewhere is not in effect yet. Without
+        this the settings page happily showed a key the running server had
+        never read.
+        """
+        loaded_at = float(getattr(self, "_config_loaded_at", 0.0) or 0.0)
+        info: dict[str, Any] = {
+            "path": str(self._config_path) if self._config_path else "",
+            "loadedAt": loaded_at,
+            "fileMtime": 0.0,
+            "stale": False,
+        }
+        if not self._config_path:
+            return info
+        try:
+            info["fileMtime"] = self._config_path.stat().st_mtime
+        except OSError:
+            return info
+        info["stale"] = bool(info["fileMtime"] > loaded_at)
+        return info
 
     def chat_models(self) -> list[dict[str, Any]]:
         """The chat model menu: availability judged from overrides + env."""
@@ -332,6 +362,9 @@ CREATE TABLE IF NOT EXISTS chat_thread_meta (
                 "api_key", "model",
                 "input_price_microusd_per_mtok", "output_price_microusd_per_mtok",
                 "min_interval_seconds", "max_completion_tokens",
+                # Prices without the date they were read are a guess; the
+                # settings page collects both, for chat and for delegations.
+                "price_as_of", "price_source",
             }
             # Endpoint overrides for the cloud providers are an exfiltration
             # path (a stolen settings write could redirect the stored key).
@@ -404,6 +437,9 @@ CREATE TABLE IF NOT EXISTS chat_thread_meta (
                 config["default_model"] = self._config["default_model"]
             self._config = config
             save_chat_config(self._config_path, config)
+            # Saving is reading: this process now holds the newest copy, so the
+            # freshness line the settings page shows goes quiet by itself.
+            self._config_loaded_at = time.time()
         return self.config_snapshot()
 
     def _thread_exists(self, thread_id: str) -> bool:

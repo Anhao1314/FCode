@@ -31,7 +31,9 @@ from console_common import (
     TERMINAL_STATUS,
     VIEWER_DIR,
     _scaled_budget_for_prices,
+    merged_provider_env,
     model_catalog,
+    settings_provider_env,
 )
 from console_runtime import (
     LiveObserver,
@@ -79,6 +81,9 @@ class RunManager:
         self.pace = pace
         self.approval_timeout = approval_timeout
         self.local_endpoint = local_endpoint
+        #: Test/embedding seam: provider values the settings page supplied.
+        #: ``None`` means "read the settings file on demand".
+        self._settings_env: dict[str, str] | None = None
         self.runs: dict[str, Run] = {}
         self.order: list[str] = []
         self.case_index = runtime.CaseIndex() if runtime is not None else None
@@ -156,6 +161,12 @@ class RunManager:
             }]
         return bridge.statuses()
 
+    def settings_env(self) -> dict[str, str]:
+        """Provider values from the settings page (read on demand)."""
+        if self._settings_env is not None:
+            return dict(self._settings_env)
+        return settings_provider_env()
+
     def resolve_model(self, model_key: str | None, effort: str | None) -> tuple[str, str]:
         """Fail-closed model resolution for run creation.
 
@@ -166,7 +177,10 @@ class RunManager:
             if effort not in (None, ""):
                 raise ValueError("mock 模型不支持思考强度选择")
             return "mock", ""
-        entry = next((m for m in model_catalog(self.local_endpoint) if m["key"] == model_key), None)
+        # The same catalog the menu shows: settings-page values included, so a
+        # provider the operator configured in the app resolves here too.
+        catalog = model_catalog(self.local_endpoint, settings_env=self.settings_env())
+        entry = next((m for m in catalog if m["key"] == model_key), None)
         if entry is None:
             raise ValueError(f"未知模型 {model_key!r}")
         if not entry["available"]:
@@ -177,7 +191,11 @@ class RunManager:
             return model_key, ""
         if effort not in (None, "", *EFFORT_LEVELS):
             raise ValueError("思考强度必须是 low、medium 或 high")
-        return model_key, effort or "medium"
+        # No choice means the provider's own default applies (Kimi's preset
+        # pins "low"); forcing "medium" here silently raised both the cost and
+        # the reasoning length, and a longer reasoning channel is what emptied
+        # a real run's completion budget.
+        return model_key, effort or ""
 
     def merge_chat_action(
         self,
@@ -299,7 +317,7 @@ class RunManager:
 
     def model_catalog_with_budget(self, template_key: str | None) -> list[dict]:
         """模型清单 + 该模板下各自真实生效的预算顶（草稿预览的单一事实源）。"""
-        models = model_catalog(self.local_endpoint)
+        models = model_catalog(self.local_endpoint, settings_env=self.settings_env())
         limits = None
         if template_key and self.runtime is not None:
             try:
@@ -695,6 +713,8 @@ class RunManager:
             endpoint=self.local_endpoint if run.model == "local" else None,
             # 思考强度对任何 supportsEffort 的 provider 生效（创建时已校验）
             reasoning_effort=(run.effort or None) if run.model != "mock" else None,
+            # 设置页保存的 provider 值：委托与对话走同一份配置
+            env=merged_provider_env(self.settings_env()),
         )
 
     def _run_thread(self, run: Run, *, resume_limits: dict | None = None, extra_rounds: int = 6) -> None:

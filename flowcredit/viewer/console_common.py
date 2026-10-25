@@ -176,21 +176,58 @@ def _scaled_budget_for_prices(limits, price, max_completion_tokens: int) -> dict
     }
 
 
-def model_catalog(local_endpoint: str | None) -> list[dict]:
+def settings_provider_env() -> dict[str, str]:
+    """Provider values saved in the settings page, as preset environment names.
+
+    One settings page configures both surfaces. Before this, a key typed in
+    the app could answer a conversation but could never start a delegation:
+    the model menu listed Kimi as unavailable while the settings card held its
+    key. Read from disk on demand, so a save takes effect without a restart.
+    """
+    try:
+        from flowagent.chat_config import load_chat_config
+        from flowagent.providers.catalog import settings_as_env
+    except ImportError:  # pragma: no cover — static mode
+        return {}
+    try:
+        config = load_chat_config(CHAT_CONFIG_PATH)
+    except Exception:  # noqa: BLE001 — a damaged settings file must not empty the menu
+        return {}
+    return settings_as_env((config.get("providers") or {}))
+
+
+def merged_provider_env(settings_env: dict | None = None) -> dict:
+    """``os.environ`` with the settings page's provider values laid over it.
+
+    The import stays inside the function: the viewer must still start in
+    *static* mode, where the flowagent package is not on the path at all.
+    """
+    import os
+
+    try:
+        from flowagent.providers.catalog import merged_env
+    except ImportError:  # pragma: no cover — static mode keeps the plain environment
+        return dict(os.environ)
+    return merged_env(settings_env)
+
+
+def model_catalog(local_endpoint: str | None, settings_env: dict | None = None) -> list[dict]:
     """The selectable-model list, enumerated from what the host configured.
 
     The menu's single source of truth is the provider catalog: the offline
     mock, the local endpoint probe, the built-in presets (kimi, deepseek) and
-    every prefix declared in FCODE_OPENAI_COMPAT_PROVIDERS. An endpoint
+    every prefix declared in FCODE_OPENAI_COMPAT_PROVIDERS, plus whatever the
+    settings page saved (settings > environment > defaults). An endpoint
     appears the moment its configuration is complete; an incomplete one
-    appears with the exact reason it is unavailable. Creation re-checks the
-    same facts and fails closed.
+    appears with the exact reason it is unavailable, naming the surface that
+    has to be fixed. Creation re-checks the same facts and fails closed.
     """
     try:
         from flowagent.providers.catalog import provider_catalog
     except ImportError:  # pragma: no cover — static mode; /api/models needs live anyway
         return []
     return provider_catalog(
+        settings_env=settings_provider_env() if settings_env is None else settings_env,
         local_endpoint=local_endpoint,
         local_probe=(lambda: _probe_local_endpoint(local_endpoint)) if local_endpoint else None,
     )

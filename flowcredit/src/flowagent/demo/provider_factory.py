@@ -11,7 +11,7 @@ from __future__ import annotations
 import os
 from dataclasses import replace
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Mapping
 
 from ..core.receipts import ReceiptStore
 from ..providers.base import Provider, Proposal
@@ -118,8 +118,15 @@ def build_provider(
     reasoning_effort: str | None = None,
     calibration_path: Path | None = None,
     raw_sink: RawSink | None = None,
+    env: Mapping[str, str] | None = None,
 ) -> Provider:
-    """Construct one explicitly selected provider; never fall back to mock."""
+    """Construct one explicitly selected provider; never fall back to mock.
+
+    ``env`` is the resolved configuration view (environment plus whatever the
+    settings page saved); presets read their ``{PREFIX}_*`` names from it. It
+    is never a way around validation: prices and their date are still required,
+    and cloud endpoints still refuse a non-https base URL.
+    """
     if provider_name == "mock":
         return MockProvider(
             policy=scenario.policy,
@@ -142,6 +149,7 @@ def build_provider(
 
     if provider_name == "kimi":
         settings = load_kimi_settings(
+            env=env,
             model=model,
             base_url=endpoint,
             timeout=timeout,
@@ -156,6 +164,7 @@ def build_provider(
         return FaultInjectionProvider(provider) if scenario.key == "tool-denied" else provider
     if provider_name == "deepseek":
         settings = load_deepseek_settings(
+            env=env,
             model=model,
             base_url=endpoint,
             timeout=timeout,
@@ -164,7 +173,7 @@ def build_provider(
         provider = settings.provider()
         return FaultInjectionProvider(provider) if scenario.key == "tool-denied" else provider
 
-    declared = {prefix.lower(): prefix for prefix in declared_compat_prefixes()}
+    declared = {prefix.lower(): prefix for prefix in declared_compat_prefixes(env=env)}
     if provider_name in declared:
         # A host-declared OpenAI-compatible endpoint (docs/openai-compat.md):
         # the same engine, transport discipline and receipts as the presets.

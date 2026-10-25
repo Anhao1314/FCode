@@ -18,11 +18,12 @@ import unittest
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-from flowagent.core.contracts import AgentError, Task  # noqa: E402
+from flowagent.core.contracts import AgentError, PLAN_VERSION, Task  # noqa: E402
 from flowagent.core.receipts import ReceiptStore  # noqa: E402
 from flowagent.core.store import TaskStore  # noqa: E402
 from flowagent.demo.fixtures import get_scenario  # noqa: E402
 from flowagent.domains.general import GENERAL_DOMAIN  # noqa: E402
+from flowagent.providers.base import Proposal  # noqa: E402
 from flowagent.providers.mock import MockProvider  # noqa: E402
 from flowagent.runtime.harness import Harness  # noqa: E402
 from flowagent.runtime.loop import Loop  # noqa: E402
@@ -32,6 +33,7 @@ from flowagent.tools.general.commands import (  # noqa: E402
     CommandRunner,
     load_command_config,
 )
+from flowagent.tools.general.planner import GeneralPlanner  # noqa: E402
 from flowagent.tools.general.sandbox import WorkspaceSandbox  # noqa: E402
 from flowagent.tools.general.tools import GENERAL_TOOLS, build_general_tools  # noqa: E402
 from flowagent.tools.registry import ToolRegistry  # noqa: E402
@@ -275,6 +277,135 @@ class RunCommandToolContractTests(unittest.TestCase):
         validate_arguments(spec, {"path": "a.txt", "old_text": "x"})
         with self.assertRaises(AgentError):
             validate_arguments(spec, {"path": "a.txt", "old_text": "x", "new_text": 5})
+
+
+
+
+class AuthoringProvider:
+    """Stands in for a real model: proposes the plan's step, authors its own
+    content. The milestone fixture must never appear in what it writes."""
+
+    name = "authoring-test"
+    model = "authoring-test-v1"
+
+    DRAFT = "\n".join([
+        "def greet():",
+        "    print('hello')",
+        "    print('world')  # first draft: forgets the third line",
+        "",
+        "if __name__ == '__main__':",
+        "    greet()",
+        "",
+    ])
+    FIXED = "\n".join([
+        "def greet():",
+        "    print('hello')",
+        "    print('world')",
+        "    print('again')  # fixed: three lines",
+        "",
+        "if __name__ == '__main__':",
+        "    greet()",
+        "",
+    ])
+
+    def __init__(self) -> None:
+        self.contexts: list[dict] = []
+
+    def propose(self, context):
+        self.contexts.append(context)
+        todo = next(
+            (t for t in (context.get("plan") or []) if t.get("status") in ("pending", "active")),
+            None,
+        )
+        if todo is None:
+            raise AgentError("POLICY_NO_ACTIONS", "plan exhausted")
+        arguments = dict(todo.get("arguments") or {})
+        if todo["tool"] == "write_file" and not str(arguments.get("content") or "").strip():
+            arguments["content"] = self.DRAFT
+        if todo["tool"] == "edit_file" and not str(arguments.get("old_text") or "").strip():
+            arguments["old_text"] = "    print('world')  # first draft: forgets the third line"
+            arguments["new_text"] = "    print('world')\n    print('again')  # fixed: three lines"
+        return Proposal(
+            plan={"version": PLAN_VERSION, "steps": [{
+                "id": todo["id"], "tool": todo["tool"], "arguments": arguments,
+            }]},
+            provider=self.name,
+            model=self.model,
+            tokens=10,
+            cost_microusd=0,
+            todo_id=todo["id"],
+        )
+
+
+class BlueprintHonestyTests(unittest.TestCase):
+    """The blueprint states the shape of the work; the proposer authors content.
+
+    Regression: the plan used to pre-fill the first draft and the edit anchors
+    with this checkout's fibonacci fixture, so a *real* delegation executed the
+    fixture instead of the operator's task (observed on a real Kimi run whose
+    objective was "print 1..5" and whose file was the demo draft).
+    """
+
+    def test_the_blueprint_carries_intent_not_authored_content(self) -> None:
+        plan = GeneralPlanner(["https://example.com"], mode="script").decompose("打印 1..5")
+        by_id = {todo.id: todo for todo in plan.todos}
+        self.assertNotIn("content", by_id["t1"].arguments)
+        self.assertEqual(set(by_id["t3"].arguments), {"path"})
+        # …and no fixture symbol survives in the planner module at all.
+        planner_module = sys.modules[GeneralPlanner.__module__]
+        source = pathlib.Path(planner_module.__file__).read_text(encoding="utf-8")
+        self.assertNotIn("SCRIPT_BUG", source)
+        self.assertNotIn("_first_draft", source)
+        self.assertNotIn("range(n - 1)", source)
+
+    def test_the_proposers_own_content_is_what_lands_on_disk(self) -> None:
+        provider = AuthoringProvider()
+        with tempfile.TemporaryDirectory() as tmp:
+            sandbox = _sandbox(tmp)
+            from flowagent.tools.general.fetch import UrlFetcher
+
+            world = GENERAL_DOMAIN.create_world(
+                spec={"mode": "script", "scriptPath": "greet.py"},
+                sandbox=sandbox,
+                fetcher=UrlFetcher(),
+                command_runner=CommandRunner(sandbox),
+            )
+            scenario = get_scenario("general-research")
+            store = TaskStore(pathlib.Path(tmp) / "t.sqlite")
+            harness = Harness(
+                store=store,
+                registry=ToolRegistry(world.build_tools()),
+                provider=provider,
+                world=world,
+                limits=scenario.limits,
+                receipts=ReceiptStore(store),
+                verifier=lambda observation: world.verify_observation(observation),
+            )
+            task = harness.create(
+                task_id="task-authoring",
+                objective="写一个脚本打印三行问候语并运行，把输出写进 results.md",
+                principal="test",
+                binding={"scenario": scenario.key, "mode": "script"},
+                allowed_tools=list(scenario.allowed_tools),
+                grant=scenario.grant,
+            )
+            task = Loop(
+                harness,
+                # the product path: the world carries mode/paths, the planner reads them
+                planner=GENERAL_DOMAIN.make_planner(world),
+                max_rounds=scenario.max_rounds,
+                result_tools=GENERAL_DOMAIN.result_tools,
+            ).run(task.id)
+
+            self.assertEqual(task.status, "succeeded", task.failure)
+            script = sandbox.read("greet.py")["content"]
+            self.assertIn("print('hello')", script)
+            self.assertIn("print('again')", script)   # the proposer's own fix applied
+            self.assertNotIn("fib", script)
+            self.assertNotIn("range(n - 1)", script)
+            results = sandbox.read("results.md")["content"]
+            self.assertIn("print('again')", results)
+            self.assertNotIn("fib(10)", results, "the report files what ran, not a fixture conclusion")
 
 
 @unittest.skipUnless(HAVE_PY3, "python3 executes the script blueprint")

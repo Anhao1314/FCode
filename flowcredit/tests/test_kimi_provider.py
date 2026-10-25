@@ -175,7 +175,9 @@ class KimiProviderTests(unittest.TestCase):
         self.assertEqual(seen["auth"], "Bearer sk-kimi-test-not-real")
         body = seen["body"]
         self.assertEqual(body["model"], "kimi-k2.6")
-        self.assertEqual(body["max_completion_tokens"], 512)
+        # 4096, not 512: the reasoning channel can consume a small budget
+        # entirely, leaving an empty content (observed on a real delegation run).
+        self.assertEqual(body["max_completion_tokens"], 8192)
         self.assertEqual(body["reasoning_effort"], "low")
         self.assertEqual(body["response_format"], {"type": "json_object"})
         self.assertNotIn("max_tokens", body)
@@ -318,6 +320,28 @@ class KimiProviderTests(unittest.TestCase):
         self.assertEqual(raised.exception.details["raw_content"], raw_content)
         self.assertEqual(calls["n"], 1)
 
+
+
+    def test_a_reasoning_only_answer_names_the_budget_it_needs(self) -> None:
+        """Empty content with a populated reasoning channel is a budget problem,
+        not an absent answer: the operator can fix exactly one number."""
+        seen, fake = self._fake({
+            "id": "kimi-req-empty",
+            "choices": [{
+                "message": {"content": "", "reasoning_content": "让我想想……" * 40},
+                "finish_reason": "length",
+            }],
+            "usage": {"prompt_tokens": 10, "completion_tokens": 4096},
+        })
+        with mock.patch("flowagent.providers.kimi.urllib.request.urlopen", fake):
+            with self.assertRaises(AgentError) as error:
+                KimiProvider(api_key="sk-kimi-test-not-real", price=_price()).propose(
+                    {"objective": "t", "round": 1, "intent": {"task_id": "t", "round": 1}}
+                )
+        self.assertEqual(error.exception.code, "MODEL_CALL_FAILED")
+        self.assertIn("补全预算", error.exception.message)
+        self.assertIn("KIMI_MAX_COMPLETION_TOKENS", error.exception.message)
+        self.assertTrue(seen["body"]["max_completion_tokens"])
 
 if __name__ == "__main__":
     unittest.main()

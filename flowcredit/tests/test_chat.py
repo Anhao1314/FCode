@@ -346,6 +346,7 @@ class RemoteStreamTests(unittest.TestCase):
             "KIMI_INPUT_PRICE_MICROUSD_PER_MTOK": "1000",
             "KIMI_OUTPUT_PRICE_MICROUSD_PER_MTOK": "2000",
             "KIMI_MIN_CALL_INTERVAL_SECONDS": "0",
+            "KIMI_PRICE_AS_OF": "2026-10-25",
             "CHAT_MAX_COMPLETION_TOKENS": "64",
         }
         with mock.patch.dict(os.environ, environment, clear=False):
@@ -380,6 +381,8 @@ class ChatSettingsTests(unittest.TestCase):
         "KIMI_MODEL": "",
         "KIMI_BASE_URL": "",
         "KIMI_MIN_CALL_INTERVAL_SECONDS": "",
+        "KIMI_PRICE_AS_OF": "",
+        "KIMI_PRICE_SOURCE": "",
     }
 
     def setUp(self) -> None:
@@ -403,6 +406,8 @@ class ChatSettingsTests(unittest.TestCase):
             "input_price_microusd_per_mtok": "950000",
             "output_price_microusd_per_mtok": "4000000",
             "min_interval_seconds": "22",
+            "price_as_of": "2026-10-25",
+            "price_source": "moonshot-cn-published",
         })
         self.assertTrue(snapshot["config"]["providers"]["kimi"]["api_key_set"])
         self.assertNotIn("sk-test-1234567890", json.dumps(snapshot))
@@ -412,6 +417,24 @@ class ChatSettingsTests(unittest.TestCase):
         # The key lives only in the local file, never in the API payload.
         stored = (self.root / "chat-config.json").read_text(encoding="utf-8")
         self.assertIn("sk-test-1234567890", stored)
+
+    def test_prices_without_a_date_are_not_a_configured_provider(self) -> None:
+        """The date is what makes a price auditable. Keeping it required on
+        both surfaces is deliberate: the delegation presets never guessed it,
+        and chat feeding the same budget ceiling must not either."""
+        snapshot = self.service.update_config(provider="kimi", values={
+            "api_key": "sk-test-1234567890",
+            "input_price_microusd_per_mtok": "950000",
+            "output_price_microusd_per_mtok": "4000000",
+        })
+        models = {item["key"]: item for item in snapshot["models"]}
+        self.assertFalse(models["kimi"]["available"])
+        self.assertIn("KIMI_PRICE_AS_OF", models["kimi"]["reason"])
+        self.assertIn("价格日期", models["kimi"]["reason"])
+        # …and filling it in is enough to make the same provider available.
+        snapshot = self.service.update_config(provider="kimi", values={"price_as_of": "2026-10-25"})
+        models = {item["key"]: item for item in snapshot["models"]}
+        self.assertTrue(models["kimi"]["available"])
 
     def test_default_model_roundtrip_and_validation(self) -> None:
         snapshot = self.service.update_config(default_model="kimi")
@@ -427,12 +450,14 @@ class ChatSettingsTests(unittest.TestCase):
             "KIMI_INPUT_PRICE_MICROUSD_PER_MTOK": "1",
             "KIMI_OUTPUT_PRICE_MICROUSD_PER_MTOK": "2",
             "KIMI_MODEL": "kimi-env",
+            "KIMI_PRICE_AS_OF": "2026-01-01",
         }, clear=False):
             self.service.update_config(provider="kimi", values={
                 "api_key": "settings-key",
                 "model": "kimi-settings",
                 "input_price_microusd_per_mtok": "950000",
                 "output_price_microusd_per_mtok": "4000000",
+                "price_as_of": "2026-10-25",
             })
             config = resolve_chat_provider(
                 "kimi", self.service._overrides_for("kimi"),
@@ -445,6 +470,7 @@ class ChatSettingsTests(unittest.TestCase):
             "KIMI_API_KEY": "env-key",
             "KIMI_INPUT_PRICE_MICROUSD_PER_MTOK": "950000",
             "KIMI_OUTPUT_PRICE_MICROUSD_PER_MTOK": "4000000",
+            "KIMI_PRICE_AS_OF": "2026-10-25",
         }, clear=False):
             self.service.update_config(provider="kimi", values={"api_key": "settings-key"})
             self.service.update_config(provider="kimi", values={"api_key": ""})
