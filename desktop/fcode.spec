@@ -27,7 +27,7 @@ viewer_dir.mkdir()
 # stylesheet or ES module is then part of the bundle the moment index.html
 # references it. Runtime data (runs/, memory/, *.sqlite) and docs stay out.
 for item in sorted(viewer_src.iterdir()):
-    if item.is_file() and (item.suffix in {".html", ".css", ".js"} or item.name == "server.py"):
+    if item.is_file() and item.suffix in {".html", ".css", ".js", ".py"}:
         shutil.copy2(item, viewer_dir / item.name)
 for name in ("core", "brand", "icons", "traces"):
     directory = viewer_src / name
