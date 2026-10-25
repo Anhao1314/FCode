@@ -2116,3 +2116,24 @@ body.reduce-motion *, body.reduce-motion *::before, body.reduce-motion *::after 
 .attach-body .attach-docs, .attach-body .attach-tools, .attach-body .attach-tpls {
   max-height: 240px; overflow-y: auto;
 }
+
+/* ============ run_command 审批：完整命令行卡（能力基线三大件） ============ */
+.apv-cmdline {
+  margin-top: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--canvas);
+}
+.apv-cmdline code {
+  font: 12px/1.6 var(--font-mono);
+  color: var(--text-1);
+  word-break: break-all;
+  white-space: pre-wrap;
+}
+
+/* ============ 印章线稿符号槽位（brand/seal-icons.js） ============ */
+.s-icon { display: block; width: 15px; height: 15px; flex: none; }
+.side-new .s-icon, .side-nav .s-icon, .foot-item .s-icon { width: 15px; height: 15px; }
+.gate-ico .s-icon { width: 14px; height: 14px; }
+.attach-sum .s-icon { width: 15px; height: 15px; color: var(--text-3); }

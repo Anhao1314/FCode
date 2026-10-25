@@ -1423,6 +1423,11 @@ function renderRound(round, index, ann = {}, prevRound = null) {
     ? TOOL_DOODLE[tool]
     : (TOOL_ICON[tool] || ICON.term);
   const gateClass = denied ? "denied" : round.observation ? "pass" : "pending";
+  const sealSvg = (name, anim) => {
+    const set = window.SEAL_ICONS && window.SEAL_ICONS.state;
+    const svg = set && set[name];
+    return svg ? svg.replace('class="s-icon"', `class="s-icon${anim ? " " + anim : ""}"`) : "";
+  };
   const gateText = denied
     ? `主机门控 DENIED · ${decision.code || ""}${decision.reason ? " · " + decision.reason : ""}`
     : !round.observation
@@ -1459,7 +1464,7 @@ function renderRound(round, index, ann = {}, prevRound = null) {
 
     <div class="gate-line ${gateClass}">
       <span class="ev-dot ${denied ? "bad" : round.observation ? "ok" : "info"}"></span>
-      <span>${esc(gateText)}</span>
+      <span class="gate-ico">${sealSvg(denied ? "gate-denied" : "gate-stamp", "stamp-in")}</span><span>${esc(gateText)}</span>
     </div>
 
     ${round.observation ? `
@@ -2622,8 +2627,13 @@ const APPROVAL_VERBS = {
   report_blocked: "宣告受阻",
 };
 
-/* 有状态变更的写入类工具：审批默认展开影响区（对照官方 diff 自动展开） */
-const WRITE_TOOLS = new Set(["working_paper_append", "collect_source", "write_document", "write_file"]);
+/* 有状态变更的写入类工具：审批默认展开影响区（对照官方 diff 自动展开）。
+   edit_file / run_command 同属 consequential（能力基线三大件）。 */
+const WRITE_TOOLS = new Set([
+  "working_paper_append", "collect_source", "write_document", "write_file",
+  "edit_file", "run_command",
+]);
+const WRITE_VERBS = { write_file: "写入", edit_file: "编辑", run_command: "执行" };
 
 /* MCP 导入工具默认 consequential：未经主机标注 readonly 的都按写入对待 */
 function isWriteLike(tool) {
@@ -2631,6 +2641,7 @@ function isWriteLike(tool) {
 }
 
 function approvalVerb(tool) {
+  if (WRITE_VERBS[tool]) return WRITE_VERBS[tool];
   if (isWriteLike(tool)) return "写入";
   return APPROVAL_VERBS[tool] || "";
 }
@@ -2660,7 +2671,9 @@ function renderApproval(pending, deciding) {
   const model = (activeSession()?.trace?.model) || {};
   const sender = `${model.provider || "provider"} · ${model.model || "model"} · 第 ${esc(pending.round)} 轮发起`;
   const impact = write
-    ? (pending.preview && (pending.preview.diff !== undefined || pending.preview.error)
+    ? (pending.preview && pending.preview.command !== undefined
+        ? approvalCommandHtml(pending.preview)
+        : pending.preview && (pending.preview.diff !== undefined || pending.preview.error)
         ? approvalDiffHtml(pending.preview)
         : approvalImpactHtml(argsObj))
     : "";
@@ -2699,7 +2712,20 @@ function renderApproval(pending, deciding) {
   </div>`;
 }
 
-/* write_file 审批：主機在执行前算好的真实 git diff，默认展开（对照官方 diff 自动展开） */
+/* run_command 审批：完整命令行与治理要点（能力基线三大件） */
+function approvalCommandHtml(preview) {
+  return `<div class="apv-impact">
+    <div class="apv-impact-head">命令执行 · 白名单受限终端</div>
+    <div class="apv-cmdline"><code>${esc(preview.command || "")}</code></div>
+    <div class="kv">
+      <span class="k">截止</span><span class="v">${esc(preview.timeout || 30)} 秒 · 超时记 unknown，不自动重跑</span>
+      <span class="k">环境</span><span class="v">无 shell · 参数逐个校验 · provider 凭据不进入子进程</span>
+      <span class="k">范围</span><span class="v">工作区沙箱内；文件变化全部进入 git 快照</span>
+    </div>
+  </div>`;
+}
+
+/* write_file / edit_file 审批：主机在执行前算好的真实 git diff，默认展开 */
 function approvalDiffHtml(preview) {
   if (preview.error) {
     return `<div class="apv-impact">
@@ -3436,8 +3462,9 @@ function intakeBack() {
 async function startIntakeRun() {
   if (!intake.active || !intake.readyTask) return;
   const task = intake.readyTask;
-  if (String(task.template) === tplKey && isGeneralTemplate() && !attach.sources.length) {
-    toast("通用委托至少需要 1 个来源 URL：点 + 添加");
+  const scriptMode = (task.spec && task.spec.mode) === "script";
+  if (String(task.template) === tplKey && isGeneralTemplate() && !scriptMode && !attach.sources.length) {
+    toast("调研委托至少需要 1 个来源 URL：点 + 添加（脚本委托可留空）");
     return;
   }
   const button = document.querySelector("[data-intake-start]");
@@ -3899,7 +3926,7 @@ function renderAttachPanel() {
   const sourcesGroup = `
     <section class="attach-group">
       <header><span>资料来源（URL）</span><span class="attach-note">${attach.sources.length}/5 · fetch_url 仅访问这些地址</span></header>
-      ${sourceRows || '<div class="attach-empty">尚未添加来源；至少 1 个才能创建通用委托</div>'}
+      ${sourceRows || '<div class="attach-empty">调研模式需要来源；脚本模式（"写脚本并运行"）可留空</div>'}
       ${attach.sources.length < 5 ? `
       <div class="attach-source-add">
         <input type="url" placeholder="https://example.com/page" data-attach-source-input value="${esc(attach.sourcesDraft)}">
@@ -5084,6 +5111,9 @@ function pushHistory(text) {
 /* 取手绘图标：mode=false 静止 / true 动画 / "draw" 只描边一次（不沸腾） */
 function doodleSvg(name, mode = false) {
   if (!name) return "";
+  /* 印章线稿优先：家族语言统一（见 brand/seal-icons.js） */
+  const seal = window.SEAL_ICONS && window.SEAL_ICONS.still && window.SEAL_ICONS.still[name];
+  if (seal) return seal;
   const set = window.DOODLE_ICONS || {};
   const animated = set.animated && set.animated[name];
   if (mode === "draw" && animated) {
@@ -5096,9 +5126,12 @@ function doodleSvg(name, mode = false) {
 /* 内联手绘图标：data-doodle 槽位在启动/重绘后填充 */
 function hydrateDoodles(root = document) {
   const set = window.DOODLE_ICONS || {};
+  const seal = window.SEAL_ICONS && window.SEAL_ICONS.still || {};
   for (const slot of root.querySelectorAll("[data-doodle]")) {
     if (slot.dataset.hydrated === "1") continue;
     const name = slot.dataset.doodle;
+    /* 印章线稿优先：同名接管，家族语言统一 */
+    if (seal[name]) { slot.innerHTML = seal[name]; slot.dataset.hydrated = "1"; continue; }
     const useAnimated = slot.dataset.doodleAnim === "1";
     const svg = (useAnimated && set.animated && set.animated[name])
       || (set.still && set.still[name]) || "";
