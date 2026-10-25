@@ -13,6 +13,7 @@ import shutil
 import sys
 import threading
 import time
+import traceback
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -82,6 +83,18 @@ class RunManager:
         self.order: list[str] = []
         self.case_index = runtime.CaseIndex() if runtime is not None else None
         self.fact_store = runtime.FactStore() if runtime is not None else None
+        # The artifact book is the general domain's cross-task fact layer: which
+        # file exists, produced by which run and round, with which hash. It sits
+        # beside the run history (Application Support in the desktop bundle) and
+        # is a projection of signed traces — rebuildable, never the only copy.
+        self.artifact_book = None
+        if runtime is not None:
+            try:
+                self.artifact_book = runtime.ArtifactBook(
+                    self.runs_dir.parent / "artifacts.sqlite"
+                )
+            except Exception:  # noqa: BLE001 — memory must never take the console down
+                traceback.print_exc()
         self.chat = None
         if runtime is not None:
             try:
@@ -378,6 +391,33 @@ class RunManager:
             self.order.append(run.id)
         self.order.sort(key=lambda rid: self.runs[rid].created, reverse=True)
 
+    def _ingest_memory(self, rt: Runtime, run: Run, final: dict) -> None:
+        """Every projection of one finished trace, in one place.
+
+        Cases answer "what did we do", facts answer the finance reference
+        workload, artifacts answer "what exists and who produced it". All three
+        are idempotent (a review re-exports the trace and ingests again), and
+        none of them may kill a finished run.
+        """
+        if self.case_index is not None:
+            try:
+                self.case_index.upsert(final, run_id=run.id)
+            except Exception:  # noqa: BLE001 — memory must never kill a run
+                traceback.print_exc()
+        if self.fact_store is not None:
+            try:
+                self.fact_store.upsert_run(
+                    run_id=run.id,
+                    facts=rt.project_facts(final, run_id=run.id),
+                )
+            except Exception:  # noqa: BLE001 — memory must never kill a run
+                traceback.print_exc()
+        if self.artifact_book is not None:
+            try:
+                self.artifact_book.ingest_trace(final, run_id=run.id)
+            except Exception:  # noqa: BLE001 — memory must never kill a run
+                traceback.print_exc()
+
     def _write_meta(self, run: Run) -> None:
         meta = run.to_json()
         meta["verified"] = run.trace_verified
@@ -611,11 +651,7 @@ class RunManager:
                 run.cost = _budget_summary(final)
                 run.bump()
             self._write_meta(run)
-            if self.case_index is not None:
-                try:
-                    self.case_index.upsert(final, run_id=run.id)
-                except Exception:  # noqa: BLE001 — memory must never lose a review
-                    traceback.print_exc()
+            self._ingest_memory(rt, run, final)
             return {
                 "ok": True,
                 "decision": decision,
@@ -754,6 +790,7 @@ class RunManager:
                 receipts=receipts,
                 verifier=lambda observation: module.verify(world, observation),
                 state_fn=module.summarize_state,
+                instruction=module.instruction,
             )
             recorder = rt.TraceRecorder(
                 store, provider_name=provider.name, model_name=provider.model
@@ -950,19 +987,7 @@ class RunManager:
                 status = "error"
 
             final = recorder.build(store.load(task.id))
-            if self.case_index is not None:
-                try:
-                    self.case_index.upsert(final, run_id=run.id)
-                except Exception:  # noqa: BLE001 — memory must never kill a run
-                    traceback.print_exc()
-            if self.fact_store is not None:
-                try:
-                    self.fact_store.upsert_run(
-                        run_id=run.id,
-                        facts=rt.project_facts(final, run_id=run.id),
-                    )
-                except Exception:  # noqa: BLE001 — memory must never kill a run
-                    traceback.print_exc()
+            self._ingest_memory(rt, run, final)
             trace_path = run_dir / "trace.json"
             rt.export_trace(final, trace_path)
             try:

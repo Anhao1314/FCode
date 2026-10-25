@@ -113,21 +113,33 @@ def project_artifacts(trace: dict[str, Any], *, run_id: str) -> list[ArtifactRec
 
 
 class ArtifactBook:
-    """SQLite store for artifact records; rebuildable from traces."""
+    """SQLite store for artifact records; rebuildable from traces.
+
+    One short-lived connection per operation, exactly like the case and fact
+    books: the console ingests from a run's worker thread while the HTTP
+    threads read, and a connection created in ``__init__`` belongs to whichever
+    thread built it (sqlite refuses it elsewhere — that is not a theoretical
+    concern: it turned a finished run into a stuck one).
+    """
 
     def __init__(self, path: Path | str) -> None:
         self._path = Path(path)
-        self._conn = sqlite3.connect(self._path)
-        self._conn.row_factory = sqlite3.Row
-        self._conn.executescript(SCHEMA)
-        self._conn.commit()
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        with self._connect() as conn:
+            conn.executescript(SCHEMA)
+            conn.commit()
+
+    def _connect(self) -> sqlite3.Connection:
+        conn = sqlite3.connect(self._path)
+        conn.row_factory = sqlite3.Row
+        return conn
 
     # ---------------------------------------------------------------- writing
 
     def record(self, artifacts: list[ArtifactRecord]) -> int:
-        with self._conn:
+        with self._connect() as conn:
             for artifact in artifacts:
-                self._conn.execute(
+                conn.execute(
                     "INSERT OR REPLACE INTO artifacts"
                     " (artifact_id, run_id, round, path, sha256, bytes, produced_by, chain_head, created_at, archived)"
                     " VALUES (?,?,?,?,?,?,?,?,?,?)",
@@ -145,8 +157,8 @@ class ArtifactBook:
 
     def archive_run(self, run_id: str) -> int:
         """Tombstone a run's artifacts; rows stay queryable, labelled archived."""
-        with self._conn:
-            cursor = self._conn.execute(
+        with self._connect() as conn:
+            cursor = conn.execute(
                 "UPDATE artifacts SET archived = 1 WHERE run_id = ?", (run_id,)
             )
         return cursor.rowcount
@@ -155,17 +167,19 @@ class ArtifactBook:
 
     def by_path(self, path: str) -> list[ArtifactRecord]:
         """Every known version of one workspace path, newest first."""
-        rows = self._conn.execute(
-            "SELECT * FROM artifacts WHERE path = ? ORDER BY round DESC, created_at DESC",
-            (path,),
-        ).fetchall()
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM artifacts WHERE path = ? ORDER BY round DESC, created_at DESC",
+                (path,),
+            ).fetchall()
         return [self._to_record(row) for row in rows]
 
     def by_sha(self, sha256: str) -> list[ArtifactRecord]:
-        rows = self._conn.execute(
-            "SELECT * FROM artifacts WHERE sha256 = ? ORDER BY created_at DESC",
-            (sha256,),
-        ).fetchall()
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM artifacts WHERE sha256 = ? ORDER BY created_at DESC",
+                (sha256,),
+            ).fetchall()
         return [self._to_record(row) for row in rows]
 
     def latest(self, path: str) -> ArtifactRecord | None:
@@ -174,23 +188,27 @@ class ArtifactBook:
 
     def search(self, contains: str, limit: int = 20) -> list[ArtifactRecord]:
         """Substring match on path — explainable, like the case book's retrieval."""
-        rows = self._conn.execute(
-            "SELECT * FROM artifacts WHERE path LIKE ? ORDER BY created_at DESC LIMIT ?",
-            (f"%{contains}%", limit),
-        ).fetchall()
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM artifacts WHERE path LIKE ? ORDER BY created_at DESC LIMIT ?",
+                (f"%{contains}%", limit),
+            ).fetchall()
         return [self._to_record(row) for row in rows]
 
     def count(self, *, archived: bool | None = None) -> int:
-        if archived is None:
-            row = self._conn.execute("SELECT COUNT(*) AS n FROM artifacts").fetchone()
-        else:
-            row = self._conn.execute(
-                "SELECT COUNT(*) AS n FROM artifacts WHERE archived = ?", (1 if archived else 0,)
-            ).fetchone()
+        with self._connect() as conn:
+            if archived is None:
+                row = conn.execute("SELECT COUNT(*) AS n FROM artifacts").fetchone()
+            else:
+                row = conn.execute(
+                    "SELECT COUNT(*) AS n FROM artifacts WHERE archived = ?",
+                    (1 if archived else 0,),
+                ).fetchone()
         return int(row["n"] or 0)
 
     def close(self) -> None:
-        self._conn.close()
+        """Nothing to release: every operation closes its own connection."""
+        return None
 
     @staticmethod
     def _to_record(row: sqlite3.Row) -> ArtifactRecord:

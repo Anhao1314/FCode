@@ -17,7 +17,28 @@ from ..tools.general.planner import GeneralPlanner
 from ..tools.general.world import GeneralWorld
 from .base import DomainModule
 
-__all__ = ["GENERAL_DOMAIN", "create_world", "build_tools", "make_planner", "verify_observation", "summarize_state"]
+__all__ = [
+    "GENERAL_DOMAIN",
+    "GENERAL_INSTRUCTION",
+    "create_world",
+    "build_tools",
+    "make_planner",
+    "verify_observation",
+    "summarize_state",
+]
+
+#: The protocol the general planner is bound by. It must describe what this
+#: domain actually does: read *and* write the workspace, run whitelisted
+#: commands, fetch declared sources — while still proposing exactly one action
+#: and leaving execution to the runtime.
+GENERAL_INSTRUCTION = (
+    "每轮只提议一个动作，且必须来自 tools 列表里的工具；"
+    "你只能提议，不能执行、不能宣告任务完成——执行与验收由运行时完成。"
+    "你可以读写工作区文件（write_file / edit_file）、"
+    "用受限终端运行白名单命令（run_command）、抓取已声明的来源（fetch_url）。"
+    "提议未列出的工具会被权限门控拒绝并终止本次运行，"
+    "所以不确定时选 tools 里最接近的那个，而不是发明一个工具名。"
+)
 
 APPROVAL_TOOLS = ("write_file", "edit_file", "run_command")
 
@@ -109,6 +130,7 @@ def summarize_state(records) -> dict[str, Any]:
 
 
 GENERAL_DOMAIN = DomainModule(
+    instruction=GENERAL_INSTRUCTION,
     key="general-work",
     title="通用委托",
     create_world=create_world,

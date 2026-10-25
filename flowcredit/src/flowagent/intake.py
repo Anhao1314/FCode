@@ -166,6 +166,17 @@ GENERAL_TEMPLATE = "general-research"
 _SCRIPT_INTENT = re.compile(r"脚本|script|fibonacci|运行.{0,12}(写|产出)|python|node")
 
 
+def _requested_approval(spec: dict[str, Any] | None) -> str:
+    """The autonomy tier the operator picked in the composer.
+
+    A general delegation used to hardcode ``consequential``, so the chip in the
+    composer did nothing for exactly the tasks where autonomy matters most. An
+    unrecognised value falls back to the default instead of being echoed back.
+    """
+    value = str((spec or {}).get("approval") or "").strip().lower()
+    return value if value in APPROVALS else "consequential"
+
+
 def _general_turn(message: str, spec: dict[str, Any] | None) -> dict[str, Any]:
     """The general delegation needs no finance questionnaire.
 
@@ -184,16 +195,18 @@ def _general_turn(message: str, spec: dict[str, Any] | None) -> dict[str, Any]:
     objective = base[:600] or (
         "调研指定的公开主题，把来源摘录与结论写成 research.md 放进工作区"
     )
+    approval_label = APPROVALS[_requested_approval(spec)]["label"]
     if mode == "script":
         reply = (
             "通用委托（脚本模式）已就绪：写脚本 → 受限终端运行 → 锚定修复 → 复跑 → "
-            "results.md 归档；写入/编辑/命令全部过审批与收据。确认后开始。"
+            f"results.md 归档；审批档位「{approval_label}」，命令白名单与收据全程生效。"
+            "确认后开始。"
         )
         thought = "通用模板：脚本模式；命令白名单与审批全程生效。"
     else:
         reply = (
             "通用委托已就绪：来源 URL 与预算在 + 附加面里确认，"
-            "抓取与写入全程过门控、预算与收据。确认后开始。"
+            f"审批档位「{approval_label}」，抓取与写入全程过门控、预算与收据。确认后开始。"
         )
         thought = "通用模板：无需财务问卷，来源在附加面板指定。"
     return {
@@ -205,7 +218,7 @@ def _general_turn(message: str, spec: dict[str, Any] | None) -> dict[str, Any]:
         "task": {
             "objective": objective,
             "template": GENERAL_TEMPLATE,
-            "approval": "consequential",
+            "approval": _requested_approval(spec),
             "spec": {
                 "version": "fcode.intake/v1",
                 "task": "general-research",

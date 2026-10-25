@@ -60,6 +60,7 @@ class Loop:
         result_tools: tuple[str, ...],
         memory_summarizers: Any = None,
         memory_state_fn: Any = None,
+        memory_instruction: str | None = None,
     ) -> None:
         self.harness = harness
         self.planner = planner
@@ -81,6 +82,13 @@ class Loop:
         )
         self.memory_state_fn = (
             memory_state_fn if memory_state_fn is not None else harness.state_fn
+        )
+        # What the planner is told every round. The general domain writes files
+        # and runs commands, so it brings its own wording through the harness;
+        # the default stays the read-only kernel text the finance workload is
+        # frozen against.
+        self.memory_instruction = (
+            memory_instruction if memory_instruction is not None else harness.instruction
         )
 
     def run(self, task_id: str) -> Task:
@@ -109,6 +117,11 @@ class Loop:
                     return self._stop(task, plan, "PLAN_EXHAUSTED")
                 if self._decisions(task) >= self.max_rounds:
                     return self._abort(task_id, AgentError("ROUND_LIMIT", f"no verified result after {self.max_rounds} rounds"))
+
+            # Operator notes (插话) are chain events, so they are refreshed
+            # every round: a note that arrived during the previous round is in
+            # this round's prompt. Absent notes emit no context key at all.
+            memory.operator_messages = self.operator_notes(task)
 
             budget_snapshot = self.harness.budget(task).snapshot()
 
@@ -258,6 +271,37 @@ class Loop:
         )
         return task.model.attempts + auto
 
+    #: Operator notes are steering input, not documents: the prompt keeps the
+    #: most recent few, and the store keeps every one of them.
+    OPERATOR_NOTES = 8
+    OPERATOR_NOTE_CHARS = 600
+
+    def operator_notes(self, task: Task) -> list[dict[str, Any]]:
+        """The operator's mid-run notes, read back out of the chain.
+
+        They are events like everything else, so the prompt gets them from the
+        same log the rest of the run comes from, and a note queued at a round
+        boundary is in that round's prompt. The console used to promise
+        "message will reach the agent next round" while the text only reached
+        the chain; this is the promise, in code.
+        """
+        notes: list[dict[str, Any]] = []
+        for event in self.harness.store.events(task.id):
+            if event["type"] != "operator_message":
+                continue
+            detail = event["payload"].get("detail") or {}
+            text = str(detail.get("text") or "").strip()
+            if not text:
+                continue
+            note: dict[str, Any] = {
+                "round": int(detail.get("round") or 0),
+                "text": text[: self.OPERATOR_NOTE_CHARS],
+            }
+            if detail.get("steered"):
+                note["steered"] = True
+            notes.append(note)
+        return notes[-self.OPERATOR_NOTES :]
+
     def restore(self, task: Task) -> WorkingMemory:
         """Rebuild working memory from committed observations."""
         prior_cases: list[dict[str, Any]] = []
@@ -284,6 +328,7 @@ class Loop:
             summarizers=dict(self.memory_summarizers or {}),
             state_fn=self.memory_state_fn,
             conversation=conversation,
+            instruction=self.memory_instruction,
         )
         for event in self.harness.store.events(task.id):
             if event["type"] == "memory_recalled":

@@ -146,6 +146,40 @@ chat v2 的 P2。
   锚点事件 `chat_run_started` 与消息一起重放，所以刷新页面后卡片直接显示"这次运行"，
   而不是又冒出一张待确认的提案。一个提案只锚定一次运行，第二次确认返回 409。
 
+## 6.2 插话进上下文与域自己的协议措辞（Phase A，已落地）
+
+两件都在同一条"模型看到什么"的链上，都由真实运行暴露出来：
+
+**插话（operator_message）是链上事件，也进 prompt。** 控制台的输入框一直写着
+"消息将排队并在下一轮交给 agent"，但在此之前文本只落到签名链上——没有任何
+provider 读到它（代码注释也承认了）。现在 `Loop.operator_notes()` 每轮从事件
+日志读回插话（保留最近 8 条、每条 ≤600 字，`steered` 标注照带），
+`WorkingMemory.build()` 只在**确实有插话时**才输出 `operator_messages` 键——
+没有插话的运行逐字节不变，finance v10 与 SFT 黄金哈希因此不受影响。语义是
+边界语义：在第 N 轮边界入链的插话出现在**第 N 轮**的 prompt 里；运行途中到达的
+插话在第 N+1 轮出现。
+
+**域自己的协议措辞（DomainModule.instruction）。** `WorkingMemory.build()` 里
+原来硬编码一句默认指令："只能提议只读动作……不能传递财务数值"。它是给财务
+参考负载写的，却同时发给了通用委托。第三次真实 Kimi 运行把它暴露得很清楚：
+模型提议 `report_blocked`，理由原文是"当前 instruction 要求只能提议 read-only
+action，但 plan 中所有剩余待办均为 write_file、edit_file 或 run_command，没有
+可推进的只读步骤"——工具没注册，运行以 `TOOL_NOT_REGISTERED` 被拒。模型没有
+出错，它**照着我们写的话**拒绝干活。现在指令变成域声明：通用域给出
+`GENERAL_INSTRUCTION`（可以读写工作区、运行白名单命令、抓取已声明来源；每轮
+一个动作且必须来自 tools 列表），`Harness(state_fn=…, instruction=…)` 一次接线，
+两个 Loop 构造点自动继承；`None` 仍是那句冻结的默认文本。
+
+验收（真实 Kimi，6 轮，$0.11，trace 存 `work/kimi-e2e/phase-a-operator-note/`）：
+运行中插话要求"最终 markdown 命名为 note-seen.md 并写一行『已读插话』"，运行
+**照做**（产物里就有这个文件和那行字），终态 succeeded、链 35 事件、文件状态
+被 git 历史独立复核。同一轮运行还验证了审批档位：`off`（自动）下 6 轮无一次
+暂停。证据里同时留下了两个被真实运行抓出来的缺陷：`console_manager` 少了
+`import traceback`（错误处理本身抛 NameError，把一个可恢复的 ingest 失败变成
+"永远运行中"的僵尸运行），以及 `ArtifactBook` 在 `__init__` 里建长连接
+（sqlite 拒绝跨线程使用，控制台正是从运行的 worker 线程 ingest——现在改为
+每次操作一条短连接，与 case/fact 簿一致）。
+
 ## 仍然欠的（下一步）
 
 - 模型摘要 digest：仅当轮数大到索引表也放不下时，标注

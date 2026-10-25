@@ -66,6 +66,32 @@ class IntakeTests(unittest.TestCase):
         self.assertTrue(third["ready"])
         self.assertLessEqual(len(third["task"]["objective"]), 600)
 
+    def test_general_delegation_takes_the_operators_autonomy_tier(self) -> None:
+        """The composer's approval chip is a real decision: a general task used
+        to ignore it and always pause on every consequential tool."""
+        for tier in ("off", "all", "consequential"):
+            with self.subTest(tier=tier):
+                turn = clarify(
+                    message="帮我整理一下这周的行程",
+                    template="general-research",
+                    spec={"approval": tier},
+                )
+                self.assertTrue(turn["ready"])
+                self.assertEqual(turn["task"]["approval"], tier)
+
+    def test_general_delegation_defaults_to_asking(self) -> None:
+        turn = clarify(message="帮我整理一下这周的行程", template="general-research")
+        self.assertEqual(turn["task"]["approval"], "consequential")
+        self.assertIn("关键审批", turn["reply"])
+
+    def test_an_unknown_tier_falls_back_to_the_default(self) -> None:
+        turn = clarify(
+            message="帮我整理一下这周的行程",
+            template="general-research",
+            spec={"approval": "yolo"},
+        )
+        self.assertEqual(turn["task"]["approval"], "consequential")
+
     def test_invalid_choice_does_not_advance(self) -> None:
         turn = clarify(message="帮我看看", choice={"field": "intent", "value": "not-a-real-choice"})
         self.assertEqual(turn["spec"].get("intent"), None)

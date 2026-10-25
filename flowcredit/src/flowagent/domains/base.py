@@ -46,3 +46,10 @@ class DomainModule:
     #: observation records. Working memory calls this instead of knowing tool
     #: names; a module without one leaves the memory's neutral fallback.
     summarize_state: Callable[[Any], dict[str, Any]] | None = None
+    #: What this domain's planner is told every round. ``None`` keeps the
+    #: kernel's default wording, which is read-only by construction — the
+    #: finance reference workload and its frozen v10 prompt depend on it. A
+    #: module whose work is to *write* must say so: a real model obeys the
+    #: instruction it is given, and a read-only instruction makes it refuse the
+    #: very steps the plan requires (observed on a real run, not in theory).
+    instruction: str | None = None

@@ -815,3 +815,22 @@ html.desktop-app .side-user { height: 32px; padding: 4px 8px; }
 .run-card-artifact .bytes { color: var(--text-3); }
 
 .run-card-meta { display: flex; flex-wrap: wrap; gap: 12px; font: 12px/18px var(--font-mono); color: var(--text-3); }
+
+/* 舞台脚注与「演示场景」折叠：真实任务模板直接露出，故障注入夹具收进折叠。
+   chips 改为换行布局：Kimi 的模板区是有限几项，横滚是我们自己的历史包袱。 */
+.stage-chips { flex-wrap: wrap; row-gap: 10px; }
+.stage-foot {
+  margin: 10px 0 0; max-width: 620px;
+  font: 12px/18px var(--font-ui); color: var(--text-4); text-align: center;
+}
+.stage-demos {
+  flex: 1 0 100%; margin-top: 2px;
+  font: 12px/18px var(--font-ui); color: var(--text-3);
+}
+.stage-demos > summary {
+  display: inline-block; padding: 4px 10px; border-radius: 8px; cursor: pointer;
+  color: var(--text-3); transition: background-color .15s, color .15s;
+}
+.stage-demos > summary:hover { background: var(--panel); color: var(--text-1); }
+.stage-demo-chips { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; padding: 8px 0 4px; }
+.stage-demo-note { margin: 2px 0 0; font-size: 12px; line-height: 18px; color: var(--text-4); }

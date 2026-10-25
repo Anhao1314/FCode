@@ -56,6 +56,7 @@ class Harness:
         receipts: ReceiptStore,
         verifier: Callable[[Observation], dict[str, Any]] | None = None,
         state_fn: Callable[[Any], dict[str, Any]] | None = None,
+        instruction: str | None = None,
     ) -> None:
         self.store = store
         self.registry = registry
@@ -67,6 +68,10 @@ class Harness:
         #: The domain's memory state view (see DomainModule.summarize_state);
         #: working memory calls it instead of knowing tool names.
         self.state_fn = state_fn
+        #: The domain's protocol wording for the planner (see
+        #: DomainModule.instruction). ``None`` keeps the read-only default the
+        #: finance reference workload is frozen against.
+        self.instruction = instruction
 
     # ------------------------------------------------------------------ setup
 

@@ -2328,6 +2328,7 @@ function stageEmptyHtml(note = "还没有运行记录", opts = {}) {
     <p class="stage-note">${esc(note)}</p>
     <div class="stage-dock" id="stage-dock"></div>
     <div class="stage-chips" id="stage-chips" aria-label="按模板开始委托"${opts.work ? "" : " hidden"}></div>
+    ${opts.work ? `<p class="stage-foot">${esc(WORK_STAGE_FOOTNOTE)}</p>` : ""}
   </section>`;
 }
 
@@ -2351,16 +2352,34 @@ function setStageMode(on) {
 }
 
 /* 居中 composer 下的模板 chips：与 composer 模板选择器同源（/api/templates），
-   点击 = 选中该模板 + 预填目标 + 聚焦，是真实委托入口。 */
+   点击 = 选中该模板 + 预填目标 + 聚焦，是真实委托入口。
+
+   七条可靠性场景（越权工具/预算耗尽/崩溃恢复/未知结果/目标无法完成…）是这台机器
+   的故障注入夹具，用来证明门控与恢复是真的——它们是演示素材，不是产品前门。
+   因此真实任务模板直接露出，夹具收进折叠的「演示场景」里，仍然可达。 */
+/* 只有故障注入的那几个才算演示场景——它们演示的是"这台机器出错时如实交代"，
+   属于可靠的证据，不属于任务形态。「完整研究」是真任务，留在前台。 */
+const DEMO_SCENARIOS = new Set([
+  "tool-denied", "budget", "budget-resume", "crash", "unknown", "open-ended",
+]);
+
 function renderStageChips() {
   const slot = document.getElementById("stage-chips");
   if (!slot) return;
   const source = (templates && templates.length)
     ? templates.map(t => [t.key, (t.title || t.key).split("：")[0]])
     : SCENARIOS.map(([key, label]) => [key, label]);
-  slot.innerHTML = source.map(([key, label]) =>
-    `<button type="button" class="stage-chip" data-stage-chip="${esc(key)}" title="以「${esc(label)}」模板开始委托">${esc(label)}</button>`
-  ).join("");
+  const tasks = source.filter(([key]) => !DEMO_SCENARIOS.has(key));
+  const demos = source.filter(([key]) => DEMO_SCENARIOS.has(key));
+  const chip = ([key, label]) =>
+    `<button type="button" class="stage-chip" data-stage-chip="${esc(key)}" title="以「${esc(label)}」模板开始委托">${esc(label)}</button>`;
+  slot.innerHTML = [
+    tasks.map(chip).join(""),
+    demos.length ? `<details class="stage-demos"><summary>演示场景 · ${demos.length}</summary>
+      <div class="stage-demo-chips">${demos.map(chip).join("")}</div>
+      <p class="stage-demo-note">可靠性夹具：故意触发越权、耗尽预算、杀掉进程或制造未知结果，用来看门控与恢复是否如实。</p>
+    </details>` : "",
+  ].join("");
 }
 
 /* RENDER LAYER — 阅读列会话头：标题下方一行 meta；证据面板按需打开。 */
@@ -3626,7 +3645,10 @@ async function intakeRequest(message, choice) {
       body: JSON.stringify({
         message,
         choice,
-        spec: intake.spec,
+        // 通用委托没有问卷，唯一决定自主度的就是输入框那个档位——随请求一起
+        // 送过去，否则会产生"chip 显示自动、运行却在每步都停"的错觉。
+        // 财务问卷的审批问题仍由问卷本身回答，不受这里影响。
+        spec: isGeneralTemplate() ? { ...intake.spec, approval: approvalMode } : intake.spec,
         history: intake.messages.slice(-16),
         template: tplKey || "",
       }),
@@ -5740,7 +5762,8 @@ function renderChatHead() {
   document.getElementById("tb-chips").innerHTML = `<span class="chip">对话</span>`;
 }
 
-const WORK_STAGE_NOTE = "派一个任务：FCode 受门控执行、独立重算、入签名链";
+const WORK_STAGE_NOTE = "把任务交给 FCode：自己规划、动手执行、完成后给你产物。";
+const WORK_STAGE_FOOTNOTE = "每次工具调用都过权限门控与预算，全程写入签名链——需要你确认的动作会停下来问。";
 const WORK_PLACEHOLDER = "给 FCode 派一个任务…";
 let uiMode = (() => {
   try { return localStorage.getItem("fa.uiMode") === "work" ? "work" : "chat"; }

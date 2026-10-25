@@ -20,7 +20,19 @@ from typing import Any, Callable
 from ..core.hashing import canonical_json
 from ..tools.base import Observation
 
-__all__ = ["ObservationRecord", "WorkingMemory", "default_summarize"]
+__all__ = ["DEFAULT_INSTRUCTION", "ObservationRecord", "WorkingMemory", "default_summarize"]
+
+#: The kernel's default protocol wording. Read-only by construction, which is
+#: exactly what the finance reference workload is: the frozen v10 prompt was
+#: built against this string, so it is a constant, not a suggestion. A domain
+#: whose work is to *write* supplies its own wording instead — a real model
+#: obeys what it is told, and a read-only instruction makes it refuse the very
+#: steps its plan requires (observed on a real run).
+DEFAULT_INSTRUCTION = (
+    "Propose exactly one read-only action. You cannot execute it, "
+    "cannot mark the task complete, and cannot pass a financial value. "
+    "The runtime decides when the evidence is sufficient."
+)
 
 
 def _arguments_head(arguments: dict[str, Any], limit: int = 80) -> str:
@@ -109,6 +121,14 @@ class WorkingMemory:
     #: said. Absent for direct delegations; the key then never appears in the
     #: context, so the finance v10 prompt bytes are untouched.
     conversation: list[dict[str, Any]] | None = None
+    #: Mid-run operator notes ("顺便查一下 B"), refreshed from the chain by the
+    #: loop once per round. Emitted only when non-empty, so a run without notes
+    #: keeps byte-identical prompts — the finance v10 gate depends on that.
+    operator_messages: list[dict[str, Any]] | None = None
+    #: What this domain's planner is told each round. ``None`` keeps the
+    #: read-only kernel wording (the v10 prompt was frozen against it); a
+    #: domain that writes files or runs commands says so instead.
+    instruction: str | None = None
 
     def record(self, round_no: int, observation: Observation) -> ObservationRecord:
         record = ObservationRecord(
@@ -213,11 +233,7 @@ class WorkingMemory:
             "state": self.state(),
             "observations": inline,
             "budget": budget_snapshot,
-            "instruction": (
-                "Propose exactly one read-only action. You cannot execute it, "
-                "cannot mark the task complete, and cannot pass a financial value. "
-                "The runtime decides when the evidence is sufficient."
-            ),
+            "instruction": self.instruction or DEFAULT_INSTRUCTION,
         }
         if index_rows:
             context["observation_index"] = index_rows
@@ -227,6 +243,17 @@ class WorkingMemory:
                 for item in self.conversation
                 if item.get("role") in ("user", "assistant") and item.get("text")
             ]
+        notes = [
+            {
+                "round": int(item.get("round") or 0),
+                "text": str(item.get("text") or "")[:600],
+                **({"steered": True} if item.get("steered") else {}),
+            }
+            for item in (self.operator_messages or [])
+            if str(item.get("text") or "").strip()
+        ]
+        if notes:
+            context["operator_messages"] = notes
         if self.prior_cases:
             context["prior_cases"] = [
                 {
