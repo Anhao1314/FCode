@@ -36,7 +36,9 @@ FCode 现在有两种模型交互，边界是刻意画清的：
 
 ## 服务端
 
-- `flowcredit/src/flowagent/chat.py`：`ChatService` + 三个 provider 路径。
+- `flowagent/chat.py`：`ChatService`——线程、预算、事件投影与取消。
+- `flowagent/chat_config.py`：设置 > 环境 > 默认的 provider 解析、价格校验、本地配置文件。
+- `flowagent/chat_provider.py`：mock 与 OpenAI 兼容流式客户端（SSE 分帧、错误分类）。
 - `POST /api/chat/send`：`{threadId?, text, attachments?, model}` → SSE。
 - `POST /api/chat/threads/{id}/edit`：`{messageId, text, attachments?, model}` → SSE。
 - `POST /api/chat/threads/{id}/regenerate`：`{messageId, model?}` → SSE。
