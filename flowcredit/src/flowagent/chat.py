@@ -23,7 +23,7 @@ import json
 import secrets
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
@@ -501,6 +501,35 @@ CREATE TABLE IF NOT EXISTS chat_thread_meta (
                     (thread_id, utc_now()),
                 )
         return {"id": thread_id, "archived": True}
+
+    def archive_stale(self, days: int, *, now: datetime | None = None) -> int:
+        """Archive threads untouched for ``days`` days; never delete events.
+
+        Retention is a visibility policy, not a shredder: the tombstone hides
+        the thread from the sidebar while the chain and receipts stay auditable.
+        ``days <= 0`` disables it.
+        """
+        if days <= 0:
+            return 0
+        moment = now or datetime.now(timezone.utc)
+        cutoff = (moment - timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+        with self._lock, self.store.transaction():
+            rows = self.store._conn.execute(
+                "SELECT t.id FROM task t WHERE t.id LIKE 'chat-%'"
+                " AND t.updated_at < ? AND NOT EXISTS ("
+                "   SELECT 1 FROM chat_thread_meta m"
+                "   WHERE m.thread_id = t.id AND m.archived = 1)",
+                (cutoff,),
+            ).fetchall()
+            for row in rows:
+                self.store._conn.execute(
+                    "INSERT INTO chat_thread_meta (thread_id, archived, archived_at)"
+                    " VALUES (?, 1, ?)"
+                    " ON CONFLICT(thread_id) DO UPDATE SET"
+                    " archived = 1, archived_at = excluded.archived_at",
+                    (row["id"], utc_now()),
+                )
+        return len(rows)
 
     def get_thread(self, thread_id: str) -> dict[str, Any]:
         task = self._load_task(thread_id)

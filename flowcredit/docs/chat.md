@@ -95,6 +95,8 @@ API：`GET/POST /api/settings/chat-config`、`GET /api/chat/models`。
 - **对话不调用工具**。这是治理选择，不是能力缺口：要让模型执行，走委托运行。
 - **附件只收纯文本**（代码、Markdown、JSON、CSV 等）。图片/PDF/Office 不在 v1；IAB 的文件选择器本身也不支持上传。
 - **每线程预算**默认 60 次调用 / 300,000 µUSD / 200,000 tokens；可用 `FCODE_CHAT_MAX_*` 调整。
+- **保留策略**：`FCODE_CHAT_RETENTION_DAYS`（默认 0 = 关闭）在服务启动时把超过 N 天
+  未更新的线程归档；事件链与收据保留，不做硬删除。
 - **没有图片理解、没有跨线程记忆、没有并行工具调用**。这些仍属于委托/评估那条线。
 - **pacing 是进程级、按端点计的**（provider + base URL）；对话与委托运行共享同一张
   预约表，同一个 Kimi 组织 RPM 不会被两条调用路径同时打满。对话首调立即开跑，

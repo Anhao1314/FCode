@@ -71,6 +71,22 @@ class ChatServiceTests(unittest.TestCase):
         self.assertEqual(thread["budget"]["calls_used"], 2)
         self.service.store.verify_chain(thread_id)
 
+    def test_retention_archives_old_threads_without_deleting_events(self) -> None:
+        old = self.send("旧对话")[0]["thread_id"]
+        new = self.send("新对话")[0]["thread_id"]
+        with self.service.store.transaction():
+            self.service.store._conn.execute(
+                "UPDATE task SET updated_at=? WHERE id=?",
+                ("2020-01-01T00:00:00.000Z", old),
+            )
+        self.assertEqual(self.service.archive_stale(30), 1)
+        self.assertEqual(self.service.archive_stale(30), 0)
+        self.assertNotIn(old, [thread["id"] for thread in self.service.list_threads()])
+        self.assertIn(new, [thread["id"] for thread in self.service.list_threads()])
+        # The tombstone hides the thread; it does not remove evidence.
+        self.assertGreater(len(self.service.store.events(old)), 0)
+        self.service.store.verify_chain(old)
+
     def test_regenerate_supersedes_only_the_answer(self) -> None:
         events = self.send("问题")
         thread_id = events[0]["thread_id"]

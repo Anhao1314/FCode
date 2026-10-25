@@ -210,7 +210,7 @@ open desktop/dist/FCode.app
 
 ## 数字
 
-- **364** 项 Python 单元与场景测试，全部离线
+- **365** 项 Python 单元与场景测试，全部离线
 - **12** 项前端纯函数测试（Node 内置 test runner，无测试框架依赖）
 - **8** 个可复现场景，其中 1 个是通用委托，7 个是参考负载上的故障注入
 - **0** 个第三方运行时依赖（只用标准库）
@@ -236,7 +236,7 @@ flowcredit/          Python Runtime 与 Demo
     trajectory/      记录、导出、独立重算
     demo/            CLI、终端渲染、八个场景、模块装配、崩溃 worker
   viewer/            实时控制台 + Trace 回放（零依赖零构建）
-  tests/             364 项 unittest
+  tests/             365 项 unittest
   docs/              架构、设计决策、框架对照、JD 映射
 archive/             v1：Node.js 研究原型（保留，不参与 CI）
 ```

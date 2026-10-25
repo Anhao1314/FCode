@@ -92,6 +92,14 @@ class RunManager:
                     self.runs_dir.parent / "chat.sqlite",
                     CHAT_CONFIG_PATH,
                 )
+                try:
+                    retention = int(os.environ.get("FCODE_CHAT_RETENTION_DAYS", "0") or 0)
+                except ValueError:
+                    retention = 0
+                if retention > 0:
+                    archived = self.chat.archive_stale(retention)
+                    if archived:
+                        print(f"[console] archived {archived} chat thread(s) older than {retention} days")
             except Exception:  # noqa: BLE001 — chat must not take the console down
                 traceback.print_exc()
         self._lock = threading.Lock()
