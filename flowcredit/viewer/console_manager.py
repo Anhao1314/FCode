@@ -345,6 +345,11 @@ class RunManager:
                 self.case_index.tombstone(run_id)
             except Exception:  # noqa: BLE001
                 traceback.print_exc()
+        if self.artifact_book is not None:
+            try:
+                self.artifact_book.archive_run(run_id)
+            except Exception:  # noqa: BLE001
+                traceback.print_exc()
         if self.fact_store is not None:
             try:
                 self.fact_store.tombstone_run(run_id)

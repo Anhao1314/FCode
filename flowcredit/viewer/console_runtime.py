@@ -88,6 +88,10 @@ class Runtime:
         self.Plan = m.Plan
         m = imp("flowagent.memory.cases")
         self.CaseIndex = m.CaseIndex
+        m = imp("flowagent.memory.artifacts")
+        self.ArtifactBook = m.ArtifactBook
+        self.project_artifacts = m.project_artifacts
+        self.default_artifact_db_path = m.default_artifact_db_path
         m = imp("flowagent.memory.facts")
         self.FactStore = m.FactStore
         m = imp("flowagent.tools.finance.facts")

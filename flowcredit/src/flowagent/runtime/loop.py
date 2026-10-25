@@ -87,6 +87,10 @@ class Loop:
         task = self.harness.store.load(task_id)
         memory = self.restore(task)
         plan = self.rebuild_plan(task, memory)
+        world = getattr(self.harness, "world", None)
+        recall_holder = getattr(world, "recall_holder", None) if world is not None else None
+        if recall_holder is not None:
+            recall_holder["memory"] = memory
         pending = self.pending_step(task)
 
         while True:

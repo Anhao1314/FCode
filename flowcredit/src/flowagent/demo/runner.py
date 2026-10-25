@@ -160,6 +160,28 @@ def build_stack(
     world = module.create_world(
         partial=scenario.partial_corpus, spec=spec or {}, **world_kwargs,
     )
+    recall_holder: dict[str, Any] = {"memory": None}
+    if hasattr(world, "memory_records_provider"):
+        world.recall_holder = recall_holder
+    if hasattr(world, "memory_records_provider") and world.memory_records_provider is None:
+        # recall_observation reads the run's own compressed observation log —
+        # the same projection working memory holds, assembled before each call.
+        def _records_provider() -> list[dict[str, Any]]:
+            memory = recall_holder.get("memory")
+            if memory is None:
+                return []
+            return [
+                {
+                    "round": record.round,
+                    "tool": record.tool,
+                    "arguments": dict(record.arguments),
+                    "summary": memory._summarise(record),
+                    "result_hash": record.result_hash,
+                }
+                for record in memory.records
+            ]
+
+        world.memory_records_provider = _records_provider
     registry = ToolRegistry(module.build_tools(world))
     receipts = ReceiptStore(store)
     issued: dict[str, str] = {}

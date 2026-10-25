@@ -70,13 +70,46 @@ blockers: []
 - 入链：折叠标记经 `harness.record("context_compacted")` 进链后
   `verify_chain` 通过。
 
+## 4. recall_observation：窗口外回捞是治理动作（已落地）
+
+折叠不删除，只降可见。当模型真的需要一条被折叠的观测时，它必须**要**——
+`recall_observation`（`tools/general/recall.py`）：
+
+- 只读工具，`round` / `tool` / `contains` 三种查询（空查询拒绝——回捞不是
+  批量导出），命中上限 5 条；
+- 返回**压缩摘要 + result_hash**，永不返回原始结果——原始记录只活在 store；
+- 与其他读同路径：过 gate、扣 reads 预算、`tool_succeeded` 入链，下一轮
+  上下文自然携带。审计问题"模型拉回了什么、为什么"用现有机制就能答。
+
+数据来源是装配时绑定的 `memory_records_provider`（world 持有，Loop 每次运行
+把活跃 WorkingMemory 发布进去）——读的是本运行自己的投影，够不到别的运行、
+文件系统或网络。
+
+## 5. 产物簿：通用 agent 的跨任务事实层（已落地）
+
+`memory/artifacts.py`。通用域里**事实=产物**：一条记录 = path + sha256 +
+produced_by(write/edit) + run_id + chain_head——每个值都来自签名观测，可以
+随时对工作区重新验证，且不需要任何抽取模型。
+
+- `project_artifacts(trace)`：纯函数投影（write/edit 且 changed 的轮次）；
+- `ArtifactBook`：单 SQLite（Application Support/artifacts.sqlite），按
+  path/sha/子串检索；同路径多次写**全保留**（latest + history），与事实簿
+  同一个"不覆盖历史"立场；
+- 控制台在运行终态时 ingest（两处终态路径都挂了），删除运行只墓碑化
+  （archived=1），行仍然可查——遗忘降级，证据不删；
+- 接项目工作区即是跨任务记忆：同一项目的后续运行读上次的产物文件，
+  产物簿提供"这个文件是谁、哪一轮、以什么哈希产出的"索引。
+
+## 测试
+
+`tests/test_recall_and_artifacts.py`（14 项）：按轮次/工具/子串回捞、空查询
+拒绝、命中上限、registry 路径入链、摘要合约；投影纯函数、latest/history、
+sha 检索、墓碑化不删行、词法检索、真实 fib trace 投影。
+
 ## 仍然欠的（下一步）
 
-- `recall_observation` 门控工具：把窗口外的观测显式拉回上下文（检索=治理
-  动作，入链）；
-- 产物簿：通用事实层 = path/hash/produced_by_run，接项目工作区做跨任务
-  记忆；
 - 模型摘要 digest：仅当轮数大到索引表也放不下时，标注
   `model-generated, advisory`；
+- 产物簿接 Projects（工作区即长期记忆的 UI 面）；
 - 评估：LongMemEval（ClaimLedger 线）量记忆质量，任务成功率 gate 任何
   prompt 合约变更（v10 除外，它被黄金哈希冻结）。

@@ -135,7 +135,7 @@ function renderMode(mode, payload = {}) { ... }
 | `main.innerHTML` 直接写入 | 1 处（`renderMain` 内） |
 | 旧状态引用 | 0 |
 | `addEventListener` | 56 |
-| 后端测试 | 381 通过 |
+| 后端测试 | 395 通过 |
 | 前端纯函数测试 | 12 通过（`node --test`） |
 
 ## 仍待收敛

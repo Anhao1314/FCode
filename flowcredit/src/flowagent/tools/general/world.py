@@ -19,6 +19,7 @@ from ...core.contracts import AgentError
 from ..base import Observation, ToolSpec
 from .commands import CommandRunner, load_command_config
 from .fetch import UrlFetcher
+from .recall import build_recall_tool
 from .sandbox import WorkspaceSandbox
 from .tools import build_general_tools
 
@@ -65,12 +66,23 @@ class GeneralWorld:
         self.command_runner = command_runner
         self.command_config = command_config or os.environ.get("FCODE_COMMANDS_CONFIG") or None
 
+    #: Optional provider of this run's compressed observation records; set by
+    #: the assembly so ``recall_observation`` reads exactly what working memory
+    #: holds — never another run, never the raw store.
+    memory_records_provider: Any = None
+    #: The loop publishes the live WorkingMemory here each run; the provider
+    #: closes over it. An assembly may also leave both unset to skip the tool.
+    recall_holder: Any = None
+
     def build_tools(self) -> list[ToolSpec]:
         runner = self.command_runner
         if runner is None:
             runner = CommandRunner(self.sandbox, load_command_config(self.command_config))
             self.command_runner = runner
-        return build_general_tools(self.sandbox, self.fetcher, command_runner=runner)
+        tools = build_general_tools(self.sandbox, self.fetcher, command_runner=runner)
+        if self.memory_records_provider is not None:
+            tools.append(build_recall_tool(self.memory_records_provider))
+        return tools
 
     def apply_state(self, state: dict[str, Any]) -> None:
         """Resume hook. The sandbox *is* the durable state (files on disk);
