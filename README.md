@@ -153,6 +153,7 @@ open desktop/dist/FCode.app
 ```
 
 - 窗口里加载的就是 `viewer/` 的同一套静态控制台——桌面端不是另一套实现
+- 桌面比例取自 kimi.com 实测（1600×1000）：侧栏 240 / 新建 41 / 导航 36 / 用户区 44 / 输入框 768×114 / 正文 14；首页不显示顶部工具条，运行页顶栏 52。测量、映射与边界见 [desktop-design.md](flowcredit/docs/desktop-design.md)
 - 内嵌 server 绑定随机回环端口，并要求每次启动生成的 token（HttpOnly cookie 引导）；其他本地页面无法驱动 agent
 - 运行记录写入 `~/Library/Application Support/FCode/runs`——打包后的 `.app` 只读，审计记录属于用户
 - 原生能力：报告走系统保存对话框、完成通知走系统通知、窗口标题跟随委托；在浏览器里自动降级

@@ -2238,9 +2238,10 @@ function annotateRounds(trace) {
 
 function renderHead(trace, title) {
   const task = trace.task || {};
-  document.getElementById("tb-title").textContent = "FCode";
+  const heading = title || task.id || "FCode";
+  document.getElementById("tb-title").textContent = heading;
   const bridge = desktopBridge();
-  if (bridge && bridge.set_title) bridge.set_title(title || task.id || "FCode");
+  if (bridge && bridge.set_title) bridge.set_title(heading);
   document.getElementById("tb-chips").innerHTML = "";
 }
 

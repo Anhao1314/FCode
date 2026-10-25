@@ -227,13 +227,14 @@ def main() -> int:
 
     import webview
 
-    url = f"http://127.0.0.1:{port}/?token={token}"
+    url = f"http://127.0.0.1:{port}/?token={token}&desktop=1"
     webview.create_window(
         APP_NAME,
         url,
         width=1500,
         height=950,
         min_size=(1080, 680),
+        background_color="#FAFAFB",
         js_api=Bridge(),
     )
     log("window created")

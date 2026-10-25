@@ -1,0 +1,48 @@
+/* ============================================================ FCode desktop shell
+   桌面端的几何取自 kimi.com 的实测值（1600×1000，2026-10-25）：
+   侧栏 240 · 导航行 36 / 行距 37 · 用户区 44 / r12 · 输入框 768×114 / r24
+   编辑区 16/24 · 操作行 36 · 正文 14 · 内容列 1320（左右 17/23）
+   颜色仍由 Console Light / Paper & Proof 承担；这里只改比例与桌面视图。 */
+
+html.desktop-app {
+  --fs-2: 13px;
+  --fs-3: 14px;
+  --reading-w: 768px;
+}
+
+/* 侧栏：8px 内边距；新建 41/r12；导航行 36、标签落在 x=40（与 Kimi 同列） */
+html.desktop-app .sidebar { padding: 8px; }
+html.desktop-app .side-head { padding: 4px 0 12px; }
+html.desktop-app .side-new {
+  width: 100%; height: 41px; margin: 0 0 10px; border-radius: 12px; font-size: 14px;
+}
+html.desktop-app .side-search { margin: 0 0 8px; }
+html.desktop-app .side-list { padding: 0; }
+html.desktop-app .side-desk {
+  width: 100%; height: 36px; margin: 0 0 4px; padding: 0 8px;
+  border-radius: 10px; font-size: 14px;
+}
+html.desktop-app .side-nav { gap: 1px; margin: 0 0 6px; }
+html.desktop-app .side-nav .nav-item { height: 36px; padding: 0 8px; font-size: 14px; }
+html.desktop-app .side-section { margin: 12px 8px 4px; }
+html.desktop-app .side-foot { border-top: 0; padding: 0; margin-top: 8px; }
+html.desktop-app .side-user { height: 44px; padding: 8px; border-radius: 12px; font-size: 14px; }
+html.desktop-app .side-user .side-gear { width: 24px; height: 24px; }
+
+/* 首页：与 Kimi 的新对话视图一致，不显示顶部工具条；运行/委托/设置页保留 */
+html.desktop-app #app.stage-mode .topbar { display: none; }
+html.desktop-app .topbar { height: 52px; }
+
+/* 输入框：768 宽、24 圆角、16/24 编辑区、36 操作行（总高 114） */
+html.desktop-app .composer { max-width: 768px; }
+html.desktop-app .composer-ta {
+  min-height: 60px; padding: 12px 16px 0; font-size: 16px; line-height: 24px;
+}
+html.desktop-app .composer-bar { padding: 9px 10px; }
+html.desktop-app .c-btn {
+  height: 36px; padding: 0 13px; border-radius: 20px; font-size: 14px;
+}
+html.desktop-app .c-icon,
+html.desktop-app .send { width: 36px; height: 36px; }
+html.desktop-app .stage-dock { width: min(768px, 100%); }
+html.desktop-app .stage-chips { max-width: min(768px, 100%); }

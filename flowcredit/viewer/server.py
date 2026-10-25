@@ -54,7 +54,7 @@ from datetime import datetime, timezone
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qs, unquote, urlparse
+from urllib.parse import parse_qs, unquote, urlencode, urlparse
 import urllib.request
 
 __all__ = ["main"]
@@ -1923,9 +1923,15 @@ class Handler(SimpleHTTPRequestHandler):
         if self.token and supplied is not None:
             if not secrets.compare_digest(supplied, self.token):
                 return self.send_error(403)
-            # Bootstrap: set an HttpOnly cookie, then strip the token from the URL.
+            # Bootstrap: set an HttpOnly cookie, then strip only the token from
+            # the URL. Other parameters (desktop=1, template=...) survive.
+            params = parse_qs(parsed.query, keep_blank_values=True)
+            params.pop("token", None)
+            location = path or "/"
+            if params:
+                location += "?" + urlencode(params, doseq=True)
             self.send_response(302)
-            self.send_header("Location", path or "/")
+            self.send_header("Location", location)
             self.send_header("Set-Cookie", f"fcode_token={self.token}; Path=/; HttpOnly; SameSite=Strict")
             self.end_headers()
             return
