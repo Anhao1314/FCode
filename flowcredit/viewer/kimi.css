@@ -373,7 +373,7 @@ button.run-chip:hover { border-color: var(--accent); color: var(--text-1); }
 .chat-md a:hover { text-decoration: underline; text-underline-offset: 2px; }
 .chat-md code {
   padding: 1px 5px; border-radius: 4px; background: #F5F5F5;
-  font-size: 14px; line-height: 22px;
+  font-size: 16px; line-height: 26px;
 }
 .chat-code {
   margin: 12px 0 16px; padding: 14px 16px;
@@ -488,6 +488,63 @@ body.reduce-motion .run-chip .pdot {
     opacity: .45;
   }
 }
+
+/* ================================================================ 字号与元素比例
+   Kimi 字阶：T1 18/26 · T2 16/24 · B1 15/22 · B2 14/20 · C1 12/18 · C2 10/14。
+   Markdown：H2 20/32 · H3 18/28 · 正文 16/26 · 行内码 16/26 · 代码块 14/22。
+   元素：导航行 36 / 历史行 28 / 用户行 32 / 操作行 36 / 模型浮窗 290。 */
+:root {
+  --fs-5: 18px;   /* T1：页面与会话标题 */
+  --fs-4: 15px;   /* B1：强调正文 */
+  --fs-3: 14px;   /* B2：默认 UI */
+  --fs-2: 14px;
+}
+
+/* 顶栏标题 = T2（Kimi 对话页头部 16/24） */
+.tb-title { font-size: 16px; line-height: 24px; font-weight: 500; }
+
+/* 元信息 = C1 12/18（计数、时间、预算行、快捷键、脚注） */
+.side-count, .side-desk .side-count, .side-section .side-count, .side-head-label .grp-count { font: 12px/18px var(--font-mono); }
+.session .smeta { font-size: 12px; line-height: 18px; }
+.run-row .r-sub { font: 12px/18px var(--font-mono); }
+.kbtn { font-size: 12px; }
+.foot-meta { font-size: 12px; line-height: 18px; }
+
+/* 用户行：Kimi 触发行的比例 → 32 高，齿轮 20 */
+html.desktop-app .side-user { height: 32px; padding: 4px 8px; }
+.side-user .side-gear { width: 20px; height: 20px; }
+
+/* 对话：操作按钮 12/18；行内码与正文同字号（Kimi markdown-InlineCode 16/26） */
+.chat-act { font-size: 12px; line-height: 18px; }
+
+/* 思考强度 = Kimi 规格行：label 14/20 + 右侧档位胶囊 28/r8 */
+.model-effort {
+  margin: 4px 0 2px; padding: 8px 10px;
+  border: 0; border-radius: 8px; background: #F5F5F5;
+}
+.me-head {
+  font: 500 14px/20px var(--font-ui);
+  letter-spacing: 0; text-transform: none; color: var(--text-1);
+}
+.me-opt {
+  min-width: 40px; height: 28px; padding: 0 10px;
+  border: 0; border-radius: 8px; background: rgba(0, 0, 0, .04);
+  color: var(--text-2); font-size: 12px; line-height: 18px;
+  transition: background-color .15s, color .15s;
+}
+.me-opt:hover { background: rgba(0, 0, 0, .08); color: var(--text-1); border-color: transparent; }
+.me-opt.active { background: #000000; border-color: transparent; color: #FFFFFF; font-weight: 500; }
+.me-note { font-size: 12px; line-height: 18px; }
+
+/* toast = Kimi PC 端深色提示（--MaskBg-ToastPC #2B2B2B） */
+.toast {
+  background: #2B2B2B; border: 0; color: #FFFFFF;
+  font-size: 14px; line-height: 20px; padding: 10px 16px; border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .18);
+}
+
+/* 设置输入框与操作行同高 */
+.chatcfg-field input { height: 36px; border-radius: 8px; font-size: 14px; }
 
 /* ================================================================ 窄屏 */
 @media (max-width: 900px) {
