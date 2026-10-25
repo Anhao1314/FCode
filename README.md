@@ -205,12 +205,12 @@ open desktop/dist/FCode.app
 | Reviewer profile（同类历史判断聚合 / 建议只预填 / 报告带判断记录） | 已实现（v1） |
 | 模型验收（Ollama → packet eval → 结果/链/修复判定） | 已实现（等待本地 GGUF） |
 | 本地模型供应商（Qwen3-4B LoRA · OpenAI 兼容 · 零依赖） | **demo 可显式启用**（`--provider local`）；默认仍 mock |
-| 真实供应商（DeepSeek API · 价格快照 + 预算预留 + 无重试） | **CLI/lab 已实测**；控制台仍 offline-mock |
-| 真实供应商（Kimi API · 价格快照 + token 校准 + HMAC 收据） | **kimi-k2.6 真实 E2E 已通过**；K2 系列将于 2026-12 底下线，需按账号迁移 `KIMI_MODEL` |
+| 真实供应商（Kimi / DeepSeek / 任意 OpenAI 兼容端点） | **一套共享引擎 + preset 前端**；对话在设置页选，委托走环境变量或 `FCODE_OPENAI_COMPAT_PROVIDERS`；价格快照 + 预算预留 + 无重试 |
+| Kimi 实测 | **kimi-k2.6 真实 E2E 已通过**；K2 系列将于 2026-12 底下线，需按账号迁移 `KIMI_MODEL` |
 
 ## 数字
 
-- **340** 项 Python 单元与场景测试，全部离线
+- **364** 项 Python 单元与场景测试，全部离线
 - **6** 项前端纯函数测试（Node 内置 test runner，无测试框架依赖）
 - **8** 个可复现场景，其中 1 个是通用委托，7 个是参考负载上的故障注入
 - **0** 个第三方运行时依赖（只用标准库）
@@ -226,7 +226,9 @@ flowcredit/          Python Runtime 与 Demo
   src/flowagent/
     core/            canonical JSON、契约与状态机、计划层、sqlite + 哈希链、签名收据
     runtime/         门控、预算、单轮 harness、多轮 loop（含恢复）
-    chat.py          对话：流式回答、线程事件链、编辑/重生成/附件
+    chat.py          对话服务：线程、预算、事件投影
+    chat_config.py   provider 解析：设置 > 环境 > 默认
+    chat_provider.py 对话传输：mock + OpenAI 兼容 SSE
     domains/         域模块注册表：general-work（默认）+ finance-research（参考负载）
     tools/           封闭注册表：general/ 文件、命令、网页；finance/ 参考负载
     providers/       mock / local / kimi / deepseek / openai-compatible / oracle（均只提议，不执行）
@@ -234,7 +236,7 @@ flowcredit/          Python Runtime 与 Demo
     trajectory/      记录、导出、独立重算
     demo/            CLI、终端渲染、八个场景、模块装配、崩溃 worker
   viewer/            实时控制台 + Trace 回放（零依赖零构建）
-  tests/             340 项 unittest
+  tests/             364 项 unittest
   docs/              架构、设计决策、框架对照、JD 映射
 archive/             v1：Node.js 研究原型（保留，不参与 CI）
 ```

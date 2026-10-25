@@ -18,7 +18,10 @@ flowcredit/viewer/
   core/chat-format.js ← Markdown 渲染与 SSE 分帧（纯函数，Node 可测）
   report.js           ← 自包含审计报告生成器
   icons-doodle.js     ← 图标与涂鸦
-  server.py           ← 标准库服务：静态文件 + JSON/SSE API + 运行管理
+  server.py           ← HTTP 表面：静态文件 + JSON/SSE API + 入口
+  console_common.py   ← 路径、静态拒绝、模型目录与预算换算
+  console_runtime.py  ← runtime 导入、单次运行、观察者与崩溃检查
+  console_manager.py  ← 运行历史、创建、控制、续跑与持久化
   tests/              ← 前端纯函数测试（node --test）
   runs/               ← 运行产物（task.sqlite / trace.json / meta.json，不入库）
   chat.sqlite         ← 对话事件库（不入库）
@@ -134,8 +137,8 @@ WAL 只读连接取已提交事件，重建快照推给浏览器。静态文件�
 
 ## 安全边界
 
-- 静态服务拒绝配置、数据库与临时文件（`*config*.json`、`*.sqlite*`、`*.log`、`*.pem`、
-  `*.key`、点文件等），命中直接 404；
+- 静态服务拒绝 `*.sqlite` / `*.sqlite-wal` / `*.sqlite-shm`、`chat-config.json*`
+  与 `*.tmp`，命中直接 404；运行 trace 本身仍可读，供回放使用；
 - 所有写操作要求 `application/json` 且同源（`Origin` / `Sec-Fetch-Site`），跨站表单无效；
 - 请求体上限 1 MiB，超限在读取前返回 413 并关闭连接；
 - 非回环地址必须带 `--token`；token 只用于建立 cookie，随后从 URL 中剥离；
