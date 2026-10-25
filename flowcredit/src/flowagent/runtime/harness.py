@@ -55,6 +55,7 @@ class Harness:
         limits: BudgetLimits,
         receipts: ReceiptStore,
         verifier: Callable[[Observation], dict[str, Any]] | None = None,
+        state_fn: Callable[[Any], dict[str, Any]] | None = None,
     ) -> None:
         self.store = store
         self.registry = registry
@@ -63,6 +64,9 @@ class Harness:
         self.limits = limits
         self.receipts = receipts
         self.verifier = verifier
+        #: The domain's memory state view (see DomainModule.summarize_state);
+        #: working memory calls it instead of knowing tool names.
+        self.state_fn = state_fn
 
     # ------------------------------------------------------------------ setup
 

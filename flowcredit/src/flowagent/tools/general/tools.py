@@ -21,6 +21,7 @@ from ..base import EFFECT_NETWORK, EFFECT_READ, EFFECT_WRITE, Param, ToolSpec
 from .commands import CommandRunner, MAX_TIMEOUT_SECONDS
 from .fetch import UrlFetcher
 from .sandbox import MAX_WRITE_CHARS, WorkspaceSandbox
+from . import summaries
 
 __all__ = ["GENERAL_TOOLS", "build_general_tools"]
 
@@ -85,6 +86,7 @@ def build_general_tools(
     tools = [
         ToolSpec(
             name="ls_workspace",
+            summarize=summaries.summarize_ls_workspace,
             summary="List files in this run's workspace sandbox with content hashes",
             effect=EFFECT_READ,
             params=(),
@@ -94,6 +96,7 @@ def build_general_tools(
         ),
         ToolSpec(
             name="read_file",
+            summarize=summaries.summarize_read_file,
             summary="Read one file from the workspace sandbox; paths are jailed and escapes refused",
             effect=EFFECT_READ,
             params=(
@@ -115,6 +118,7 @@ def build_general_tools(
         ),
         ToolSpec(
             name="write_file",
+            summarize=summaries.summarize_write_file,
             summary="Write one file into the workspace sandbox; approval-gated, hashed and git-committed",
             effect=EFFECT_WRITE,
             params=(
@@ -146,6 +150,7 @@ def build_general_tools(
         ),
         ToolSpec(
             name="edit_file",
+            summarize=summaries.summarize_edit_file,
             summary="Edit one file by replacing a unique anchored block; approval-gated with a real diff",
             effect=EFFECT_WRITE,
             params=(
@@ -186,6 +191,7 @@ def build_general_tools(
         ),
         ToolSpec(
             name="run_command",
+            summarize=summaries.summarize_run_command,
             summary="Run one whitelisted command in the workspace (no shell); timeouts are unknown outcomes",
             effect=EFFECT_WRITE,
             params=(
@@ -226,6 +232,7 @@ def build_general_tools(
         ),
         ToolSpec(
             name="fetch_url",
+            summarize=summaries.summarize_fetch_url,
             summary="Fetch one http(s) URL as text; SSRF-guarded, size-capped, content marked not-verified",
             effect=EFFECT_NETWORK,
             params=(

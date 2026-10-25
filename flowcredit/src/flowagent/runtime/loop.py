@@ -58,6 +58,8 @@ class Loop:
         policy: Any = None,
         compiler: Any = None,
         result_tools: tuple[str, ...],
+        memory_summarizers: Any = None,
+        memory_state_fn: Any = None,
     ) -> None:
         self.harness = harness
         self.planner = planner
@@ -70,6 +72,16 @@ class Loop:
         #: the kernel must not carry a domain's tool name as a default. Callers
         #: with no result tool pass ``()`` and cannot silently succeed.
         self.result_tools = tuple(result_tools)
+        #: Memory profile from the domain: per-tool observation compressors and
+        #: the state view. The memory layer stays tool-name-blind; the assembly
+        #: hands these in from the ToolSpecs and the DomainModule.
+        self.memory_summarizers = dict(
+            memory_summarizers if memory_summarizers is not None
+            else harness.registry.summarizers()
+        )
+        self.memory_state_fn = (
+            memory_state_fn if memory_state_fn is not None else harness.state_fn
+        )
 
     def run(self, task_id: str) -> Task:
         task = self.harness.store.load(task_id)
@@ -178,6 +190,12 @@ class Loop:
                     self.observer.proposal(round_no, proposal)
                     step = proposal.plan["steps"][0]
 
+            if memory.pending_compaction is not None:
+                task = self.harness.record(
+                    task, "context_compacted", dict(memory.pending_compaction)
+                )
+                memory.pending_compaction = None
+
             decision = self.harness.gate(task, step)
             self.observer.gate(round_no, decision)
             if not decision.allowed:
@@ -242,6 +260,8 @@ class Loop:
         memory = WorkingMemory(
             objective=task.objective,
             tool_catalog=self.harness.registry.catalog(),
+            summarizers=dict(self.memory_summarizers or {}),
+            state_fn=self.memory_state_fn,
         )
         for event in self.harness.store.events(task.id):
             if event["type"] == "memory_recalled":

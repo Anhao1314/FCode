@@ -185,6 +185,7 @@ def build_stack(
         limits=limits or scenario.limits,
         receipts=receipts,
         verifier=lambda observation: module.verify(world, observation),
+        state_fn=module.summarize_state,
     )
     return Stack(store, world, registry, receipts, provider, harness, module.make_planner(world), module, issued)
 

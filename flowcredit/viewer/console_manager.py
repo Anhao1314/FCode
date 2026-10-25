@@ -672,6 +672,7 @@ class RunManager:
                 limits=limits,
                 receipts=receipts,
                 verifier=lambda observation: module.verify(world, observation),
+                state_fn=module.summarize_state,
             )
             recorder = rt.TraceRecorder(
                 store, provider_name=provider.name, model_name=provider.model

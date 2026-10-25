@@ -15,11 +15,44 @@ phrasing rather than on facts.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Callable
 
+from ..core.hashing import canonical_json
 from ..tools.base import Observation
 
-__all__ = ["ObservationRecord", "WorkingMemory"]
+__all__ = ["ObservationRecord", "WorkingMemory", "default_summarize"]
+
+
+def _arguments_head(arguments: dict[str, Any], limit: int = 80) -> str:
+    flat = " ".join(f"{key}={str(value)[:24]}" for key, value in arguments.items())
+    return flat[:limit]
+
+
+def default_summarize(result: dict[str, Any]) -> dict[str, Any]:
+    """Shape-based fallback for tools that do not declare a summarizer.
+
+    Scalars survive whole (long strings as head + true length); lists become a
+    count plus a peek at the first scalar item; nested objects become their
+    sorted key list. Tools that declare ``summarize`` on their spec always win.
+    """
+    out: dict[str, Any] = {}
+    for key, value in result.items():
+        if value is None or isinstance(value, (str, int, float, bool)):
+            if isinstance(value, str) and len(value) > 240:
+                out[key] = {"head": value[:240], "chars": len(value)}
+            else:
+                out[key] = value
+        elif isinstance(value, list):
+            scalars = [item for item in value if isinstance(item, (str, int, float, bool))]
+            entry: dict[str, Any] = {"count": len(value)}
+            if scalars:
+                entry["first"] = scalars[0]
+            out[key] = entry
+        elif isinstance(value, dict):
+            out[key] = {"keys": sorted(value)[:8]}
+        else:
+            out[key] = str(value)[:120]
+    return out
 
 
 @dataclass(frozen=True)
@@ -53,6 +86,22 @@ class WorkingMemory:
     #: round would make the prompt depend on wall-clock time and on cases
     #: created by the run itself.
     prior_cases: list[dict[str, Any]] = field(default_factory=list)
+    #: Per-tool compressors declared on their ToolSpecs (memory does not know
+    #: tool names). Tools without one use :func:`default_summarize`.
+    summarizers: dict[str, Callable[[dict[str, Any]], dict[str, Any]]] = field(
+        default_factory=dict
+    )
+    #: The domain's "what has been established so far" view. Registered on the
+    #: DomainModule; without one a neutral fallback keeps the context honest.
+    state_fn: Callable[[Any], dict[str, Any]] | None = None
+    #: Character budget for the inlined compressed observations. Older rounds
+    #: fold into ``observation_index`` rows — prompt-level forgetting while the
+    #: store keeps everything (auditability is store-level, not prompt-level).
+    observation_budget: int = 24_000
+    #: Highest round folded into the index so far; the loop turns a fresh fold
+    #: into a ``context_compacted`` chain event and clears the pending marker.
+    folded_through: int = 0
+    pending_compaction: dict[str, Any] | None = None
 
     def record(self, round_no: int, observation: Observation) -> ObservationRecord:
         record = ObservationRecord(
@@ -68,71 +117,13 @@ class WorkingMemory:
     # ------------------------------------------------------------------- state
 
     def state(self) -> dict[str, Any]:
-        """Derive what has been established so far, from observations alone."""
-        read_documents: list[str] = []
-        normalised: list[str] = []
-        reconciled_periods: list[str] = []
-        listed = False
-        restatement_checked = False
-        restatement_applied = False
-        computed = False
-        blockers: list[str] = []
-        margins: dict[str, Any] = {}
-
-        for record in self.records:
-            tool, result = record.tool, record.result
-            if tool == "list_documents":
-                listed = True
-            elif tool == "read_document":
-                doc_id = result.get("id") or result.get("doc_id")
-                if doc_id and result.get("found", True):
-                    read_documents.append(doc_id)
-                elif result.get("found") is False:
-                    blockers.append(result.get("reason") or "document missing")
-            elif tool == "normalize_units" and "id" in result:
-                normalised.append(result["id"])
-            elif tool == "reconcile_basis" and "period" in result:
-                if result.get("reconciled"):
-                    reconciled_periods.append(result["period"])
-                else:
-                    blockers.append(result.get("reason") or "basis bridge did not reconcile")
-            elif tool == "check_restatement":
-                restatement_checked = True
-                restatement_applied = bool(result.get("restated"))
-            elif tool == "calculate_margin":
-                computed = bool(result.get("computed"))
-                blockers = list(result.get("blockers") or [])
-                if computed:
-                    margins = {
-                        "margin_bp_2024": result.get("margin_bp_2024"),
-                        "margin_bp_2025": result.get("margin_bp_2025"),
-                        "change_bp": result.get("change_bp"),
-                    }
-            elif tool == "report_blocked":
-                blockers.append(result.get("reason", "unspecified"))
-
-        reconciled_documents: list[str] = []
-        for period in sorted(set(reconciled_periods)):
-            reconciled_documents.extend(self._documents_for_period(period))
-
-        state = {
-            "listed_documents": listed,
-            "read_documents": sorted(set(read_documents)),
-            "normalised_documents": sorted(set(normalised)),
-            "reconciled_periods": sorted(set(reconciled_periods)),
-            "reconciled_documents": sorted(set(reconciled_documents)),
-            "restatement_checked": restatement_checked,
-            "restatement_applied": restatement_applied,
-            "computed": computed,
-            "blockers": blockers,
-            "margins": margins,
+        """The domain's derived state; neutral fallback without a state_fn."""
+        if self.state_fn is not None:
+            return self.state_fn(self.records)
+        return {
+            "rounds_recorded": len(self.records),
+            "tools_used": sorted({record.tool for record in self.records}),
         }
-        return state
-
-    def _documents_for_period(self, period: str) -> list[str]:
-        """Map a reconciled period back to the document that owns it."""
-        mapping = {"FY2024": ["doc_fy2024"], "FY2025": ["doc_fy2025"]}
-        return mapping.get(period, [])
 
     # ----------------------------------------------------------------- context
 
@@ -158,22 +149,62 @@ class WorkingMemory:
 
         ``plan`` is the open-todo view, not the whole plan: the model needs to
         know what is left, not the history of how it got there.
+
+        The observation list is budgeted: the newest compressed rounds stay
+        inline; older rounds fold into ``observation_index`` rows (round, tool,
+        argument head, result hash). Folding is prompt-level forgetting — the
+        store keeps every record, and the loop turns a fresh fold into a
+        ``context_compacted`` chain event.
         """
+        all_observations = [
+            {
+                "round": record.round,
+                "tool": record.tool,
+                "arguments": record.arguments,
+                "summary": self._summarise(record),
+            }
+            for record in self.records
+        ]
+        index_rows: list[dict[str, Any]] = []
+        inline = all_observations
+        total = sum(len(canonical_json(o)) for o in all_observations)
+        if total > self.observation_budget and len(all_observations) > 1:
+            running = total
+            keep_from = len(all_observations)
+            for i in range(len(all_observations) - 1):
+                running -= len(canonical_json(all_observations[i]))
+                if running <= self.observation_budget:
+                    keep_from = i + 1
+                    break
+            keep_from = max(keep_from, 1)
+            folded = all_observations[:keep_from]
+            inline = all_observations[keep_from:]
+            index_rows = [
+                {
+                    "round": row["round"],
+                    "tool": row["tool"],
+                    "arguments_head": _arguments_head(record.arguments),
+                    "result_hash": record.result_hash[:12],
+                }
+                for row, record in zip(folded, self.records[:keep_from])
+            ]
+            last_folded = index_rows[-1]["round"]
+            if last_folded > self.folded_through:
+                self.pending_compaction = {
+                    "from_round": index_rows[0]["round"],
+                    "through_round": last_folded,
+                    "inlined_from_round": inline[0]["round"],
+                    "folded_count": len(index_rows),
+                }
+                self.folded_through = last_folded
+
         context = {
             "objective": self.objective,
             "round": round_no,
             "tools": self.tool_catalog,
             "plan": plan.to_context() if plan is not None else [],
             "state": self.state(),
-            "observations": [
-                {
-                    "round": record.round,
-                    "tool": record.tool,
-                    "arguments": record.arguments,
-                    "summary": self._summarise(record),
-                }
-                for record in self.records
-            ],
+            "observations": inline,
             "budget": budget_snapshot,
             "instruction": (
                 "Propose exactly one read-only action. You cannot execute it, "
@@ -181,6 +212,8 @@ class WorkingMemory:
                 "The runtime decides when the evidence is sufficient."
             ),
         }
+        if index_rows:
+            context["observation_index"] = index_rows
         if self.prior_cases:
             context["prior_cases"] = [
                 {
@@ -195,80 +228,13 @@ class WorkingMemory:
             ]
         return context
 
-    @staticmethod
-    def _summarise(record: ObservationRecord) -> dict[str, Any]:
-        """Compress one observation to the fields a decision needs."""
-        result = record.result
-        if record.tool == "list_documents":
-            return {
-                "documents": [
-                    item.get("id") or item.get("doc_id")
-                    for item in result.get("documents", [])
-                ]
-            }
-        if record.tool == "read_document":
-            # Some domains return ``doc_id`` / ``fields``; the reference
-            # workload returns ``id`` / ``basis`` / the two margin inputs.
-            # Branch on the result shape so the reference prompt keeps its
-            # v10 key set byte for byte.
-            if "fields" in result or "doc_id" in result:
-                return {
-                    "found": result.get("found", True),
-                    "doc_id": result.get("doc_id"),
-                    "period": result.get("period"),
-                    "unit": result.get("unit"),
-                    "fields": dict(result.get("fields") or {}),
-                }
-            return {
-                "id": result.get("id"),
-                "period": result.get("period"),
-                "unit": result.get("unit"),
-                "basis": result.get("basis"),
-                "revenue": result.get("revenue"),
-                "gross_profit": result.get("gross_profit"),
-            }
-        if record.tool == "check_restatement" and "original_ebitda" in result:
-            return {
-                "period": result.get("period"),
-                "restated": result.get("restated"),
-                "original_ebitda": result.get("original_ebitda"),
-                "restated_ebitda": result.get("restated_ebitda"),
-                "delta": result.get("delta"),
-                "superseded_by": result.get("superseded_by"),
-            }
-        if record.tool == "normalize_units":
-            return {
-                "id": result.get("id"),
-                "revenue_cny": result.get("revenue_cny"),
-                "gross_profit_cny": result.get("gross_profit_cny"),
-            }
-        if record.tool == "reconcile_basis":
-            reconciled = bool(result.get("reconciled"))
-            summary = {
-                "period": result.get("period"),
-                "reconciled": reconciled,
-                "from_basis": result.get("from_basis"),
-                "to_basis": result.get("to_basis"),
-            }
-            if reconciled:
-                summary["delta"] = result.get("delta")
-                summary["reconciled_gross_profit"] = result.get("reconciled_gross_profit")
-            else:
-                summary["reason"] = result.get("reason") or "basis bridge unavailable"
-            return summary
-        if record.tool == "check_restatement":
-            return {
-                "period": result.get("period"),
-                "restated": result.get("restated"),
-                "delta": result.get("delta"),
-                "restated_gross_profit": result.get("restated_gross_profit"),
-            }
-        if record.tool == "calculate_margin":
-            return {
-                "computed": result.get("computed"),
-                "blockers": result.get("blockers", []),
-                "margin_bp_2024": result.get("margin_bp_2024"),
-                "margin_bp_2025": result.get("margin_bp_2025"),
-                "change_bp": result.get("change_bp"),
-            }
-        return {"reason": result.get("reason")}
+    def _summarise(self, record: ObservationRecord) -> dict[str, Any]:
+        """Compress one observation to the fields a decision needs.
+
+        The tool's own ``summarize`` contract wins; the shape-based default
+        keeps unknown tools honest without the memory layer knowing tool names.
+        """
+        summarizer = self.summarizers.get(record.tool)
+        if summarizer is not None:
+            return summarizer(record.result)
+        return default_summarize(record.result)

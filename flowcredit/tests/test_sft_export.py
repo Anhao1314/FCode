@@ -68,6 +68,7 @@ def run_episode(
         provider=provider,
         world=world,
         verifier=lambda observation: verify_finance(world, observation),
+        state_fn=FINANCE_DOMAIN.summarize_state,
         limits=scenario.limits,
         receipts=receipts,
     )

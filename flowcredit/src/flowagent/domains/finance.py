@@ -15,6 +15,7 @@ from ..core.contracts import AgentError
 from ..tools.base import Observation, ToolSpec
 from ..tools.finance.fixtures import FinanceWorld
 from ..tools.finance.planner import FinancePlanner
+from ..tools.finance.summaries import summarize_state as finance_summarize_state
 from ..tools.finance.tools import build_finance_tools
 from .base import DomainModule
 
@@ -80,4 +81,5 @@ FINANCE_DOMAIN = DomainModule(
     result_tools=("calculate_margin",),
     approval_tools=APPROVAL_TOOLS,
     report_template="research-note",
+    summarize_state=finance_summarize_state,
 )

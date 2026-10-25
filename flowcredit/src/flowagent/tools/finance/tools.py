@@ -19,6 +19,7 @@ from ..artifacts import ArtifactStore
 from ..evidence import EvidenceStore
 from .authority import evaluate_fact_authority
 from .fixtures import FinanceWorld
+from . import summaries
 
 __all__ = ["build_finance_tools", "DOCUMENT_IDS", "BLOCK_REASONS"]
 
@@ -110,6 +111,7 @@ def build_finance_tools(
     return [
         ToolSpec(
             name="list_documents",
+            summarize=summaries.summarize_list_documents,
             summary="List the documents available for this assessment",
             effect=EFFECT_READ,
             params=(),
@@ -119,6 +121,7 @@ def build_finance_tools(
         ),
         ToolSpec(
             name="read_document",
+            summarize=summaries.summarize_read_document,
             summary="Read one document, including its unit and accounting basis",
             effect=EFFECT_READ,
             params=(doc_param,),
@@ -128,6 +131,7 @@ def build_finance_tools(
         ),
         ToolSpec(
             name="normalize_units",
+            summarize=summaries.summarize_normalize_units,
             summary="Convert one document's amounts to CNY so periods can be compared",
             effect=EFFECT_READ,
             params=(doc_param,),
@@ -142,6 +146,7 @@ def build_finance_tools(
         ),
         ToolSpec(
             name="reconcile_basis",
+            summarize=summaries.summarize_reconcile_basis,
             summary="Bridge a non-IFRS figure to IFRS using the published reconciliation",
             effect=EFFECT_READ,
             params=(doc_param,),
@@ -159,6 +164,7 @@ def build_finance_tools(
         ),
         ToolSpec(
             name="check_restatement",
+            summarize=summaries.summarize_check_restatement,
             summary="Check whether a period has been restated by a later note",
             effect=EFFECT_READ,
             params=(doc_param,),
@@ -175,6 +181,7 @@ def build_finance_tools(
         ),
         ToolSpec(
             name="calculate_margin",
+            summarize=summaries.summarize_calculate_margin,
             summary="Compute the two-period gross margin from prepared facts",
             effect=EFFECT_READ,
             params=(),
@@ -197,6 +204,7 @@ def build_finance_tools(
         ),
         ToolSpec(
             name="report_blocked",
+            summarize=summaries.summarize_report_blocked,
             summary="Declare why the comparison cannot proceed; the runtime decides whether to stop",
             effect=EFFECT_READ,
             params=(

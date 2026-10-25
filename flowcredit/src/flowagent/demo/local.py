@@ -23,6 +23,7 @@ from typing import Any
 from ..core.receipts import ReceiptStore
 from ..core.store import TaskStore
 from ..domains.finance import FINANCE_DOMAIN, verify_observation
+from ..tools.finance.summaries import summarize_state as _finance_state
 from ..memory.cases import CaseIndex
 from ..memory.facts import FactStore
 from ..providers.base import Provider
@@ -100,6 +101,7 @@ def run(
         limits=limits or scenario.limits,
         receipts=receipts,
         verifier=lambda observation: verify_observation(world, observation),
+        state_fn=_finance_state,
     )
     recorder = TraceRecorder(store, provider_name=provider.name, model_name=provider.model)
     observer = LabObserver(recorder)

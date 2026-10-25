@@ -92,6 +92,12 @@ class ToolSpec:
     outputs: tuple[Param, ...] = ()
     #: Semver-ish contract version; recorded in every observation.
     version: str = "1.0"
+    #: How to compress this tool's result for working memory ("compressed,
+    #: not raw" — memory/context.py). The tool author knows which fields a
+    #: decision needs; tools without one fall back to a shape-based default.
+    #: This only affects the prompt; the verifier and the chain always see the
+    #: full result.
+    summarize: Callable[[dict[str, Any]], dict[str, Any]] | None = None
 
     def to_schema(self) -> dict[str, Any]:
         """Model-facing schema. Deliberately excludes outputs/version: the

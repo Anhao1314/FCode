@@ -44,6 +44,14 @@ class ToolRegistry:
         """Return the schema list handed to the model."""
         return [spec.to_schema() for spec in self._specs.values()]
 
+    def summarizers(self) -> dict[str, Callable[[dict[str, Any]], dict[str, Any]]]:
+        """Per-tool memory compressors declared on their specs."""
+        return {
+            name: spec.summarize
+            for name, spec in self._specs.items()
+            if spec.summarize is not None
+        }
+
     def execute(self, name: str, arguments: Mapping[str, Any]) -> Observation:
         """Validate, run and wrap the result in an :class:`Observation`."""
         spec = self.get(name)

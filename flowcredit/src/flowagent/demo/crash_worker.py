@@ -22,6 +22,7 @@ from ..providers.mock import MockProvider
 from ..runtime.budget import BudgetLimits
 from ..runtime.harness import Harness
 from ..runtime.loop import Loop
+from ..tools.finance.summaries import summarize_state as _finance_state
 from ..tools.finance.fixtures import FinanceWorld
 from ..tools.finance.planner import FinancePlanner
 from ..tools.finance.tools import build_finance_tools
@@ -105,6 +106,7 @@ def main() -> int:
         ),
         receipts=receipts,
         verifier=lambda observation: verify_finance(world, observation),
+        state_fn=_finance_state,
     )
     Loop(
         harness,

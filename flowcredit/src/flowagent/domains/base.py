@@ -42,3 +42,7 @@ class DomainModule:
     approval_tools: tuple[str, ...] = ()
     #: Which report template the console should use for this module.
     report_template: str = "generic"
+    #: The domain's "what has been established so far" view over compressed
+    #: observation records. Working memory calls this instead of knowing tool
+    #: names; a module without one leaves the memory's neutral fallback.
+    summarize_state: Callable[[Any], dict[str, Any]] | None = None

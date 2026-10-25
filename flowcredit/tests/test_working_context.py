@@ -11,6 +11,10 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from flowagent.memory.context import WorkingMemory  # noqa: E402
 from flowagent.tools.base import Observation  # noqa: E402
+from flowagent.tools.finance.summaries import (  # noqa: E402
+    FINANCE_SUMMARIZERS,
+    summarize_state as finance_state,
+)
 
 
 def observation(tool: str, result: dict) -> Observation:
@@ -19,7 +23,12 @@ def observation(tool: str, result: dict) -> Observation:
 
 class WorkingContextTests(unittest.TestCase):
     def memory(self, *observations: Observation) -> WorkingMemory:
-        memory = WorkingMemory(objective="test", tool_catalog=[])
+        memory = WorkingMemory(
+            objective="test",
+            tool_catalog=[],
+            summarizers=FINANCE_SUMMARIZERS,
+            state_fn=finance_state,
+        )
         for index, item in enumerate(observations, start=1):
             memory.record(index, item)
         return memory

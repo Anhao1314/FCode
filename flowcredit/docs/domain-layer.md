@@ -68,12 +68,11 @@ flowcredit/src/flowagent/tools/credit`），需要时可以按模块协议重新
 清理之后，还有两处“参考负载的形状”留在共享代码里，它们不影响通用委托的
 **运行**，但影响真实模型在通用委托里**看到什么**：
 
-1. **`memory/context.py` 的 state / summary。** `state()` 仍按金融工具名
-   聚合（`list_documents` / `read_document` / `calculate_margin` 等）；通用
-   工具走通用回退，`write_file` / `fetch_url` 的观测在 state 里不显式，
-   只在 `observations[].summary` 里以原始结果出现。下一步是把
-   `summarize_state` / `summarize_observation` 收进 `DomainModule` 合约，
-   内核只调用，不认识任何工具名。
+1. ~~**`memory/context.py` 的 state / summary。**~~ **已解决（2026-10-25）**：
+   压缩进 `ToolSpec.summarize`（`tools/*/summaries.py`），状态视图进
+   `DomainModule.summarize_state`，`memory/context.py` 不再出现工具名；
+   finance 键集逐字节保留（v10 合约），general 得到文件/命令/抓取状态卡。
+   设计与测试见 [context-management.md](context-management.md)。
 2. **`providers/prompt.py` 的 system prompt。** 它仍是金融语义（“不要编造
    财务数值”、证据不足时提议 `report_blocked`），并与 `PROMPT_VERSION=v10`
    和 2271 条 SFT 样本逐字节绑定。通用委托在 mock 下不受影响（mock 只读

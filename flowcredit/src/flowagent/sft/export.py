@@ -86,7 +86,15 @@ def reconstruct_trace(trace: dict[str, Any], *, source_id: str = "trace") -> lis
         if event.get("type") == "memory_recalled":
             detail = event.get("payload", {}).get("detail") or {}
             prior_cases = list(detail.get("hits") or [])
-    memory = WorkingMemory(objective=objective, tool_catalog=catalog, prior_cases=prior_cases)
+    from ..tools.finance.summaries import FINANCE_SUMMARIZERS, summarize_state as finance_state
+
+    memory = WorkingMemory(
+        objective=objective,
+        tool_catalog=catalog,
+        prior_cases=prior_cases,
+        summarizers=FINANCE_SUMMARIZERS,
+        state_fn=finance_state,
+    )
     samples: list[dict[str, Any]] = []
     for record in trace.get("rounds") or []:
         index = int(record.get("index", 0))
