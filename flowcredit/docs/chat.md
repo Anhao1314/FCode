@@ -104,7 +104,12 @@ cd flowcredit
 python3 viewer/server.py --repo . --port 8643
 open 'http://127.0.0.1:8643/?desktop=1'
 python3 -m unittest tests.test_chat
+node --test viewer/tests/*.test.js
 ```
+
+聊天里的 Markdown 渲染与 SSE 分帧是不依赖 DOM 的纯函数，放在
+`viewer/core/chat-format.js`；`viewer/tests/` 用 Node 内置 test runner 覆盖转义、
+围栏未闭合、行内格式与多行 `data:` 帧，不需要浏览器或测试框架。
 
 Mock 下可以完整验证流式、追问、重新生成、编辑、附件、停止；真实 Kimi 需要在环境里
 配置 API key 与价格快照，然后在模型菜单选择 Kimi。

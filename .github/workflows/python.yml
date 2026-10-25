@@ -42,6 +42,15 @@ jobs:
         working-directory: flowcredit
         run: python -m unittest discover -s tests -v
 
+      - name: Select Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Run viewer pure-function tests
+        working-directory: flowcredit
+        run: node --test viewer/tests/*.test.js
+
       - name: Run every scenario through the CLI
         working-directory: flowcredit
         run: python demo.py all
