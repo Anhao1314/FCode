@@ -126,7 +126,7 @@ function updateStatusline() {
   }
   const trace = shownTrace();
   if (!trace) {
-    setStatusline("<b>FCode</b>", "⌘K 命令 · ⌘N 新建委托 · ⌘. 停止 · ↑↓ 历史");
+    setStatusline("<b>FCode</b>", "⌘K 命令 · ⌘N 新建对话 · ⌘. 停止 · ↑↓ 历史");
     return;
   }
   const budget = lastBudget(trace);
@@ -140,7 +140,7 @@ function updateStatusline() {
   const left = `<b>${esc(model.provider || "offline-mock")}</b> <span class="sl-sep">·</span> ${state ? esc(state) : "—"}`;
   const right = budget
     ? `calls ${budget.calls_used}/${lim.max_calls ?? "?"} · reads ${budget.reads_used}/${lim.max_reads ?? "?"} · ${num(budget.cost_used_microusd)} µUSD · tokens ${num(budget.tokens_used)}`
-    : "⌘K 命令 · ⌘N 新建委托";
+    : "⌘K 命令 · ⌘N 新建对话";
   setStatusline(left, right);
 }
 
@@ -178,6 +178,17 @@ const TPL_FALLBACK = { full: "完整研究", "tool-denied": "越权工具", budg
 let health = null;      // /api/health payload
 let templates = [];     // /api/templates
 let tplKey = "full";    // selected template
+let chatThreads = [];   // /api/chat/threads（侧栏「对话」）
+const chat = {
+  active: false,        // composer 当前属于一段对话，而不是委托/运行
+  current: null,        // 打开的线程（含 messages）
+  threads: [],
+  streaming: false,
+  abort: null,
+  attachments: [],
+  editing: null,
+  paintTimer: null,
+};
 let runHistory = [];    // /api/runs
 let runFilter = "";     // 运行记录搜索词
 let toolContracts = null; // /api/tools，工具契约（含版本与 effect）
@@ -236,6 +247,7 @@ function renderMain(html, { mode = "run", scroll = null } = {}) {
   main.dataset.view = mode;
   store.mode = mode;
   setStageMode(mode === "empty");
+  document.getElementById("app")?.classList.toggle("chat-mode", mode === "chat");
   // composer 只属于对话语境：功能页（账本 / 判断记录 / 定时任务 / 设置）不显示输入框
   const composerWrap = document.querySelector(".composer-wrap");
   if (composerWrap) composerWrap.hidden = (mode === "reviews" || mode === "scheduled"
@@ -255,6 +267,7 @@ const MODE_ENTRY = {
 };
 
 function renderMode(mode, payload = {}) {
+  if (mode !== "chat") leaveChat();
   const entry = MODE_ENTRY[mode];
   if (!entry) throw new Error(`unknown view mode: ${mode}`);
   store.mode = mode;
@@ -363,6 +376,7 @@ let ledgerConfirmId = null;
 function renderNav() {
   const desk = document.getElementById("desk-btn");
   if (desk) desk.classList.toggle("active", ledgerOpen);
+  renderChats();
   renderProjects();
   renderRuns();
 }
@@ -396,6 +410,7 @@ function clearNavActive() {
 /* ------------------ MIXED — trace 成本回填逻辑（不改）+ 账本渲染模板 */
 
 function openLedger() {
+  leaveChat();
   if (intake.active) closeIntake(false);
   if (settingsOpen) closeSettingsPage(false);
   ledgerOpen = true;
@@ -3024,6 +3039,7 @@ function tabTitle(s) {
 }
 
 function openLive(id, objective, template) {
+  leaveChat();
   ledgerOpen = false;
   const fresh = !sessions.has(id);
   if (fresh) sessions.set(id, createSession(id, objective, template));
@@ -3476,6 +3492,7 @@ function startIntake(text = "") {
     toast("当前任务还在运行：先停止，或等它结束后再开新委托");
     return;
   }
+  leaveChat();
   if (settingsOpen) closeSettingsPage(false);
   attach.open = false;
   renderAttachPanel();
@@ -3666,6 +3683,7 @@ function composerSubmit() {
     autosize(ta);
     return intakeFreeText(text);
   }
+  if (chat.active) return sendChatFromComposer();
   const s = activeSession();
   if (s && s.running && !s.finished) return sendOperatorMessage();
   return sendTask();
@@ -4318,6 +4336,7 @@ async function initLive() {
 }
 
 async function selectRun(id) {
+  leaveChat();
   if (intake.active) closeIntake(false);
   if (settingsOpen) closeSettingsPage(false);
   ledgerOpen = false;
@@ -4374,6 +4393,7 @@ async function loadTrace(key) {
 }
 
 async function select(key, label) {
+  leaveChat();
   if (intake.active) closeIntake(false);
   if (settingsOpen) closeSettingsPage(false);
   if (key.startsWith("run:")) return selectRun(key.slice(4));
@@ -4905,6 +4925,7 @@ function activateSettingsSection(name, behavior = motionOn ? "smooth" : "auto") 
 
 function openSettingsPage() {
   if (settingsOpen) return;
+  leaveChat();
   if (intake.active) closeIntake(false);
   settingsOpen = true;
   settingsScroll.main = document.getElementById("main").scrollTop;
@@ -5197,7 +5218,7 @@ const SLASH_COMMANDS = [
   { cmd: "/stop", desc: "在轮次边界停止当前运行", run: () => stopRun() },
   { cmd: "/allow", desc: "批准挂起的审批请求", run: () => decideApproval(true) },
   { cmd: "/deny", desc: "拒绝挂起的审批请求", run: () => decideApproval(false) },
-  { cmd: "/help", desc: "快捷键与命令说明", run: () => toast("⌘K 面板 · ⌘N 新建委托 · ⌘, 设置 · ⌘. 停止 · ⌘↵ 允许 · ⌘⌫ 拒绝 · ↑↓ 历史") },
+  { cmd: "/help", desc: "快捷键与命令说明", run: () => toast("⌘K 面板 · ⌘N 新建对话 · ⌘, 设置 · ⌘. 停止 · ⌘↵ 允许 · ⌘⌫ 拒绝 · ↑↓ 历史") },
   { cmd: "/clear", desc: "清空输入框", run: () => { const ta = document.getElementById("composer-ta"); ta.value = ""; autosize(ta); } },
 ];
 let slashIndex = 0;
@@ -5290,10 +5311,655 @@ function hydrateDoodles(root = document) {
   }
 }
 
+/* ================================================================ Chat
+   对话是“回答”，不是“运行”：每次回答仍是一笔受预算约束、进事件链的
+   模型调用，但不执行工具。需要执行时，用户点「转为委托」。 */
+
+async function loadChatThreads() {
+  if (!health || !health.live) return;
+  try {
+    const data = await fetch("/api/chat/threads", { cache: "no-store" }).then(r => r.ok ? r.json() : null);
+    chatThreads = data && Array.isArray(data.threads) ? data.threads : [];
+    chat.threads = chatThreads;
+    renderChats();
+  } catch { /* 侧栏列表失败不阻塞对话 */ }
+}
+
+function renderChats() {
+  const nav = document.getElementById("chat-nav");
+  if (!nav) return;
+  const count = document.getElementById("chat-count");
+  if (count) count.textContent = String(chatThreads.length);
+  if (!chatThreads.length) {
+    nav.innerHTML = `<div class="side-empty-inline">还没有对话</div>`;
+    return;
+  }
+  nav.innerHTML = chatThreads.slice(0, 40).map(thread => {
+    const active = chat.current && chat.current.id === thread.id;
+    return `<button class="session chat-row${active ? " active" : ""}" data-chat-id="${esc(thread.id)}" title="${esc(thread.title)}">
+      <span class="slabel">${esc(thread.title)}</span>
+    </button>`;
+  }).join("");
+}
+
+function leaveChat() {
+  if (chat.abort) {
+    try { chat.abort.abort(); } catch { /* already settled */ }
+  }
+  if (chat.paintTimer) { clearTimeout(chat.paintTimer); chat.paintTimer = null; }
+  const wasActive = chat.active;
+  const wasStreaming = chat.streaming;
+  chat.active = false;
+  chat.streaming = false;
+  chat.abort = null;
+  chat.editing = null;
+  chat.current = null;
+  chat.attachments = [];
+  renderChatAttachChips();
+  document.getElementById("app")?.classList.remove("chat-mode");
+  paintChatChrome(false);
+  if (wasActive || wasStreaming) restoreSendButton();
+}
+
+function paintChatChrome(on) {
+  const show = (id, visible) => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = visible ? "" : "none";
+  };
+  show("chain-badge", !on);
+  show("rail-toggle", !on);
+  show("approval-btn", !on);
+  show("composer-open", !on);
+  const attach = document.getElementById("chat-attach");
+  if (attach) {
+    attach.hidden = !on;
+    attach.style.display = on ? "" : "none";
+  }
+  const runChip = document.getElementById("run-chip");
+  if (runChip && on) runChip.hidden = true;
+  if (on) {
+    const panel = document.getElementById("attach-panel");
+    if (panel) panel.hidden = true;
+    const open = document.getElementById("composer-open");
+    if (open) open.setAttribute("aria-expanded", "false");
+    document.getElementById("composer-box")?.classList.remove("open-attach");
+  }
+}
+
+function renderChatHead() {
+  const title = chat.current && chat.current.title ? chat.current.title : "新对话";
+  document.getElementById("tb-title").textContent = title;
+  document.getElementById("tb-chips").innerHTML = `<span class="chip">对话</span>`;
+}
+
+function newChat() {
+  leaveChat();
+  if (intake.active) closeIntake(false);
+  if (settingsOpen) closeSettingsPage(false);
+  ledgerOpen = false;
+  if (activeSession()) detachLive();
+  setChromeState({ rail: false });
+  store.key = null;
+  store.trace = null;
+  chat.active = true;
+  chat.current = null;
+  chat.streaming = false;
+  chat.editing = null;
+  chat.attachments = [];
+  renderNav();
+  renderMain(stageEmptyHtml("向 FCode 提问，或让 FCode 帮你整理思路"), { mode: "empty" });
+  paintChatChrome(true);
+  document.getElementById("tb-title").textContent = "FCode";
+  document.getElementById("tb-chips").innerHTML = "";
+  const ta = document.getElementById("composer-ta");
+  if (ta) {
+    ta.value = "";
+    autosize(ta);
+    ta.placeholder = "给 FCode 发消息…";
+    ta.focus();
+  }
+  renderChatAttachChips();
+  paintSendState();
+}
+
+async function openChat(threadId) {
+  leaveChat();
+  if (intake.active) closeIntake(false);
+  if (settingsOpen) closeSettingsPage(false);
+  ledgerOpen = false;
+  if (activeSession()) detachLive();
+  setChromeState({ rail: false });
+  store.key = null;
+  store.trace = null;
+  chat.active = true;
+  chat.current = null;
+  chat.streaming = false;
+  chat.editing = null;
+  chat.attachments = [];
+  renderNav();
+  renderMain(`<div class="empty">加载对话…</div>`, { mode: "loading" });
+  try {
+    const response = await fetch(`/api/chat/threads/${encodeURIComponent(threadId)}`, { cache: "no-store" });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    chat.current = await response.json();
+  } catch (error) {
+    toast("对话加载失败：" + error.message);
+    newChat();
+    return;
+  }
+  paintChatChrome(true);
+  renderChatHead();
+  renderChat();
+  renderNav();
+  const ta = document.getElementById("composer-ta");
+  if (ta) {
+    ta.value = "";
+    autosize(ta);
+    ta.placeholder = "给 FCode 发消息…";
+    ta.focus();
+  }
+  paintSendState();
+}
+
+function renderChat() {
+  const thread = chat.current;
+  if (!thread || !(thread.messages || []).length) {
+    renderMain(`<div class="chat-empty">
+      <div class="chat-empty-mark">FCode</div>
+      <p>开始一段对话。对话只回答，不执行工具；需要读写文件或运行命令时，用「委托运行」。</p>
+    </div>`, { mode: "chat" });
+    return;
+  }
+  renderMain(
+    `<div class="chat-thread" aria-live="polite">${thread.messages.map(chatMessageHtml).join("")}</div>`,
+    { mode: "chat", scroll: "bottom" },
+  );
+  // 字体/代码块落位后高度还会变；再贴一次底，避免最后一条被输入框截住。
+  requestAnimationFrame(() => {
+    const main = document.getElementById("main");
+    if (main && main.dataset.view === "chat") main.scrollTop = main.scrollHeight;
+  });
+}
+
+function chatMessageHtml(message) {
+  const id = esc(message.id);
+  const streaming = message.status === "streaming";
+  if (message.role === "user") {
+    if (chat.editing === message.id) {
+      return `<div class="chat-msg user editing" data-msg-id="${id}">
+        <div class="chat-edit-box">
+          <textarea id="chat-edit-input" class="chat-edit-input">${esc(message.text)}</textarea>
+          <div class="chat-msg-actions always">
+            <button class="chat-act" type="button" data-chat-cancel>取消</button>
+            <button class="chat-act strong" type="button" data-chat-save="${id}">保存并重新生成</button>
+          </div>
+        </div>
+      </div>`;
+    }
+    const files = (message.attachments || [])
+      .map(file => `<span class="chat-file">${esc(file.name || "")}</span>`).join("");
+    return `<div class="chat-msg user" data-msg-id="${id}">
+      <div class="chat-bubble">${esc(message.text)}${files ? `<div class="chat-files">${files}</div>` : ""}</div>
+      <div class="chat-msg-actions">
+        <button class="chat-act" type="button" data-chat-edit="${id}">编辑</button>
+        <button class="chat-act" type="button" data-chat-delegate="${id}">转为委托</button>
+      </div>
+    </div>`;
+  }
+  const actions = [];
+  if (!streaming) {
+    actions.push(`<button class="chat-act" type="button" data-chat-copy="${id}">复制</button>`);
+    if (message.status !== "error") {
+      actions.push(`<button class="chat-act" type="button" data-chat-regen="${id}">重新生成</button>`);
+    }
+  }
+  const reasoning = message.reasoning
+    ? `<details class="chat-reasoning"><summary>思考过程</summary><pre>${esc(message.reasoning)}</pre></details>`
+    : "";
+  const error = message.error && message.error.message
+    ? `<div class="chat-error">${esc(message.error.code || "CHAT_FAILED")} · ${esc(message.error.message)}</div>`
+    : "";
+  const wait = streaming && message.waiting
+    ? `<div class="chat-wait">等待 ${esc(message.waiting)} 秒额度窗口…</div>`
+    : "";
+  const typing = streaming && !message.text
+    ? `<span class="chat-typing" aria-label="正在生成"><i></i><i></i><i></i></span>`
+    : "";
+  const usage = message.usage && message.usage.total_tokens
+    ? `<div class="chat-meta">${num(message.usage.total_tokens)} tokens · ${num(message.usage.cost_microusd)} µUSD${message.receipt_ref ? " · 已签收据" : ""}</div>`
+    : "";
+  const stopped = message.status === "cancelled" ? `<div class="chat-meta">已停止生成</div>` : "";
+  return `<div class="chat-msg assistant${streaming ? " streaming" : ""}${message.status === "cancelled" ? " cancelled" : ""}" data-msg-id="${id}"${streaming ? ' data-streaming="1"' : ""}>
+    <div class="chat-md">${renderMarkdown(message.text)}</div>
+    ${wait}${typing}${reasoning}${error}${usage}${stopped}
+    <div class="chat-msg-actions">${actions.join("")}</div>
+  </div>`;
+}
+
+/* 轻量 Markdown：标题 / 列表 / 引用 / 代码围栏 / 行内代码 / 粗斜体 / 链接。
+   先转义再应用行内规则；未知语法按纯文本处理。 */
+function renderMarkdown(text) {
+  const raw = String(text || "");
+  if (!raw.trim()) return `<span class="dim">…</span>`;
+  const parts = raw.split(/```/);
+  let html = "";
+  parts.forEach((part, index) => {
+    if (index % 2 === 1) {
+      const newline = part.indexOf("\n");
+      const language = newline >= 0 ? part.slice(0, newline).trim() : "";
+      const code = newline >= 0 ? part.slice(newline + 1) : part;
+      html += `<pre class="chat-code"><code${language ? ` data-lang="${esc(language)}"` : ""}>${esc(code.replace(/\n$/, ""))}</code></pre>`;
+      return;
+    }
+    html += markdownText(part);
+  });
+  return html;
+}
+
+function markdownText(text) {
+  const out = [];
+  let list = null;
+  let paragraph = [];
+  const flushList = () => {
+    if (!list) return;
+    out.push(`<${list.tag}>${list.items.join("")}</${list.tag}>`);
+    list = null;
+  };
+  const flushParagraph = () => {
+    if (!paragraph.length) return;
+    out.push(`<p>${paragraph.map(inlineMarkdown).join("<br>")}</p>`);
+    paragraph = [];
+  };
+  for (const line of String(text).split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed) { flushParagraph(); flushList(); continue; }
+    const heading = /^(#{1,3})\s+(.*)$/.exec(trimmed);
+    if (heading) {
+      flushParagraph(); flushList();
+      const level = Math.min(4, heading[1].length + 1);
+      out.push(`<h${level}>${inlineMarkdown(heading[2])}</h${level}>`);
+      continue;
+    }
+    const unordered = /^[-*]\s+(.*)$/.exec(trimmed);
+    const ordered = /^\d+[.)]\s+(.*)$/.exec(trimmed);
+    if (unordered || ordered) {
+      flushParagraph();
+      const tag = unordered ? "ul" : "ol";
+      if (!list || list.tag !== tag) { flushList(); list = { tag, items: [] }; }
+      list.items.push(`<li>${inlineMarkdown((unordered || ordered)[1])}</li>`);
+      continue;
+    }
+    if (trimmed.startsWith(">")) {
+      flushParagraph(); flushList();
+      out.push(`<blockquote>${inlineMarkdown(trimmed.slice(1).trim())}</blockquote>`);
+      continue;
+    }
+    flushList();
+    paragraph.push(trimmed);
+  }
+  flushParagraph(); flushList();
+  return out.join("");
+}
+
+function inlineMarkdown(text) {
+  let value = esc(text);
+  value = value.replace(/`([^`]+)`/g, (_, code) => `<code>${code}</code>`);
+  value = value.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+  value = value.replace(/(^|[^*])\*([^*\n]+)\*/g, "$1<em>$2</em>");
+  value = value.replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g,
+    '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+  value = value.replace(/(^|[\s(])(https?:\/\/[^\s<)]+)/g,
+    '$1<a href="$2" target="_blank" rel="noopener noreferrer">$2</a>');
+  return value;
+}
+
+function renderChatAttachChips() {
+  const slot = document.getElementById("chat-attach-chips");
+  if (!slot) return;
+  slot.hidden = !chat.attachments.length;
+  slot.innerHTML = chat.attachments.map((file, index) =>
+    `<span class="chat-file">${esc(file.name)}<button class="chat-file-x" type="button" data-chat-attach-remove="${index}" title="移除">×</button></span>`
+  ).join("");
+}
+
+async function handleChatFiles(event) {
+  const files = [...(event.target.files || [])];
+  for (const file of files) {
+    if (chat.attachments.length >= 3) { toast("最多 3 个附件"); break; }
+    if (file.size > 64 * 1024) { toast(`${file.name} 超过 64 KiB`); continue; }
+    let text;
+    try { text = await file.text(); } catch { toast(`${file.name} 读取失败`); continue; }
+    if (text.includes("\u0000")) { toast(`${file.name} 不是纯文本文件`); continue; }
+    chat.attachments.push({ name: file.name, text });
+  }
+  event.target.value = "";
+  renderChatAttachChips();
+  paintSendState();
+}
+
+function paintSendState() {
+  const btn = document.getElementById("send");
+  if (!btn) return;
+  if (!chat.active) return; // 运行/委托态由各自的函数管理
+  if (chat.streaming) {
+    btn.disabled = false;
+    btn.classList.add("stop");
+    btn.title = "停止生成";
+    btn.innerHTML = `<span class="stop-glyph"></span>`;
+    return;
+  }
+  btn.classList.remove("stop");
+  btn.title = "发送消息";
+  btn.innerHTML = `<span data-doodle="arrow-up"></span>`;
+  hydrateDoodles(btn);
+  const ta = document.getElementById("composer-ta");
+  const hasText = !!(ta && ta.value.trim());
+  btn.disabled = !(health && health.live) || (!hasText && !chat.attachments.length);
+}
+
+function restoreSendButton() {
+  const btn = document.getElementById("send");
+  if (!btn) return;
+  btn.classList.remove("stop");
+  btn.title = "发送任务";
+  btn.innerHTML = `<span data-doodle="arrow-up"></span>`;
+  hydrateDoodles(btn);
+  btn.disabled = !(health && health.live);
+}
+
+function setChatStreaming(on) {
+  chat.streaming = on;
+  if (on) {
+    const chip = document.getElementById("run-chip");
+    if (chip) chip.hidden = true;
+  }
+  paintSendState();
+}
+
+function stopChat() {
+  if (!chat.streaming || !chat.abort) return;
+  try { chat.abort.abort(); } catch { /* already settled */ }
+}
+
+function scheduleChatPaint() {
+  if (chat.paintTimer) return;
+  chat.paintTimer = setTimeout(() => {
+    chat.paintTimer = null;
+    renderChat();
+  }, 70);
+}
+
+async function sendChatFromComposer() {
+  if (chat.streaming) return;
+  if (!health || !health.live) { toast("回放模式：启动 server.py 后才能对话"); return; }
+  const ta = document.getElementById("composer-ta");
+  const text = (ta.value || "").trim();
+  const attachments = chat.attachments.map(file => ({ name: file.name, text: file.text }));
+  if (!text && !attachments.length) return;
+  ta.value = "";
+  autosize(ta);
+  chat.attachments = [];
+  renderChatAttachChips();
+  const threadId = chat.current && chat.current.id ? chat.current.id : null;
+  const model = modelChoice.key || "mock";
+  if (!chat.current) {
+    chat.current = { id: null, title: (text || attachments[0].name || "新对话").slice(0, 30), messages: [] };
+  }
+  if (!chat.current.messages) chat.current.messages = [];
+  chat.current.messages.push({
+    id: "pending-user-" + Date.now(),
+    role: "user",
+    text,
+    attachments: attachments.map(file => ({ name: file.name, bytes: file.text.length })),
+    status: "ok",
+  });
+  chat.current.messages.push({
+    id: "pending-assistant",
+    role: "assistant",
+    text: "",
+    reasoning: "",
+    status: "streaming",
+    usage: {},
+    error: {},
+  });
+  renderChatHead();
+  renderChat();
+  setChatStreaming(true);
+  await streamChat("/api/chat/send", { threadId, text, attachments, model });
+}
+
+async function streamChat(url, payload) {
+  const threadRef = chat.current;
+  const assistant = threadRef && threadRef.messages
+    ? threadRef.messages[threadRef.messages.length - 1]
+    : null;
+  if (!assistant || assistant.role !== "assistant") { setChatStreaming(false); return; }
+  const controller = new AbortController();
+  chat.abort = controller;
+  let aborted = false;
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.error || `HTTP ${response.status}`);
+    }
+    if (!response.body) throw new Error("浏览器没有拿到流式响应");
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let boundary;
+      while ((boundary = buffer.indexOf("\n\n")) >= 0) {
+        const frame = buffer.slice(0, boundary);
+        buffer = buffer.slice(boundary + 2);
+        const event = parseSseFrame(frame);
+        if (event && chat.current === threadRef) handleChatEvent(event, assistant, threadRef);
+      }
+    }
+  } catch (error) {
+    if (error.name === "AbortError") {
+      aborted = true;
+      assistant.status = "cancelled";
+      if (!assistant.text) assistant.text = "";
+    } else {
+      assistant.status = "error";
+      assistant.error = { code: "CHAT_FAILED", message: error.message };
+      toast("对话失败：" + error.message);
+    }
+  } finally {
+    const belongs = chat.active && chat.current === threadRef;
+    if (belongs) {
+      if (chat.paintTimer) { clearTimeout(chat.paintTimer); chat.paintTimer = null; }
+      setChatStreaming(false);
+      if (chat.abort === controller) chat.abort = null;
+      if (assistant.status === "streaming") {
+        assistant.status = "error";
+        assistant.error = { code: "CHAT_STREAM_ENDED", message: "连接在回答完成前结束" };
+      }
+      if (aborted) await new Promise(resolve => setTimeout(resolve, 250));
+      if (threadRef.id) {
+        try {
+          const response = await fetch(`/api/chat/threads/${encodeURIComponent(threadRef.id)}`, { cache: "no-store" });
+          if (response.ok) {
+            const thread = await response.json();
+            if (thread && Array.isArray(thread.messages) && chat.current === threadRef) chat.current = thread;
+          }
+        } catch { /* keep the optimistic view */ }
+      }
+      renderChat();
+      renderChatHead();
+    } else if (chat.abort === controller) {
+      chat.abort = null;
+    }
+    await loadChatThreads();
+  }
+}
+
+function handleChatEvent(event, assistant, threadRef) {
+  if (!threadRef || chat.current !== threadRef) return;
+  switch (event.type) {
+    case "start":
+      if (event.thread_id) {
+        threadRef.id = event.thread_id;
+        if (event.thread && event.thread.title) threadRef.title = event.thread.title;
+        if (event.user) {
+          const pending = [...threadRef.messages].reverse()
+            .find(message => message.role === "user" && String(message.id).startsWith("pending-user-"));
+          if (pending) Object.assign(pending, event.user);
+        }
+        if (event.assistant_id) assistant.id = event.assistant_id;
+        renderChatHead();
+      }
+      break;
+    case "wait":
+      assistant.waiting = Number(event.seconds) || 0;
+      scheduleChatPaint();
+      break;
+    case "reasoning":
+      assistant.reasoning = (assistant.reasoning || "") + String(event.text || "");
+      scheduleChatPaint();
+      break;
+    case "delta":
+      assistant.text = (assistant.text || "") + String(event.text || "");
+      scheduleChatPaint();
+      break;
+    case "done":
+      if (event.message) {
+        assistant.id = event.message.id || assistant.id;
+        assistant.text = event.message.text || assistant.text;
+        assistant.reasoning = event.message.reasoning || assistant.reasoning;
+        assistant.usage = event.message.usage || {};
+        assistant.receipt_ref = event.message.receipt_ref || "";
+        assistant.status = "ok";
+      }
+      assistant.waiting = 0;
+      renderChat();
+      break;
+    case "error":
+      if (event.thread_id && !threadRef.id) threadRef.id = event.thread_id;
+      assistant.status = "error";
+      assistant.error = { code: event.code || "CHAT_FAILED", message: event.message || "对话失败" };
+      if (event.partial) assistant.text = event.partial;
+      renderChat();
+      break;
+    case "stopped":
+      assistant.status = "cancelled";
+      renderChat();
+      break;
+    default:
+      break;
+  }
+}
+
+function parseSseFrame(frame) {
+  let data = "";
+  for (const line of String(frame || "").split("\n")) {
+    if (line.startsWith("data:")) data += line.slice(5).trim();
+  }
+  if (!data) return null;
+  try { return JSON.parse(data); } catch { return null; }
+}
+
+function beginChatEdit(messageId) {
+  chat.editing = messageId;
+  renderChat();
+  requestAnimationFrame(() => document.getElementById("chat-edit-input")?.focus());
+}
+
+function cancelChatEdit() {
+  chat.editing = null;
+  renderChat();
+}
+
+function saveChatEdit(messageId) {
+  if (!chat.current || !chat.current.id) return;
+  const input = document.getElementById("chat-edit-input");
+  const text = (input && input.value || "").trim();
+  if (!text) { toast("消息不能为空"); return; }
+  const index = chat.current.messages.findIndex(message => message.id === messageId);
+  if (index < 0) return;
+  chat.editing = null;
+  chat.current.messages = chat.current.messages.slice(0, index);
+  chat.current.messages.push({
+    id: "pending-user-" + Date.now(),
+    role: "user",
+    text,
+    attachments: [],
+    status: "ok",
+  });
+  chat.current.messages.push({
+    id: "pending-assistant",
+    role: "assistant",
+    text: "",
+    reasoning: "",
+    status: "streaming",
+    usage: {},
+    error: {},
+  });
+  renderChat();
+  setChatStreaming(true);
+  streamChat(`/api/chat/threads/${encodeURIComponent(chat.current.id)}/edit`, {
+    messageId, text, model: modelChoice.key || "mock",
+  });
+}
+
+function regenerateChat(messageId) {
+  if (!chat.current || !chat.current.id) return;
+  const index = chat.current.messages.findIndex(message => message.id === messageId);
+  if (index < 0) return;
+  chat.current.messages = chat.current.messages.slice(0, index);
+  chat.current.messages.push({
+    id: "pending-assistant",
+    role: "assistant",
+    text: "",
+    reasoning: "",
+    status: "streaming",
+    usage: {},
+    error: {},
+  });
+  renderChat();
+  setChatStreaming(true);
+  streamChat(`/api/chat/threads/${encodeURIComponent(chat.current.id)}/regenerate`, {
+    messageId, model: modelChoice.key || "mock",
+  });
+}
+
+function copyChatMessage(messageId) {
+  if (!chat.current) return;
+  const message = chat.current.messages.find(item => item.id === messageId);
+  if (!message) return;
+  copyText(message.text).then(ok => toast(ok ? "已复制回答" : "复制失败"));
+}
+
+function delegateChatMessage(messageId) {
+  if (!chat.current) return;
+  const message = chat.current.messages.find(item => item.id === messageId);
+  if (!message || message.role !== "user") return;
+  startIntake(message.text);
+}
+
+function bindChatAttachments() {
+  const attach = document.getElementById("chat-attach");
+  const files = document.getElementById("chat-files");
+  if (attach && files) {
+    attach.addEventListener("click", () => files.click());
+    files.addEventListener("change", handleChatFiles);
+  }
+}
+
 function bind() {
   hydrateDoodles();
   applyMotion();
   bindSettings();
+  bindChatAttachments();
   document.getElementById("pick").addEventListener("change", event => {
     if (event.target.files[0]) fromFile(event.target.files[0]);
   });
@@ -5301,6 +5967,7 @@ function bind() {
   ta.addEventListener("input", () => {
     autosize(ta);
     updateSlashMenu();
+    if (chat.active) { paintSendState(); return; }
     const s = activeSession();
     if (!(s && s.running && !s.finished)) {
       document.getElementById("send").disabled = !(health && health.live);
@@ -5529,25 +6196,34 @@ function bind() {
     }
     if (event.target.closest("#nav-reviews")) { renderMode("reviews"); return; }
     if (event.target.closest("#nav-scheduled")) { renderMode("scheduled"); return; }
-    if (event.target.closest("#new-run")) {
-      // 对齐 kimi 语法：新建委托先回居中舞台，首条消息提交后才进入需求确认。
-      const hasRuns = runHistory.length > 0;
-      if (settingsOpen) closeSettingsPage(false);
-      if (ledgerOpen) { ledgerOpen = false; }
-      if (activeSession()) detachLive();
-      store.key = null;
-      store.trace = null;
-      renderNav();
-      renderMain(stageEmptyHtml(hasRuns ? "描述你想做的分析，我先帮你确认清楚" : ""), { mode: "empty" });
-      const stageTa = document.getElementById("composer-ta");
-      if (stageTa) { stageTa.value = ""; autosize(stageTa); }
-      document.getElementById("tb-title").textContent = "FCode";
-      document.getElementById("tb-chips").innerHTML = "";
-      const newTa = document.getElementById("composer-ta");
-      if (newTa) { newTa.value = ""; autosize(newTa); newTa.focus(); }
+    const chatRow = event.target.closest("#chat-nav [data-chat-id]");
+    if (chatRow) { openChat(chatRow.dataset.chatId); return; }
+    const chatEdit = event.target.closest("[data-chat-edit]");
+    if (chatEdit) { beginChatEdit(chatEdit.dataset.chatEdit); return; }
+    const chatSave = event.target.closest("[data-chat-save]");
+    if (chatSave) { saveChatEdit(chatSave.dataset.chatSave); return; }
+    if (event.target.closest("[data-chat-cancel]")) { cancelChatEdit(); return; }
+    const chatRegen = event.target.closest("[data-chat-regen]");
+    if (chatRegen) { regenerateChat(chatRegen.dataset.chatRegen); return; }
+    const chatCopy = event.target.closest("[data-chat-copy]");
+    if (chatCopy) { copyChatMessage(chatCopy.dataset.chatCopy); return; }
+    const chatDelegate = event.target.closest("[data-chat-delegate]");
+    if (chatDelegate) { delegateChatMessage(chatDelegate.dataset.chatDelegate); return; }
+    const chatRemove = event.target.closest("[data-chat-attach-remove]");
+    if (chatRemove) {
+      const index = Number(chatRemove.dataset.chatAttachRemove);
+      if (Number.isInteger(index)) chat.attachments.splice(index, 1);
+      renderChatAttachChips();
+      paintSendState();
       return;
     }
-    if (event.target.closest("#send")) { composerSubmit(); return; }
+    if (event.target.closest("#new-run")) { newChat(); return; }
+    if (event.target.closest("#nav-delegate")) { startIntake(""); return; }
+    if (event.target.closest("#send")) {
+      if (chat.active && chat.streaming) { stopChat(); return; }
+      composerSubmit();
+      return;
+    }
     if (event.target.closest("#run-chip")) { stopRun(); return; }
     if (event.target.closest("#desk-btn")) { renderMode("ledger"); return; }
     if (event.target.closest("#chain-badge")) { reverify(); return; }
@@ -5737,12 +6413,7 @@ function bind() {
       const key = stageChip.dataset.stageChip;
       setTemplate(key);
       const template = (templates || []).find(t => t.key === key);
-      const ta = document.getElementById("composer-ta");
-      if (ta) {
-        ta.value = (template && template.objective) || "";
-        autosize(ta);
-        ta.focus();
-      }
+      startIntake((template && template.objective) || "");
       return;
     }
     const intakeChoice = event.target.closest("[data-intake-choice]");
@@ -5921,9 +6592,9 @@ function bind() {
     const mod = e.metaKey || e.ctrlKey;
     const s = activeSession();
     if (mod && e.key.toLowerCase() === "k") { e.preventDefault(); togglePalette(); return; }
-    if (mod && e.key.toLowerCase() === "n") { e.preventDefault(); startIntake(""); return; }
+    if (mod && e.key.toLowerCase() === "n") { e.preventDefault(); newChat(); return; }
     if (mod && e.key === ",") { e.preventDefault(); toggleSettingsPage(); return; }
-    if (mod && e.key === ".") { e.preventDefault(); if (s && s.running) stopRun(); return; }
+    if (mod && e.key === ".") { e.preventDefault(); if (chat.active && chat.streaming) { stopChat(); return; } if (s && s.running) stopRun(); return; }
     if (mod && s && s.pending && !s.deciding && (e.key === "Enter" || e.key === "Backspace" || e.key === "Delete")) {
       const palette = document.getElementById("palette");
       if (palette && !palette.hidden) return;
@@ -6031,6 +6702,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   renderNav();
   // await：?run= 直链要在 health/runHistory 就绪后才能判定运行状态
   await initLive();
+  await loadChatThreads();
   const params = new URLSearchParams(location.search);
   const runParam = params.get("run");
   const param = params.get("trace");
@@ -6049,6 +6721,6 @@ document.addEventListener("DOMContentLoaded", async () => {
         renderMain(`<div class="empty">无法加载 ${esc(param)}：${esc(error.message)}</div>`, { mode: "error" });
       });
   } else {
-    renderMain(stageEmptyHtml(), { mode: "empty" });
+    newChat();
   }
 });

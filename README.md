@@ -114,18 +114,18 @@ python demo.py --serve       # 打开只读回放控制台
 
 ## 控制台
 
-`flowcredit/viewer/` 是可实时运行的 Agent 控制台：真实任务用 SSE 流式渲染，也可以只读回放任意签名 trace。零依赖、零构建，由标准库 server 直接托管。
+`flowcredit/viewer/` 是可实时运行的 Agent 控制台：**对话优先**（流式回答、追问、重新生成、编辑上一条、文本附件、停止），也可以只读回放任意签名 trace。零依赖、零构建，由标准库 server 直接托管。
 
 ```sh
 python3 flowcredit/viewer/server.py --repo .   # 打开 http://127.0.0.1:8642/
 ```
 
-![console](flowcredit/viewer/docs/console-live.png)
+![console](flowcredit/viewer/docs/desktop-chat.png)
 
 - 左侧：目录式的任务历史——每条记录两行（名称/时间 + 模板/轮次/成本），今天 / 昨天 / 更早分组带计数；悬停 `⋯` 菜单固定 / 重命名 / 删除；`↑↓` 在记录间移动、`Enter` 打开、`/` 聚焦搜索；示例场景收进折叠的附录。
-- 默认委托：通用 agent（文件、命令、网页）；金融研究作为参考负载保留在模板里。模板到模块的绑定是显式的（`scenario.module`），未知模板不会静默落到某个域。
+- 对话优先：侧栏「新对话」或首页输入框进入对话；回答流式渲染，可追问 / 重新生成 / 编辑上一条 / 添加文本附件 / 停止。**对话不执行工具**；需要执行时用侧栏「委托运行」或消息上的「转为委托」。每次回答都扣预算、进事件链、签收据。设计与边界见 [chat.md](flowcredit/docs/chat.md)。
 - 委托入口：用户先发消息，clarifier 返回理解摘要和 2–4 个选项——关注点 → 输出 → 审批，任务卡确认后才创建运行；选择写入 `binding.spec`，可回退、取消或继续描述。
-- 新建委托：点侧栏「＋ 新建委托」或 composer 的 `＋` 打开三步向导（类型 → 说明 → 审批），提交即开跑；也可以直接在 composer 输入任务，Enter 发送。
+- 委托运行：侧栏「委托运行」或首页模板 chips 进入需求确认 → 任务卡 → 运行；通用 agent（文件、命令、网页）是默认域，金融研究作为参考负载保留在模板里。
 - 真实运行：Runtime 现场执行，Plan、预算、逐轮工具卡与哈希链边产生边渲染；`⌘.` 在轮次边界停止。
 - 键盘入口：composer 以 `/` 开头弹出命令面板（Tab 补全、↑↓ 选择），↑↓ 翻输入历史；视觉沿用 Codex 终端语言：等宽元信息、20% 分隔线、选中填充 `#A4CDFB`。
 - 本机偏好：左下角状态行右侧的齿轮（`⌘,`）让主区切到设置页——外观、委托默认、模型与工具、记忆统计、通知与快捷键、安全与关于；偏好只存本机，不影响签名链。
@@ -180,6 +180,7 @@ open desktop/dist/FCode.app
 | 长期案例记忆（终态轨迹 → 确定性案例簿；召回事件入链；首轮上下文注入 top-3；删除只墓碑） | 已实现 |
 | 双时态事实记忆（as-of / known-at 查询；修正追加不覆盖；每条事实带来源事件哈希） | 已实现（金融域抽取器） |
 | 域模块协议（模块自给世界/工具/规划器/验证器；装配层按 `scenario.module` 显式绑定） | 已实现 |
+| 对话（流式回答 / 追问 / 重新生成 / 编辑上一条 / 文本附件 / 停止；预算、事件链与收据） | 已实现 |
 | 通用委托（文件读写 / 锚定编辑 / 受限命令 / 网页抓取；默认入口） | 已实现 |
 | MCP 桥接（导入即注册，调用仍经门控、预算与审批） | 已实现（stdio；未配置即关闭） |
 | 独立验证（Runtime 重算，模型不能自报完成） | 已实现 |
@@ -208,7 +209,7 @@ open desktop/dist/FCode.app
 
 ## 数字
 
-- **307** 项单元与场景测试，全部离线
+- **323** 项单元与场景测试，全部离线
 - **8** 个可复现场景，其中 1 个是通用委托，7 个是参考负载上的故障注入
 - **0** 个第三方运行时依赖（只用标准库）
 - 参考负载 **9** 轮完成一次完整研究，**4500 µUSD** 合成预算
@@ -223,6 +224,7 @@ flowcredit/          Python Runtime 与 Demo
   src/flowagent/
     core/            canonical JSON、契约与状态机、计划层、sqlite + 哈希链、签名收据
     runtime/         门控、预算、单轮 harness、多轮 loop（含恢复）
+    chat.py          对话：流式回答、线程事件链、编辑/重生成/附件
     domains/         域模块注册表：general-work（默认）+ finance-research（参考负载）
     tools/           封闭注册表：general/ 文件、命令、网页；finance/ 参考负载
     providers/       mock / local / kimi / deepseek / openai-compatible / oracle（均只提议，不执行）
@@ -230,7 +232,7 @@ flowcredit/          Python Runtime 与 Demo
     trajectory/      记录、导出、独立重算
     demo/            CLI、终端渲染、八个场景、模块装配、崩溃 worker
   viewer/            实时控制台 + Trace 回放（零依赖零构建）
-  tests/             307 项 unittest
+  tests/             323 项 unittest
   docs/              架构、设计决策、框架对照、JD 映射
 archive/             v1：Node.js 研究原型（保留，不参与 CI）
 ```

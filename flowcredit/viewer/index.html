@@ -9,6 +9,7 @@
 <script>window.__errs=[];window.addEventListener('error',e=>window.__errs.push((e.message||'')+'@'+e.lineno));window.addEventListener('unhandledrejection',e=>window.__errs.push('rej:'+(e.reason&&e.reason.message||e.reason)));</script><script>if(new URLSearchParams(location.search).get("desktop")==="1")document.documentElement.classList.add("desktop-app");</script><link rel="stylesheet" href="app.css?v=75">
 <link rel="stylesheet" href="design.css?v=76">
 <link rel="stylesheet" href="desktop.css?v=2">
+<link rel="stylesheet" href="chat.css?v=1">
 </head>
 <body>
 <div class="shell app rail-hidden" id="app">
@@ -26,7 +27,7 @@
 
     <button class="side-new" id="new-run">
       <span data-doodle="plus"></span>
-      <span>新建委托</span>
+      <span>新对话</span>
     </button>
 
     <label class="side-search">
@@ -47,11 +48,16 @@
       <button class="nav-item" id="nav-scheduled" title="定时任务">
         <span data-doodle="calendar"></span><span>定时任务</span>
       </button>
+      <button class="nav-item" id="nav-delegate" title="委托运行：受门控的执行">
+        <span data-doodle="clipboard-list"></span><span>委托运行</span>
+      </button>
     </div>
 
     <div class="side-list">
       <div class="side-section"><span>Projects</span><span class="side-count" id="proj-count">0</span></div>
       <nav id="project-nav"></nav>
+      <div class="side-section"><span>对话</span><span class="side-count" id="chat-count">0</span></div>
+      <nav class="nav" id="chat-nav"></nav>
       <div class="side-section"><span>委托记录</span><span class="side-count" id="run-count">0</span></div>
       <nav class="nav" id="run-nav"></nav>
     </div>
@@ -109,12 +115,16 @@
               <div class="tpl-menu approval-menu" id="approval-menu" hidden></div>
               <div class="tpl-menu model-menu" id="model-menu" hidden></div>
               <div class="attach-panel" id="attach-panel" hidden></div>
+              <div class="chat-attach-chips" id="chat-attach-chips" hidden></div>
               <textarea class="composer-ta" id="composer-ta" rows="1"
                 placeholder="给 agent 派一个任务：判断 2024 与 2025 两期合并毛利率是否可比…"></textarea>
               <div class="composer-bar">
                 <button class="c-icon" id="composer-open" title="资料 / 工具 / 预算" aria-expanded="false">
                   <span class="plus-glyph" aria-hidden="true">+</span>
                   <span class="close-glyph" aria-hidden="true">×</span>
+                </button>
+                <button class="c-icon" id="chat-attach" title="添加文本附件（最多 3 个，每个 ≤64 KiB）" hidden>
+                  <svg class="i" viewBox="0 0 24 24"><path d="M8 12.5 14.5 6a3.5 3.5 0 0 1 5 5L12 18.5a5 5 0 0 1-7-7l7-7"/></svg>
                 </button>
                 <button class="c-btn" id="approval-btn" title="审批档位：只在需要你确认的地方暂停（对新任务生效）">
                   <span data-doodle="key"></span>
@@ -146,6 +156,7 @@
             </div>
           </div>
         </footer>
+        <input type="file" id="chat-files" multiple hidden accept=".txt,.md,.markdown,.json,.jsonl,.csv,.log,.py,.js,.ts,.tsx,.jsx,.html,.css,.yaml,.yml,.toml,.sql,.sh">
       </div>
 
       <div class="rail-scrim" data-rail-close></div>
@@ -350,6 +361,6 @@
 <script src="report.js?v=56"></script>
 <script src="icons-doodle.js?v=54"></script>
   <script src="brand/seal-icons.js"></script>
-<script src="app.js?v=79" type="module"></script>
+<script src="app.js?v=80" type="module"></script>
 </body>
 </html>

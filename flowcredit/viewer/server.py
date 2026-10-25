@@ -240,6 +240,8 @@ class Runtime:
         self.project_facts = m.project_facts
         m = imp("flowagent.intake")
         self.clarify = m.clarify
+        m = imp("flowagent.chat")
+        self.ChatService = m.ChatService
         m = imp("flowagent.domains")
         self.get_domain = m.get_domain
         self.list_domains = m.list_domains
@@ -467,6 +469,14 @@ class RunManager:
         self.order: list[str] = []
         self.case_index = runtime.CaseIndex() if runtime is not None else None
         self.fact_store = runtime.FactStore() if runtime is not None else None
+        self.chat = None
+        if runtime is not None:
+            try:
+                # Chat lives next to the run history (Application Support in the
+                # desktop bundle), so audit records survive app upgrades.
+                self.chat = runtime.ChatService(RUNS_DIR.parent / "chat.sqlite")
+            except Exception:  # noqa: BLE001 — chat must not take the console down
+                traceback.print_exc()
         self._lock = threading.Lock()
         self._seq = 0
         RUNS_DIR.mkdir(exist_ok=True)
@@ -1976,6 +1986,23 @@ class Handler(SimpleHTTPRequestHandler):
                 "template": template_key or None,
                 "models": mgr.model_catalog_with_budget(template_key or None),
             })
+        if path == "/api/chat/threads":
+            if mgr.chat is None:
+                return self._json({"error": "chat is unavailable"}, 503)
+            return self._json({"threads": mgr.chat.list_threads()})
+        if path.startswith("/api/chat/threads/"):
+            if mgr.chat is None:
+                return self._json({"error": "chat is unavailable"}, 503)
+            thread_id = path[len("/api/chat/threads/") :]
+            if not thread_id or "/" in thread_id:
+                return self._json({"error": "no such thread"}, 404)
+            try:
+                thread = mgr.chat.get_thread(thread_id)
+            except Exception as error:  # noqa: BLE001 — a missing thread is a 404
+                code = getattr(error, "code", "")
+                status = 404 if code in ("CHAT_THREAD_NOT_FOUND", "TASK_NOT_FOUND") else 400
+                return self._json({"error": str(error), "code": code}, status)
+            return self._json(thread)
         if path == "/api/corpus":
             if mgr.runtime is None:
                 return self._json({"error": mgr.runtime_error}, 503)
@@ -2158,6 +2185,37 @@ class Handler(SimpleHTTPRequestHandler):
                 except (BrokenPipeError, ConnectionResetError, OSError):
                     return
 
+    def _stream_chat(self, events) -> None:
+        """Relay a ChatService event generator as SSE.
+
+        A client disconnect makes ``_sse`` return False; closing the generator
+        lets the service record the cancelled turn in the event chain.
+        """
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+        self.send_header("Cache-Control", "no-cache, no-store")
+        self.send_header("Connection", "close")
+        self.send_header("X-Accel-Buffering", "no")
+        self.end_headers()
+        self.close_connection = True
+        try:
+            for event in events:
+                kind = str(event.get("type") or "message")
+                if not self._sse(kind, event):
+                    break
+        except Exception as error:  # noqa: BLE001 — surface config/provider failures in-band
+            self._sse("error", {
+                "code": getattr(error, "code", "CHAT_FAILED"),
+                "message": str(error),
+            })
+        finally:
+            close = getattr(events, "close", None)
+            if close is not None:
+                try:
+                    close()
+                except Exception:  # noqa: BLE001 — the response is already over
+                    pass
+
     # ------------------------------------------------------------------- POST
 
     def do_POST(self) -> None:  # noqa: N802
@@ -2188,6 +2246,78 @@ class Handler(SimpleHTTPRequestHandler):
             except Exception as error:  # noqa: BLE001
                 return self._json({"error": f"intake failed: {error}"}, 400)
             return self._json(turn)
+        if path == "/api/chat/send":
+            if mgr.chat is None:
+                return self._json({"error": "chat is unavailable"}, 503)
+            body = self._read_body()
+            text = body.get("text")
+            if not isinstance(text, str):
+                return self._json({"error": "text must be a string"}, 400)
+            thread_id = body.get("threadId")
+            if thread_id is not None and not isinstance(thread_id, str):
+                return self._json({"error": "threadId must be a string"}, 400)
+            model = body.get("model") if isinstance(body.get("model"), str) else None
+            try:
+                mgr.chat.check_model(model)
+            except Exception as error:  # noqa: BLE001 — fail closed with the exact missing config
+                return self._json(
+                    {"error": str(error), "code": getattr(error, "code", "CHAT_PROVIDER_UNAVAILABLE")},
+                    400,
+                )
+            events = mgr.chat.send(
+                thread_id=thread_id,
+                text=text,
+                attachments=body.get("attachments"),
+                model=model,
+            )
+            return self._stream_chat(events)
+        if path.startswith("/api/chat/threads/") and path.endswith("/edit"):
+            if mgr.chat is None:
+                return self._json({"error": "chat is unavailable"}, 503)
+            thread_id = path[len("/api/chat/threads/") : -len("/edit")]
+            body = self._read_body()
+            text = body.get("text")
+            message_id = body.get("messageId")
+            if not isinstance(text, str) or not isinstance(message_id, str):
+                return self._json({"error": "text and messageId are required strings"}, 400)
+            model = body.get("model") if isinstance(body.get("model"), str) else None
+            try:
+                mgr.chat.check_model(model)
+            except Exception as error:  # noqa: BLE001
+                return self._json(
+                    {"error": str(error), "code": getattr(error, "code", "CHAT_PROVIDER_UNAVAILABLE")},
+                    400,
+                )
+            events = mgr.chat.edit(
+                thread_id=thread_id,
+                message_id=message_id,
+                text=text,
+                attachments=body.get("attachments"),
+                model=model,
+            )
+            return self._stream_chat(events)
+        if path.startswith("/api/chat/threads/") and path.endswith("/regenerate"):
+            if mgr.chat is None:
+                return self._json({"error": "chat is unavailable"}, 503)
+            thread_id = path[len("/api/chat/threads/") : -len("/regenerate")]
+            body = self._read_body()
+            message_id = body.get("messageId")
+            if not isinstance(message_id, str):
+                return self._json({"error": "messageId must be a string"}, 400)
+            model = body.get("model") if isinstance(body.get("model"), str) else None
+            try:
+                mgr.chat.check_model(model)
+            except Exception as error:  # noqa: BLE001
+                return self._json(
+                    {"error": str(error), "code": getattr(error, "code", "CHAT_PROVIDER_UNAVAILABLE")},
+                    400,
+                )
+            events = mgr.chat.regenerate(
+                thread_id=thread_id,
+                message_id=message_id,
+                model=model,
+            )
+            return self._stream_chat(events)
         if path == "/api/runs":
             if mgr.runtime is None:
                 return self._json({"error": f"live mode unavailable: {mgr.runtime_error}"}, 503)
