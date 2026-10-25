@@ -312,6 +312,20 @@ function describe(observation) {
         : [`<span class="red">无法计算：${esc((r.blockers || []).join("；"))}</span>`];
     case "report_blocked":
       return [`声明受阻：${esc(r.reason)}`];
+    case "ls_workspace": {
+      const entries = r.entries || [];
+      return [`${num(entries.length)} 个文件`, `<span class="dim">${esc((entries[0] || {}).path || "空工作区")}</span>`];
+    }
+    case "read_file":
+      return [`${esc(r.path || "")} · ${num(r.bytes)} bytes`, `<span class="dim">${esc(String(r.content || "").slice(0, 72))}…</span>`];
+    case "write_file":
+      return [`${esc(r.path || "")} · ${r.changed ? "已写入" : "无变化"} · ${num(r.bytes)} bytes`, `<span class="dim">sha ${esc(shortHash(r.sha256_after))}…${r.commit ? " · " + esc(r.commit) : ""}</span>`];
+    case "edit_file":
+      return [`${esc(r.path || "")} · 锚定替换 · ${num(r.bytes)} bytes`, `<span class="dim">sha ${esc(shortHash(r.sha256_after))}…</span>`];
+    case "run_command":
+      return [`${esc(r.command || "")} · 退出码 ${esc(r.exit_code)} · ${num(r.duration_ms)} ms`, `<span class="dim">${esc(String(r.output || "").split("\n")[0].slice(0, 72))}…</span>`];
+    case "fetch_url":
+      return [`${esc(r.host || r.url || "")} · HTTP ${esc(r.status)} · ${num(r.bytes)} bytes`, `<span class="dim">${esc(r.title || r.url || "")}</span>`];
     default:
       return [esc(JSON.stringify(r))];
   }
@@ -887,6 +901,12 @@ const TOOL_DOODLE_ICON = {
   search_cases: "search",
   read_case: "file-text",
   query_facts: "database",
+  ls_workspace: "layout-grid",
+  read_file: "book-open",
+  write_file: "report",
+  edit_file: "tool",
+  run_command: "gate",
+  fetch_url: "link",
 };
 
 function renderTools(trace, check) {
@@ -1139,6 +1159,12 @@ const TOOL_ICON = {
   check_restatement: '<svg class="i" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.6"/><path d="M20 4v4h-4"/></svg>',
   calculate_margin: '<svg class="i" viewBox="0 0 24 24"><path d="M19 5 5 19"/><circle cx="7.5" cy="7.5" r="2.5"/><circle cx="16.5" cy="16.5" r="2.5"/></svg>',
   report_blocked: ICON.alert,
+  ls_workspace: ICON.folder,
+  read_file: ICON.file,
+  write_file: '<svg class="i" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/><path d="M9 13h6M9 16h4"/></svg>',
+  edit_file: '<svg class="i" viewBox="0 0 24 24"><path d="m4 20 4.5-1 10-10-3.5-3.5-10 10z"/><path d="M13.5 7 16 9.5"/></svg>',
+  run_command: ICON.term,
+  fetch_url: '<svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.4 2.3 3.6 5.1 3.6 8.5S14.4 18.2 12 20.5c-2.4-2.3-3.6-5.1-3.6-8.5S9.6 5.8 12 3.5z"/></svg>',
 };
 
 function kvDetail(rows) {
@@ -1241,6 +1267,59 @@ const TOOL_RENDERERS = {
   report_blocked(obs) {
     return alertDetail("bad", "声明受阻", (obs.result || {}).reason || "");
   },
+  ls_workspace(obs) {
+    const entries = (obs.result || {}).entries || [];
+    if (!entries.length) return `<div class="t-detail"><div class="doc-row"><span class="id">（空工作区）</span></div></div>`;
+    return `<div class="t-detail">${entries.map(entry => `<div class="doc-row">
+      <span class="id">${esc(entry.path)}</span>
+      <span class="grow"></span>
+      <span class="meta2">${num(entry.bytes)} B</span>
+    </div>`).join("")}</div>`;
+  },
+  read_file(obs) {
+    const r = obs.result || {};
+    const content = String(r.content || "");
+    return `<div class="t-detail">
+      <div class="doc-row"><span class="id">${esc(r.path || "")}</span><span class="grow"></span><span class="meta2">${num(r.bytes)} B · sha ${esc(shortHash(r.sha256))}…</span></div>
+      ${content ? `<pre class="doc-body">${esc(content.slice(0, 4000))}</pre>` : ""}
+    </div>`;
+  },
+  write_file(obs) {
+    const r = obs.result || {};
+    return kvDetail([
+      ["文件", r.path],
+      ["状态", r.changed ? "已写入" : "内容未变化"],
+      ["大小", `${num(r.bytes)} B`],
+      ["写入哈希", `${shortHash(r.sha256_after)}…`],
+      ["git commit", r.commit || "—"],
+    ]);
+  },
+  edit_file(obs) {
+    const r = obs.result || {};
+    return kvDetail([
+      ["文件", r.path],
+      ["状态", r.changed ? "唯一锚点已替换" : "内容未变化"],
+      ["大小", `${num(r.bytes)} B`],
+      ["写入哈希", `${shortHash(r.sha256_after)}…`],
+      ["git commit", r.commit || "—"],
+    ]);
+  },
+  run_command(obs) {
+    const r = obs.result || {};
+    return `${kvDetail([
+      ["命令", r.command],
+      ["退出码", r.exit_code],
+      ["耗时", `${num(r.duration_ms)} ms`],
+    ])}<div class="t-detail"><pre class="doc-body">${esc(String(r.output || "(no output)").slice(0, 4000))}</pre></div>`;
+  },
+  fetch_url(obs) {
+    const r = obs.result || {};
+    return `<div class="t-detail">
+      <div class="doc-row"><span class="id">${esc(r.url || "")}</span><span class="grow"></span><span class="meta2">HTTP ${esc(r.status)} · ${num(r.bytes)} B</span></div>
+      <div class="doc-row"><span class="meta2">${esc(r.title || "")} · content_truth ${esc(r.content_truth || "not-verified")}</span></div>
+      ${r.text ? `<pre class="doc-body">${esc(String(r.text).slice(0, 2400))}</pre>` : ""}
+    </div>`;
+  },
 };
 
 /* 通用兜底：原始值铺成 KV 表，嵌套对象折叠展示——任何工具输出都至少可读 */
@@ -1284,6 +1363,12 @@ const RESULT_BLOCK_KINDS = {
   collect_source: "diff",
   write_document: "diff",
   report_blocked: "removed",
+  ls_workspace: "brief",
+  read_file: "brief",
+  write_file: "diff",
+  edit_file: "diff",
+  run_command: "brief",
+  fetch_url: "brief",
 };
 
 function resultBlockKind(round) {
@@ -2008,6 +2093,39 @@ function failureJudgmentHtml(trace, terminal) {
   </section>`;
 }
 
+function generalResultHtml(trace, result, artifacts) {
+  const plan = result.plan || {};
+  const truth = (artifacts.find(entry => entry.content_truth) || {}).content_truth || "runtime-verified-file-state";
+  return `<div class="card result">
+    <div class="card-head">
+      <span class="card-title">${ICON.inkTick} 产物</span>
+      <span class="badge pass" style="margin-left:2px">${doodleSvg("shield-check", "draw")}<span>已验证</span></span>
+      <span class="grow"></span>
+      <span class="card-meta">succeeded · ${esc(result.verification || "runtime-recomputed")}</span>
+    </div>
+    <p class="result-answer">通用委托已完成；${artifacts.length} 个文件通过 Runtime 文件状态复核。</p>
+    <div class="metrics">
+      ${artifacts.map(entry => `<div class="metric"><div class="k">${esc(entry.path)}</div><div class="v">${num(entry.bytes)} B</div></div>`).join("")}
+      <div class="metric"><div class="k">计划</div><div class="v">${esc(plan.done ?? "—")}/${esc(plan.total ?? "—")}</div></div>
+    </div>
+    <div class="proof-line">
+      <span class="proof-mark">已复算</span>
+      <span>${esc(result.verification || "runtime-recomputed")}</span>
+      <span class="proof-sep">·</span>
+      <span>${artifacts.length} 个文件</span>
+      <span class="proof-sep">·</span>
+      <span>${(trace.events || []).length} 个事件</span>
+    </div>
+    <div class="result-foot">
+      <div class="chips" style="margin-top:2px">
+        ${artifacts.map(entry => `<span class="mini" title="${esc(entry.sha256 || "")}">${esc(entry.path)} · ${esc(shortHash(entry.sha256))}…</span>`).join("")}
+        <span class="mini">${esc(truth)}</span>
+      </div>
+      ${runActionsHtml(trace)}
+    </div>
+  </div>`;
+}
+
 function renderResult(trace) {
   const terminal = trace.terminal || {};
   const result = terminal.result || {};
@@ -2049,6 +2167,10 @@ function renderResult(trace) {
   }
 
   if (terminal.status === "succeeded") {
+    const artifacts = Array.isArray(result.results)
+      ? result.results.filter(entry => entry && entry.path)
+      : (result.path ? [result] : []);
+    if (artifacts.length) return generalResultHtml(trace, result, artifacts);
     return `<div class="card result">
       <div class="card-head">
         <span class="card-title">${ICON.inkTick} 结论</span>
@@ -2623,6 +2745,12 @@ const APPROVAL_VERBS = {
   check_restatement: "核对重述",
   calculate_margin: "计算毛利率",
   report_blocked: "宣告受阻",
+  ls_workspace: "列出工作区",
+  read_file: "读取文件",
+  write_file: "写入文件",
+  edit_file: "编辑文件",
+  run_command: "执行命令",
+  fetch_url: "抓取网页",
 };
 
 /* 有状态变更的写入类工具：审批默认展开影响区（对照官方 diff 自动展开）。
@@ -3184,6 +3312,8 @@ function intakeBadge(choice) {
 
 function intakeTemplateKey() {
   if (intake.readyTask && intake.readyTask.template) return intake.readyTask.template;
+  // 通用委托是默认入口：在财务问卷出现之前，预算与草稿跟随当前模板。
+  if (tplKey && isGeneralTemplate()) return tplKey;
   return intake.spec.intent === "missing" ? "open-ended" : "full";
 }
 
@@ -3209,7 +3339,9 @@ function intakeDraftHtml() {
   const limits = template.limits || {};
   const intent = intake.spec.intent ? INTAKE_INTENTS[intake.spec.intent].label : "待选择";
   const output = intake.spec.output ? INTAKE_OUTPUTS[intake.spec.output].short : "待选择";
-  const approval = intake.spec.approval ? approvalTitle(intake.spec.approval) : "待选择";
+  const approval = intake.spec.approval
+    ? approvalTitle(intake.spec.approval)
+    : ((intake.readyTask || {}).approval ? approvalTitle(intake.readyTask.approval) : "待选择");
   const entry = (modelBudget.models || []).find(m => m.key === modelChoice.key);
   const scaled = entry && entry.budget ? entry.budget : null;
   const operatorTuned = !!attach.budget;
@@ -3233,13 +3365,29 @@ function intakeDraftHtml() {
     : (rescaled && entry
       ? `<span class="intake-scale-note">已按 ${esc(entry.model)} 价格重算成本顶（上限而非目标）</span>`
       : "");
+  const general = !!(template.module && template.module !== "finance-research");
+  const mode = general ? (((intake.readyTask || {}).spec || {}).mode || "") : "";
+  const modeText = mode === "script" ? "脚本：写 → 运行 → 修复 → 复跑"
+    : mode === "research" ? "调研：抓取来源 → 写报告"
+    : "按描述自动判断";
+  const sourcesText = mode === "script"
+    ? "工作区脚本，无需 URL"
+    : `${attach.sources.length}/5 个 URL`;
+  const headTag = general
+    ? (template.title ? template.title.split("：")[0] : "通用委托")
+    : "内置合成资料 · 恒星智算";
+  const detailRows = general
+    ? `<div class="intake-row"><span>模式</span><b>${esc(modeText)}</b></div>
+       <div class="intake-row"><span>来源</span><b>${esc(sourcesText)}</b>${attach.sources.length ? `<span class="intake-scale-note">只有 + 面板里列出的地址可被 fetch_url 访问</span>` : ""}</div>
+       <div class="intake-row"><span>审批</span><b>${esc(approval)}</b></div>`
+    : `<div class="intake-row"><span>问题</span><b>${esc(intent)}</b></div>
+       <div class="intake-row"><span>输出</span><b>${esc(output)}</b></div>
+       <div class="intake-row"><span>审批</span><b>${esc(approval)}</b></div>
+       <div class="intake-row"><span>资料</span><b>${attach.scope.size && attach.scope.size !== attach.corpus.length ? `限定 ${attach.scope.size} 份` : "全语料"}</b>${scopeNote}</div>`;
   const ready = !!intake.readyTask;
   return `<div class="intake-draft">
-    <div class="intake-draft-head"><span>任务草稿</span><span class="intake-draft-tag">内置合成资料 · 恒星智算</span></div>
-    <div class="intake-row"><span>问题</span><b>${esc(intent)}</b></div>
-    <div class="intake-row"><span>输出</span><b>${esc(output)}</b></div>
-    <div class="intake-row"><span>审批</span><b>${esc(approval)}</b></div>
-    <div class="intake-row"><span>资料</span><b>${attach.scope.size && attach.scope.size !== attach.corpus.length ? `限定 ${attach.scope.size} 份` : "全语料"}</b>${scopeNote}</div>
+    <div class="intake-draft-head"><span>任务草稿</span><span class="intake-draft-tag">${esc(headTag)}</span></div>
+    ${detailRows}
     <div class="intake-row"><span>预算</span><b>${esc(budget)}</b>${scaleNote}</div>
     <div class="intake-actions">
       <button class="a-btn" data-intake-cancel>取消</button>
@@ -3299,8 +3447,8 @@ function renderIntake() {
     <div class="intake-head">
       <div>
         <div class="intake-kicker"><span data-doodle="list-checks"></span> NEW DELEGATION</div>
-        <h1 class="intake-title">先说清楚，再开始</h1>
-        <p class="intake-sub">你先描述，我再给选项。最多三轮就能确认。</p>
+        <h1 class="intake-title">${isGeneralTemplate() ? "说清楚，就开始" : "先说清楚，再开始"}</h1>
+        <p class="intake-sub">${isGeneralTemplate() ? "通用委托不走问卷：描述任务，来源与审批在 + 面板确认。" : "你先描述，我再给选项。最多三轮就能确认。"}</p>
       </div>
     </div>
     <div class="intake-thread">${messages}${thinking}${intakeDraftHtml()}</div>
@@ -3350,7 +3498,7 @@ function startIntake(text = "") {
   if (!value) {
     intake.messages.push({
       role: "assistant",
-      text: "先说说你想做什么。比如：帮我看看这两份财报能不能直接比。",
+      text: "先说说你想做什么。比如：调研一个主题并整理成 research.md；或者写个脚本跑通它。",
       thought: "还没有收到任务描述。",
       choices: [],
     });

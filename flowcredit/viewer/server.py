@@ -337,8 +337,15 @@ class Runtime:
         ]
 
     def templates(self) -> list[dict]:
+        # The general module is the product's default entry, so its scenarios
+        # lead the picker even though the reference workload is declared first
+        # in the scenario table. The sort is stable within each group.
+        keys = sorted(
+            self.AVAILABLE,
+            key=lambda key: 0 if self.SCENARIOS[key].module == "general-work" else 1,
+        )
         out = []
-        for key in self.AVAILABLE:
+        for key in keys:
             scenario = self.SCENARIOS[key]
             limits = scenario.limits
             out.append(

@@ -38,6 +38,8 @@ window.FCReport = (function () {
     list_documents: "列出资料", read_document: "读取资料", normalize_units: "单位归一",
     reconcile_basis: "口径桥接", check_restatement: "重述核对", calculate_margin: "毛利率计算",
     report_blocked: "受阻声明",
+    ls_workspace: "列出工作区", read_file: "读取文件", write_file: "写入文件",
+    edit_file: "编辑文件", run_command: "执行命令", fetch_url: "抓取网页",
   };
 
   const REVIEW_LABELS = {
@@ -78,6 +80,18 @@ window.FCReport = (function () {
       <p class="cite">口径 ${esc(result.basis || "—")} · ${esc(result.consolidation || "—")} · ${result.restatement_applied ? "已应用 FY2024 重述" : "无重述"}</p>`;
     }
     if (terminal.status === "succeeded") {
+      const artifacts = Array.isArray(result.results)
+        ? result.results.filter(entry => entry && entry.path)
+        : (result.path ? [result] : []);
+      if (artifacts.length) {
+        const truth = (artifacts.find(entry => entry.content_truth) || {}).content_truth || "runtime-verified-file-state";
+        return `<h2>一、结论</h2>
+        <p class="answer">通用委托已完成；${artifacts.length} 个文件通过 Runtime 文件状态复核。</p>
+        <table class="metrics">
+          ${artifacts.map(entry => `<tr><td>${esc(entry.path)}</td><td class="v">${num(entry.bytes)} B</td></tr>`).join("")}
+        </table>
+        <p class="cite">复核方式 ${esc(result.verification || "runtime-recomputed")} · 内容真实性 ${esc(truth)}</p>`;
+      }
       return `<h2>一、结论</h2><p class="answer">任务已完成，结果通过 Runtime 独立复算校验。</p>`;
     }
     const reasons = {
@@ -318,9 +332,9 @@ window.FCReport = (function () {
     font-size: 11px; color: #6b7280; line-height: 1.8; }
   @media print { body { padding: 24px; } .round { page-break-inside: avoid; } }
 </style></head><body>
-  <div class="kicker">FCode · 数字化经济工作底稿</div>
+  <div class="kicker">FCode · 委托工作底稿</div>
   <h1>${esc(title)}</h1>
-  <p class="cite">主体 ${esc(task.principal || "—")} · 委托 ${esc(task.id || "—")} · 语料 ${esc(binding.corpus || "—")} · 授权 ${esc((task.model_grant || {}).grant_id || "—")} r${esc((task.model_grant || {}).revision || "")}</p>
+  <p class="cite">主体 ${esc(task.principal || "—")} · 委托 ${esc(task.id || "—")} · 场景 ${esc(binding.scenario || binding.corpus || "—")} · 授权 ${esc((task.model_grant || {}).grant_id || "—")} r${esc((task.model_grant || {}).revision || "")}</p>
   ${conclusionSection(trace)}
   ${budgetSection(trace)}
   ${processSection(trace)}
@@ -330,7 +344,7 @@ window.FCReport = (function () {
   <div class="footer">
     本文档由 FCode 运行时生成，是结构化决策辅助工作底稿，不构成法定审计意见、投资建议或信贷决策。
     证据明细与执行过程全部来自任务签名链；完整性声明中的链头哈希可用于独立验证本文档所引内容未被篡改——
-    在控制台载入对应 trace JSON 即自动重算全链。金额、公司与资料为合成演示数据。
+    在控制台载入对应 trace JSON 即自动重算全链。金额、公司与资料如为合成演示数据，已在任务绑定中标注；抓取的网页内容如实标注 not-verified。
   </div>
 </body></html>`;
   }
