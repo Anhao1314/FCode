@@ -169,3 +169,38 @@ class HostGuardTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ServerBindTests(unittest.TestCase):
+    """绑定阶段不许解析反向 DNS。
+
+    CI 的 macOS runner 上 `socket.getfqdn('127.0.0.1')` 实测要 35 秒，而标准库
+    `HTTPServer.server_bind` 正好在 bind 之后、serve 之前调用它——于是服务「已经
+    listen 却没人处理、日志一行没有」，两份起子进程的测试连续二十余次超时。
+    这条测试把「启动不碰 DNS」钉住，避免以后有人换回标准库那对括号。
+    """
+
+    def test_bind_never_resolves_dns(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            os.environ["FCODE_CONFIG_DIR"] = tmp
+            spec = importlib.util.spec_from_file_location("fcode_server_bind", SERVER)
+            module = importlib.util.module_from_spec(spec)
+            sys.modules[spec.name] = module
+            spec.loader.exec_module(module)  # type: ignore[union-attr]
+
+            calls = []
+            original = socket.getfqdn
+
+            def spy(value: str) -> str:
+                calls.append(value)
+                return original(value)
+
+            socket.getfqdn = spy  # type: ignore[assignment]
+            try:
+                server = module.ConsoleHTTPServer(("127.0.0.1", 0), module.Handler)
+            finally:
+                socket.getfqdn = original  # type: ignore[assignment]
+                server.server_close()
+            self.assertEqual(calls, [], "server_bind 不该解析反向 DNS")
+            self.assertEqual(server.server_name, "127.0.0.1")
+            self.assertTrue(server.server_port)

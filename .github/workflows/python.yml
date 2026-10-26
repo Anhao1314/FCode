@@ -38,22 +38,6 @@ jobs:
         run: |
           python -c "import tomllib,sys; d=tomllib.load(open('pyproject.toml','rb')); deps=d['project'].get('dependencies',[]); print('runtime dependencies:', deps); sys.exit(1 if deps else 0)"
 
-      - name: Time the reverse-DNS lookup the HTTP server does at bind
-        # `HTTPServer.server_bind` 里有一句 socket.getfqdn(host)：绑定后、serve 前。
-        # 反向 DNS 慢的机器上它会挂住，而套接字已经 listen——外部看到的正是
-        # 「进程活着、不响应、日志空白」。这一步只测时间，不修东西。
-        run: |
-          python - <<'EOF'
-          import socket, time
-          for value in ("127.0.0.1", "localhost"):
-              started = time.monotonic()
-              try:
-                  name = socket.getfqdn(value)
-              except Exception as error:  # noqa: BLE001
-                  name = f"{type(error).__name__}: {error}"
-              print(f"getfqdn({value!r}) -> {name!r} in {time.monotonic() - started:.2f}s")
-          EOF
-
       - name: Run unit and scenario tests
         working-directory: flowcredit
         run: python -m unittest discover -s tests -v

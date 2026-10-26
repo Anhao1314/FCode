@@ -39,6 +39,7 @@ import argparse
 import json
 import os
 import secrets
+import socketserver
 import sys
 import uuid
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -1042,6 +1043,26 @@ class Handler(SimpleHTTPRequestHandler):
 # ------------------------------------------------------------------------ main
 
 
+class ConsoleHTTPServer(ThreadingHTTPServer):
+    """永不解析反向 DNS 的 HTTP 服务。
+
+    标准库 ``HTTPServer.server_bind`` 在 bind 之后会执行 ``socket.getfqdn(host)``。
+    反向 DNS 慢或不可达的机器上这句会挂很久：CI 的 macOS runner 实测
+    ``getfqdn('127.0.0.1') -> 'localhost' in 35.06s``。而它发生在我们打印任何
+    启动日志、进入 serve_forever 之前，于是外部看到的现象是「套接字已经 listen、
+    请求却没人处理、日志一行没有」——两份以子进程方式起控制台的测试因此连续
+    二十余次在 macOS 上超时（ubuntu 的解析快，一直是绿的）。
+
+    我们只绑回环，且 ``server_name`` 不参与任何路由，所以直接用字面量填掉它。
+    """
+
+    def server_bind(self) -> None:
+        socketserver.TCPServer.server_bind(self)
+        host, port = self.server_address[:2]
+        self.server_name = str(host)
+        self.server_port = int(port)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="console-server", description="Fcode console — static viewer + live runtime API."
@@ -1097,7 +1118,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     Handler.manager = manager
     Handler.token = args.token or None
-    httpd = ThreadingHTTPServer((args.host, args.port), Handler)
+    httpd = ConsoleHTTPServer((args.host, args.port), Handler)
     httpd.daemon_threads = True
     print(f"[console] serving {VIEWER_DIR} on http://{args.host}:{args.port}")
     if runtime is not None:
