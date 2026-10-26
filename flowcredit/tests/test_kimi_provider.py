@@ -264,7 +264,12 @@ class KimiProviderTests(unittest.TestCase):
                 provider.propose(
                     {"objective": "test", "round": 1, "intent": {"task_id": "t", "round": 1}}
                 )
-        self.assertEqual(fake_sleep.call_args_list[0], mock.call(30))
+        # 首次调用等待**完整间隔**：断言契约（至少 30 秒、且没有多等），
+        # 不比对浮点字面量——`target - moment` 会算出 30.000000000000014
+        # 这类尾差，ubuntu/3.11 上就因此偶发变红（2026-10-26 修）。
+        first_waits = fake_sleep.call_args_list[0].args[0]
+        self.assertGreaterEqual(first_waits, 30)
+        self.assertLess(first_waits, 30.001)
 
     def test_pacing_waits_remainder_between_calls(self) -> None:
         _, fake = self._fake(
