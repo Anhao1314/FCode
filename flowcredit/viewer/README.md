@@ -16,20 +16,29 @@ flowcredit/viewer/
   desktop.css         ← ?desktop=1 时的桌面比例覆盖（Kimi 测量值）
   kimi.css            ← Kimi 实测色号与动效皮肤（最后加载）
   app.js              ← 页面逻辑（对话 / 委托 / 回放 / 运行管理）
-  core/format.js      ← canonical JSON、SHA-256、链验证、格式化（纯函数）
-  core/chat-format.js ← Markdown 渲染与 SSE 分帧（纯函数，Node 可测）
-  core/chat-view.js   ← 单条消息 DOM 渲染（纯函数，Node 可测）
+  core/               ← 前端纯函数层（全部 Node 可测，无 DOM 依赖）
+    format.js         canonical JSON、SHA-256、链验证、格式化
+    chat-format.js    Markdown 渲染与 SSE 分帧
+    chat-view.js      单条消息 DOM 渲染
+    run-card.js       执行提案卡与运行镜像的投影
+    round-fold.js     「安静轮次」折叠规则（只影响可见性）
+    side-nav.js       两侧栏（工作 / 对话）的条目、置顶、Projects、任务与对话列表
+    ai-avatar.js      对话 AI 的头像（Q 版印豆 · 圆框 · 黑白，状态由事实推导）
   report.js           ← 自包含审计报告生成器
   icons-doodle.js     ← 图标与涂鸦
   server.py           ← HTTP 表面：静态文件 + JSON/SSE API + 入口
   console_common.py   ← 路径、静态拒绝、模型目录与预算换算
   console_runtime.py  ← runtime 导入、单次运行、观察者与崩溃检查
   console_manager.py  ← 运行历史、创建、控制、续跑与持久化
-  tests/              ← 前端纯函数测试（node --test）
+  tests/              ← 前端纯函数测试（node --test，58 项）
   runs/               ← 运行产物（task.sqlite / trace.json / meta.json，不入库）
   chat.sqlite         ← 对话事件库（不入库）
-  docs/console-live.png
+  docs/console-live.png  ← 看板 · 账本（换肤后重拍；另有 desktop-home / -chat / -run）
 ```
+
+设计语言分两面：外壳与对话面走 Kimi 实测皮肤（`../docs/kimi-skin.md`），
+审计底稿与证据面走 Paper & Proof（`../docs/design-system.md`）——
+本目录的 `kimi.css` 与 `design.css` 就是这两面的落点。
 
 ## 快速开始
 
