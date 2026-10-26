@@ -63,3 +63,18 @@ jobs:
         run: |
           git diff --exit-code
           test -z "$(git status --porcelain --untracked-files=all)"
+
+  all-checks-passed:
+    # 单一聚合门：四条矩阵腿没有聚合时，红了不知道算不算过、绿了也没有单一信号。
+    # 分支保护只挂这一个 check（矩阵腿的结论由它汇总）。
+    needs: [verify]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Every verify leg must have succeeded
+        run: |
+          echo "verify matrix: ${{ needs.verify.result }}"
+          if [ "${{ needs.verify.result }}" != "success" ]; then
+            echo "::error::one or more verify legs failed (or were cancelled)"
+            exit 1
+          fi

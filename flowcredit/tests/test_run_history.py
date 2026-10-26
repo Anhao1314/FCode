@@ -13,10 +13,8 @@ import json
 import os
 import pathlib
 import socket
-import subprocess
 import sys
 import tempfile
-import time
 import unittest
 import urllib.error
 import urllib.request
@@ -28,6 +26,8 @@ sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(VIEWER))
 
 from console_common import FINISHED_STATUS, run_trace_path  # noqa: E402
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+from server_harness import ConsoleServer  # noqa: E402
 
 
 def load_console_manager():
@@ -242,36 +242,11 @@ class HistoricalRunServerTests(unittest.TestCase):
         write_trace(runs / "run-20261025-130000-aaaa", head="b" * 64)
         write_run(runs, "run-20261025-120000-bbbb", status="running")
         write_run(runs, "run-20261025-110000-cccc")  # meta only: no trace on disk yet
-        cls.port = free_port()
-        env = dict(os.environ)
-        env.update({
-            "FCODE_RUNS_DIR": str(runs),
-            "FCODE_CONFIG_DIR": str(root / "config"),
-            "FCODE_SKIP_LEGACY_CONFIG_MIGRATION": "1",
-        })
-        cls.process = subprocess.Popen(
-            [sys.executable, str(SERVER), "--repo", str(ROOT), "--port", str(cls.port)],
-            cwd=str(ROOT), env=env,
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-        )
-        cls.addClassCleanup(cls._stop)
-        deadline = time.time() + 30
-        while time.time() < deadline:
-            try:
-                if request(f"http://127.0.0.1:{cls.port}/api/health")[0] == 200:
-                    return
-            except Exception:  # noqa: BLE001 — still booting
-                time.sleep(0.2)
-        raise RuntimeError("server did not become healthy")
-
-    @classmethod
-    def _stop(cls) -> None:
-        if cls.process.poll() is None:
-            cls.process.terminate()
-            try:
-                cls.process.wait(timeout=10)
-            except subprocess.TimeoutExpired:  # pragma: no cover — best effort
-                cls.process.kill()
+        # 服务端子进程的输出必须留下：DEVNULL 时代 CI 连红二十次都无从定位。
+        cls.server = ConsoleServer(runs_dir=runs, config_dir=root / "config", timeout=30)
+        cls.server.start()
+        cls.addClassCleanup(cls.server.stop)
+        cls.port = cls.server.port
 
     def url(self, suffix: str) -> str:
         return f"http://127.0.0.1:{self.port}{suffix}"

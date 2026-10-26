@@ -10,7 +10,6 @@ import socket
 import subprocess
 import sys
 import tempfile
-import time
 import unittest
 import urllib.error
 import urllib.request
@@ -18,12 +17,9 @@ import urllib.request
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SERVER = ROOT / "viewer" / "server.py"
 sys.path.insert(0, str(ROOT / "src"))
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
-
-def free_port() -> int:
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        sock.bind(("127.0.0.1", 0))
-        return int(sock.getsockname()[1])
+from server_harness import ConsoleServer  # noqa: E402
 
 
 def request(url: str, *, method: str = "GET", body: bytes | None = None, headers: dict | None = None):
@@ -56,39 +52,11 @@ class ServerBoundaryTests(unittest.TestCase):
         cls.tmp = tempfile.TemporaryDirectory()
         cls.addClassCleanup(cls.tmp.cleanup)
         root = pathlib.Path(cls.tmp.name)
-        cls.port = free_port()
-        env = dict(os.environ)
-        env.update({
-            "FCODE_RUNS_DIR": str(root / "runs"),
-            "FCODE_CONFIG_DIR": str(root / "config"),
-            "FCODE_SKIP_LEGACY_CONFIG_MIGRATION": "1",
-        })
-        cls.process = subprocess.Popen(
-            [sys.executable, str(SERVER), "--repo", str(ROOT), "--port", str(cls.port)],
-            cwd=str(ROOT),
-            env=env,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-        cls.addClassCleanup(cls._stop)
-        deadline = time.time() + 12
-        while time.time() < deadline:
-            try:
-                status, _ = request(f"http://127.0.0.1:{cls.port}/api/health")
-                if status == 200:
-                    return
-            except Exception:
-                pass
-            time.sleep(0.2)
-        raise RuntimeError("server did not become healthy")
-
-    @classmethod
-    def _stop(cls) -> None:
-        cls.process.terminate()
-        try:
-            cls.process.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            cls.process.kill()
+        # 12s 的旧期限在冷启动的 runner 上太紧，而且没有输出可查；统一走 harness。
+        cls.server = ConsoleServer(runs_dir=root / "runs", config_dir=root / "config", timeout=30)
+        cls.server.start()
+        cls.addClassCleanup(cls.server.stop)
+        cls.port = cls.server.port
 
     @property
     def base(self) -> str:
