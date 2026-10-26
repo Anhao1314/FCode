@@ -10,6 +10,7 @@
 
 import { esc, num } from "./format.js";
 import { renderMarkdown } from "./chat-format.js";
+import { aiAvatarHtml, avatarStateFor } from "./ai-avatar.js";
 
 export function chatMessageHtml(message, editingId = null, extraHtml = "") {
   const id = esc(message.id);
@@ -59,8 +60,11 @@ export function chatMessageHtml(message, editingId = null, extraHtml = "") {
     ? `<div class="chat-meta">${num(message.usage.total_tokens)} tokens · ${num(message.usage.cost_microusd)} µUSD${message.receipt_ref ? " · 已签收据" : ""}</div>`
     : "";
   const stopped = message.status === "cancelled" ? `<div class="chat-meta">已停止生成</div>` : "";
+  // 对话 AI 的头像（core/ai-avatar.js）：状态由这条消息自己决定；
+  // 只有锚定的运行真的 succeeded 才换成「已完成」的脸。
+  const avatar = aiAvatarHtml(avatarStateFor(message), 28);
   return `<div class="chat-msg assistant${streaming ? " streaming" : ""}${message.status === "cancelled" ? " cancelled" : ""}" data-msg-id="${id}"${streaming ? ' data-streaming="1"' : ""}>
-    <div class="chat-md">${renderMarkdown(message.text)}</div>
+    <div class="chat-msg-row">${avatar}<div class="chat-md">${renderMarkdown(message.text)}</div></div>
     ${wait}${typing}${reasoning}${error}${usage}${stopped}${extraHtml}
     <div class="chat-msg-actions">${actions.join("")}</div>
   </div>`;

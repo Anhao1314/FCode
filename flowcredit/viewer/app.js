@@ -5,6 +5,7 @@ import {
 } from "./core/format.js";
 import { parseSseFrame, renderMarkdown } from "./core/chat-format.js";
 import { chatMessageHtml } from "./core/chat-view.js";
+import { aiAvatarHtml } from "./core/ai-avatar.js";
 import { actionCardHtml, mirrorFrom, runMirrorHtml } from "./core/run-card.js";
 import { foldRuns, foldSummary, isQuietRound } from "./core/round-fold.js";
 import {
@@ -6328,6 +6329,7 @@ function renderChat({ forceBottom = false } = {}) {
   const thread = chat.current;
   if (!thread || !(thread.messages || []).length) {
     renderMain(`<div class="chat-empty">
+      ${aiAvatarHtml("idle", 64)}
       <div class="chat-empty-mark">FCode</div>
       <p>开始一段对话。对话只回答，不执行工具；需要读写文件或运行命令时，用「委托运行」。</p>
     </div>`, { mode: "chat" });
@@ -6336,7 +6338,7 @@ function renderChat({ forceBottom = false } = {}) {
   const stick = forceBottom || nearMainBottom();
   renderMain(
     `<div class="chat-thread" aria-live="polite">${thread.messages
-      .map(message => chatMessageHtml(message, chat.editing, chatCardHtml(message)))
+      .map(message => chatMessageHtml(withRunStatus(message), chat.editing, chatCardHtml(message)))
       .join("")}</div>`,
     { mode: "chat" },
   );
@@ -6855,6 +6857,17 @@ function reconsiderCard(messageId) {
 }
 
 /* ------------------------------------------------------------- 运行镜像 */
+
+/* 头像要看运行的真实状态：消息投影里只有 run 的 id/goal/mode（服务端的链上
+   事实），状态在前端自己的镜像里（trace + SSE）。只借来渲染这一条，不改消息。 */
+function withRunStatus(message) {
+  if (!message.run || !message.run.id) return message;
+  const view = mirrorView(message);
+  if (!view.status) return message;
+  return Object.assign({}, message, {
+    run: Object.assign({}, message.run, { status: view.status }),
+  });
+}
 
 function mirrorView(message) {
   const state = chat.mirrors.get(message.id);
