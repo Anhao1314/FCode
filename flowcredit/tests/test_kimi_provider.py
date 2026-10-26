@@ -264,12 +264,13 @@ class KimiProviderTests(unittest.TestCase):
                 provider.propose(
                     {"objective": "test", "round": 1, "intent": {"task_id": "t", "round": 1}}
                 )
-        # 首次调用等待**完整间隔**：断言契约（至少 30 秒、且没有多等），
-        # 不比对浮点字面量——`target - moment` 会算出 30.000000000000014
-        # 这类尾差，ubuntu/3.11 上就因此偶发变红（2026-10-26 修）。
+        # 首次调用等待**完整间隔**：断言契约而不是字面量。
+        # `reserve_slot` 返回 `(moment + interval) - moment`，IEEE-754 下这个减法
+        # 不保证恒等于 interval——实测出现过 30.000000000000014 与 29.999999999999993
+        # 两侧的尾差（分别在 ubuntu/3.11 与 ubuntu/3.13 上各红一次）。
+        # 所以这里比对「≈ 间隔」，误差限 1 毫秒，比时钟分辨率还紧，却不再是平台抽奖。
         first_waits = fake_sleep.call_args_list[0].args[0]
-        self.assertGreaterEqual(first_waits, 30)
-        self.assertLess(first_waits, 30.001)
+        self.assertAlmostEqual(first_waits, 30, delta=0.001)
 
     def test_pacing_waits_remainder_between_calls(self) -> None:
         _, fake = self._fake(
