@@ -129,6 +129,11 @@ class WorkingMemory:
     #: read-only kernel wording (the v10 prompt was frozen against it); a
     #: domain that writes files or runs commands says so instead.
     instruction: str | None = None
+    #: Proposals the gate refused for their *shape* (an argument that does not
+    #: fit the tool's schema), with the error that refused them. Written by the
+    #: loop so the next proposal can be corrected instead of the run ending —
+    #: emitted only when non-empty, so runs that never hit one keep their bytes.
+    rejected_proposals: list[dict[str, Any]] | None = None
 
     def record(self, round_no: int, observation: Observation) -> ObservationRecord:
         record = ObservationRecord(
@@ -254,6 +259,15 @@ class WorkingMemory:
         ]
         if notes:
             context["operator_messages"] = notes
+        if self.rejected_proposals:
+            context["rejected_proposals"] = [
+                {
+                    "tool": str(item.get("tool") or ""),
+                    "code": str(item.get("code") or ""),
+                    "message": str(item.get("message") or "")[:300],
+                }
+                for item in self.rejected_proposals[-3:]
+            ]
         if self.prior_cases:
             context["prior_cases"] = [
                 {

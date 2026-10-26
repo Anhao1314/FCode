@@ -54,6 +54,12 @@ class Param:
     #: oversized write (a whole file in a proposal, say) is refused *before*
     #: execution rather than by the handler after approval.
     max_length: int | None = None
+    #: True for an argument that *identifies* the target (a path, a doc id, a
+    #: URL); False for a body the proposer authors (file content, edit anchors).
+    #: Result todos bind to observations by identity: a model that writes a
+    #: better artifact must not fail the run, and the body is verified by hash
+    #: anyway. Not part of ``to_schema`` — the model never sees this.
+    identity: bool = True
 
     @classmethod
     def output(cls, name: str, kind: str, required: bool = True, nullable: bool = False) -> "Param":

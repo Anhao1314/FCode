@@ -185,7 +185,8 @@ def build_workspace_tools(
             effect=EFFECT_WRITE,
             params=(
                 Param(name="title", kind="string", required=True, description="section heading"),
-                Param(name="body", kind="string", required=True, description="section body, max 8000 characters"),
+                Param(name="body", kind="string", required=True, identity=False,
+                      description="section body, max 8000 characters"),
                 Param(
                     name="citations",
                     kind="array",

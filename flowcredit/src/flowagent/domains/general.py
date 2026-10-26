@@ -42,6 +42,8 @@ GENERAL_INSTRUCTION = (
     "用 ask_operator 问操作员一句再继续——它会带着答案回到你的下一轮。"
     "如果问了没人回答，而你仍然无法完成：把已知信息与缺口如实写进产出文件，"
     "在文件里说明缺什么——不要提议未列出的工具（那会被门控拒绝并终止整个运行）。"
+    "如果上一轮的提议因为参数形状被拒（context 里的 rejected_proposals），"
+    "按错误信息改正参数后重新提议；连续两次都改不对，这次运行会终止。"
 )
 
 APPROVAL_TOOLS = ("write_file", "edit_file", "run_command")

@@ -96,6 +96,8 @@ Goal（objective + 成功判据）
 2. **todo 的完成必须带证据。** `evidence` 存的是观测结果的哈希，可以一路回溯到事件链。没有证据的 `done` 是不被允许的。
 3. **规划器是域代码。** `tools/finance/planner.py` 提供蓝图和判据，`core/plan.py` 只管状态机。换领域不动内核。
 4. **拒绝也是一种结果。** 工具跑完并报告「做不了」，对应 todo 是 `blocked` 而不是 `pending` 或 `failed`。`open-ended` 场景就是这条：公司没有公布桥接说明，`t6` 被 blocked，最后以 `INSUFFICIENT_EVIDENCE` 收尾，报告里带着领域原因。
+5. **结果按身份绑定，不按正文。** 结果 todo 与观测的匹配（`Loop._same_result_step`）只看**标识参数**：工具、路径、文档 id、URL。提议者自己撰写的正文（文件内容、锚点、底稿段落）标 `Param(identity=False)`，不参与匹配——模型写出一份比计划更完整的 `results.md` 时，文件存在、哈希由校验器独立复核，运行不该以 `RESULT_INCOMPLETE` 收尾。没声明 identity 的工具保持严格比较，语义没有悄悄放松。
+6. **形状错误给一次补救。** 提议通过了计划校验、但在门控处因参数形状被拒（`TOOL_ARGUMENTS_INVALID`，例如空的 `new_text`）时：什么都没执行、也没有未知结果，所以运行记一条 `proposal_rejected`（可审计）、把错误放进下一轮 context 的 `rejected_proposals`，让模型改正后重提；最多两次（`MAX_PROPOSAL_REPAIRS`），仍改不对就照旧以 `denied` 收尾。**范围与效应违规不在其列**（未注册工具、越出 grant、效应不允许）——那是治理事件，第一次就停，`tool-denied` 场景正是这条的演示。
 
 ## 持久层
 

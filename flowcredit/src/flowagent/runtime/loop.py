@@ -30,6 +30,14 @@ from .policy import PacketProvider, compile_packet
 from .control import Control, Denial
 from .harness import Harness, TraceObserver
 
+#: Denials the model can fix by reading the error: the tool exists and is
+#: allowed, the proposal simply did not fit its schema. Everything else —
+#: an unregistered tool, a scope or effect violation — keeps today's semantics
+#: (a governance event, and the run stops on it).
+REPAIRABLE_DENIALS = ("TOOL_ARGUMENTS_INVALID",)
+#: Bounded on purpose: two extra model calls, each charged and recorded.
+MAX_PROPOSAL_REPAIRS = 2
+
 __all__ = ["Loop", "NullObserver"]
 
 
@@ -100,6 +108,7 @@ class Loop:
         if recall_holder is not None:
             recall_holder["memory"] = memory
         pending = self.pending_step(task)
+        repairs = 0
 
         while True:
             if pending is None and self.control is not None:
@@ -216,6 +225,25 @@ class Loop:
             decision = self.harness.gate(task, step)
             self.observer.gate(round_no, decision)
             if not decision.allowed:
+                if decision.code in REPAIRABLE_DENIALS and repairs < MAX_PROPOSAL_REPAIRS:
+                    # Nothing was dispatched, nothing is unknown: the proposal
+                    # did not fit the tool's schema. Handing the error back is
+                    # not a silent retry — it is one visible event and one more
+                    # model call, bounded, and the run still ends denied if the
+                    # model cannot fix it.
+                    repairs += 1
+                    task = self.harness.record(task, "proposal_rejected", {
+                        "round": round_no,
+                        "tool": step["tool"],
+                        "code": decision.code,
+                        "message": decision.reason,
+                        "arguments": step.get("arguments") or {},
+                        "attempt": repairs,
+                    })
+                    memory.rejected_proposals = list(memory.rejected_proposals or []) + [{
+                        "tool": step["tool"], "code": decision.code, "message": decision.reason,
+                    }]
+                    continue
                 return self._deny(task, decision, plan)
 
             if self.control is not None:
@@ -486,22 +514,45 @@ class Loop:
             "results": [dict(item["result"]) for item in verified],
         }
 
-    @staticmethod
-    def _same_result_step(todo: Any, observation: Observation) -> bool:
-        """True when an observation is the step a result todo names."""
-        return todo.tool == observation.tool and all(
-            observation.arguments.get(key) == value
-            for key, value in todo.arguments.items()
-        )
+    def _same_result_step(self, todo: Any, observation: Observation) -> bool:
+        """True when an observation is the step a result todo names.
 
-    @classmethod
+        Binding is by *identity*: the tool, and the arguments that name the
+        target (a path, a doc id, a URL). Arguments the proposer authors — file
+        content, edit anchors — are skipped, because a model that writes a
+        *better* artifact than the plan composed must not fail the run as
+        RESULT_INCOMPLETE: the file exists, and its bytes are verified by hash
+        against the receipt. Tools that declare no identity arguments keep the
+        strict comparison.
+        """
+        if todo.tool != observation.tool:
+            return False
+        spec = None
+        try:
+            spec = self.harness.registry.get(todo.tool)
+        except AgentError:
+            spec = None
+        if spec is None:
+            return all(
+                observation.arguments.get(key) == value
+                for key, value in todo.arguments.items()
+            )
+        authored = {param.name for param in spec.params if not param.identity}
+        declared = {param.name for param in spec.params}
+        for key, value in todo.arguments.items():
+            if key in declared and key in authored:
+                continue
+            if observation.arguments.get(key) != value:
+                return False
+        return True
+
     def _result_todo_for_observation(
-        cls,
+        self,
         result_todos: list[Any],
         observation: Observation,
     ) -> Any | None:
         for todo in result_todos:
-            if cls._same_result_step(todo, observation):
+            if self._same_result_step(todo, observation):
                 return todo
         return None
 

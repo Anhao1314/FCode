@@ -130,6 +130,7 @@ def build_general_tools(
                 ),
                 Param(
                     name="content",
+                    identity=False,
                     kind="string",
                     required=True,
                     max_length=MAX_WRITE_CHARS,
@@ -162,6 +163,7 @@ def build_general_tools(
                 ),
                 Param(
                     name="old_text",
+                    identity=False,
                     kind="string",
                     required=True,
                     max_length=MAX_WRITE_CHARS,
@@ -169,6 +171,7 @@ def build_general_tools(
                 ),
                 Param(
                     name="new_text",
+                    identity=False,
                     kind="string",
                     required=False,
                     max_length=MAX_WRITE_CHARS,
