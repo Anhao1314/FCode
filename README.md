@@ -12,9 +12,17 @@ python demo.py full --fast               # 参考负载：9 轮治理故事
 
 Python 3.11+，零第三方依赖，零配置，离线。在终端里给出场景菜单；无终端时直接跑参考负载的完整故事。
 
-参考负载的一次完整运行：
+下面这段是 `python demo.py full --fast` 的**实际输出**（同一条命令即可复现；轮次、事件数、
+成本三段稳定，链头每次运行都不同，所以此处只作示意）：
+
+```sh
+cd flowcredit && python demo.py full --fast   # 约 10 秒，离线，零配置
+```
 
 ```
+ 轮次 9   预算 calls 9/12  reads 9/20  cost 4500/20000 µUSD
+ 轨迹自检  通过：49 个事件，链头 17a0f18f6519…
+
 第 6 轮   预算 calls 5/12  reads 5/20  cost 2500/20000 µUSD
   模型提议  reconcile_basis  doc_id=doc_fy2025_adjusted
   主机门控  PASS  schema, scope and grant all agree
@@ -25,7 +33,12 @@ Python 3.11+，零第三方依赖，零配置，离线。在终端里给出场�
   2024 毛利率  17.50%
   2025 毛利率  15.00%
   变化        -2.50 pp
- 轨迹自检  通过：49 个事件，链头 d2043725c7d3…
+```
+
+想看治理过程本身，同一份 trace 可以直接拖进控制台：
+
+```sh
+python demo.py full --fast --open   # 跑完后本地起服务并打开这次运行
 ```
 
 ## 理念
@@ -208,39 +221,60 @@ open desktop/dist/FCode.app
 | 真实供应商（Kimi / DeepSeek / 任意 OpenAI 兼容端点） | **一套共享引擎 + preset 前端**；对话在设置页选，委托走环境变量或 `FCODE_OPENAI_COMPAT_PROVIDERS`；价格快照 + 预算预留 + 无重试 |
 | Kimi 实测 | **kimi-k2.6 真实 E2E 已通过**；K2 系列将于 2026-12 底下线，需按账号迁移 `KIMI_MODEL` |
 
-## 数字
+## 数字（每个数字附一条复现命令）
 
-- **365** 项 Python 单元与场景测试，全部离线
-- **12** 项前端纯函数测试（Node 内置 test runner，无测试框架依赖）
-- **8** 个可复现场景，其中 1 个是通用委托，7 个是参考负载上的故障注入
-- **0** 个第三方运行时依赖（只用标准库）
-- 参考负载 **9** 轮完成一次完整研究，**4500 µUSD** 合成预算
-- 通用委托 **5** 轮完成“写脚本 → 运行 → 锚定修复 → 复跑 → 归档”
-- 哈希链 **49** 个事件（参考负载），读取时全量重算
-- 控制台零构建静态文件 + **1** 个标准库 server，可离线
+在 `flowcredit/` 下运行：
+
+```sh
+python -m unittest discover -s tests 2>&1 | sed -n 's/^Ran \([0-9]*\) tests.*/\1/p'                 # 506 项 Python 单元与场景测试，全部离线
+node --test viewer/tests/*.test.js 2>&1 | sed -n 's/^ℹ pass \([0-9]*\)$/\1/p'                         # 58 项前端纯函数测试（Node 内置 runner，无框架依赖）
+python demo.py --list | grep -c '^  '                                                                  # 8 个可复现场景（1 通用委托 + 7 参考负载故障注入）
+python -c "import tomllib; print(len(tomllib.load(open('pyproject.toml','rb'))['project'].get('dependencies', [])))"   # 0 个第三方运行时依赖
+ls docs/*.md | wc -l                                                                                   # 24 份文档
+python demo.py full --fast | grep -E '轮次|轨迹自检'                                                     # 9 轮 / 49 个事件 / 4500 µUSD，读时全量重算哈希链
+```
+
+控制台是零构建静态文件 + **1** 个标准库 server（`viewer/server.py`），离线可用；
+通用委托 **5** 轮完成“写脚本 → 运行 → 锚定修复 → 复跑 → 归档”
+（`python demo.py general-research --fast`）。
 
 ## 目录
 
 ```
-flowcredit/          Python Runtime 与 Demo
+flowcredit/            Python Runtime、控制台与 Demo
   src/flowagent/
-    core/            canonical JSON、契约与状态机、计划层、sqlite + 哈希链、签名收据
-    runtime/         门控、预算、单轮 harness、多轮 loop（含恢复）
-    chat.py          对话服务：线程、预算、事件投影
-    chat_config.py   provider 解析：设置 > 环境 > 默认
-    chat_provider.py 对话传输：mock + OpenAI 兼容 SSE
-    domains/         域模块注册表：general-work（默认）+ finance-research（参考负载）
-    tools/           封闭注册表：general/ 文件、命令、网页；finance/ 参考负载
-    providers/       mock / local / kimi / deepseek / openai-compatible / oracle（均只提议，不执行）
-    memory/          短期观测摘要 + 案例簿 + 双时态事实簿（确定性投影、可解释检索）
-    trajectory/      记录、导出、独立重算
-    demo/            CLI、终端渲染、八个场景、模块装配、崩溃 worker
-  viewer/            实时控制台 + Trace 回放（零依赖零构建）
-  tests/             365 项 unittest
-  docs/              架构、设计决策、框架对照、JD 映射
-archive/             v1：Node.js 研究原型（保留，不参与 CI）
+    core/              canonical JSON、契约与状态机、计划层、sqlite + 哈希链、签名收据
+    runtime/           门控、预算、单轮 harness、多轮 loop（含恢复）
+    chat.py            对话服务：线程、预算、事件投影
+    chat_config.py     provider 解析：设置 > 环境 > 默认
+    chat_provider.py   对话传输：mock + OpenAI 兼容 SSE
+    intake.py          委托入口：模板、审批档位、初始状态
+    review.py          判断面与判断记录（review_profile.py）的投影
+    pacing.py          进程级调用间隔（按 provider + base_url，对话与委托共用）
+    domains/           域模块注册表：general-work（默认）+ finance-research（参考负载）
+    tools/             封闭注册表：general/ 文件、命令、网页、提问；mcp/ 桥；finance/ 参考负载
+    providers/         mock / local / kimi / deepseek / openai-compatible / oracle（均只提议，不执行）
+    memory/            短期观测摘要 + 案例簿 + 双时态事实簿 + 产物簿（确定性投影、可解释检索）
+    trajectory/        记录、导出、独立重算
+    demo/              CLI、终端渲染、八个场景、模块装配、崩溃 worker
+    sft/               语音与选择头的离线数据与评估入口
+  viewer/              实时控制台 + Trace 回放（零依赖零构建）
+    server.py          唯一入口：静态文件 + JSON/SSE API
+    console_manager.py 运行管理（创建、历史恢复、产物簿接线）
+    console_runtime.py Runtime 装配与场景目录
+    console_common.py  共享契约（FINISHED_STATUS、trace 路径 jail、模型目录）
+    core/              前端纯函数层（markdown、SSE 解析、运行卡片、回合折叠、侧栏、AI 头像）
+    tests/             Node 内置 runner 的前端测试
+  tests/               506 项 unittest（含两个真起服务器子进程的边界测试）
+  docs/                24 份：架构、设计、框架对照、能力边界、JD 映射
+  labs/                离线实验（多智能体等，不进 CI 主路径）
+archive/               v1：Node.js 研究原型（保留，不参与 CI）
+mcp.json.example       MCP 桥的配置样例（stdio 服务器 + 只读标注）
+desktop/               pywebview 壳与打包脚本（GitHub Releases 分发）
 ```
 
+更细的分层与数据流见 [architecture.md](flowcredit/docs/architecture.md)；每份文档的状态与
+管辖范围写在它自己的头部。
 ## v1 与 v2
 
 `archive/node-prototype/` 是 v1：一个 Node.js 研究原型，用来回答"该不该训练模型"，结论是 `NO_GO`——规则基线解掉了全部冻结任务。它保留了 291 项测试、冻结预注册和一份诚实的负结果报告，标签 `archive/node-research-prototype`。
