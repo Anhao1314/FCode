@@ -18,6 +18,19 @@ FCode 是受控 agent runtime：模型只提议，主机门控、预算、执行
 是她看出数字不可比、判断异常性质、决定证据够不够、把发现讲成结论、把标准传给 junior
 的能力。Agent 的职责是把这些判断从搬运里解放出来，并让判断标准可复用。
 
+## 两面分流：先决定你在改哪一面
+
+FCode 的界面由两套设计语言组成，**改之前先定位**（根 README 的「设计语言」一节是同一份说明）：
+
+| 面 | 包含 | 规范（唯一权威） | 实测/样例 |
+| --- | --- | --- | --- |
+| **外壳与对话面** | 侧栏、顶栏、composer、对话线程与气泡、模型菜单、设置页、空状态、动效 | `flowcredit/docs/kimi-skin.md` | Kimi 桌面端与网页版的计算样式（asar / bundle 提取，数字可追溯） |
+| **审计底稿与证据面** | 运行详情的证据区、报告、工具结果、判断面、收据与哈希排版 | `flowcredit/docs/design-system.md`（Paper & Proof） | `flowcredit/viewer/design.html`（该规范的样例页，不是第二份规范） |
+
+本 SKILL 的 persona、判断模型与交互约束对**两面都成立**；上表只决定“长什么样”以谁为准。
+新组件或新 token 必须写进**对应那一面的规范**——不要再要求同时同步 `design.html`：
+它只是样例页。最后核对 2026-10-26。
+
 ## When to use this skill
 
 - 新增或修改任何用户可见界面：运行页、需求确认、设置、报告、工具面板、空状态。
@@ -72,7 +85,8 @@ FCode 是受控 agent runtime：模型只提议，主机门控、预算、执行
 
 ## Visual system
 
-规范全文：`flowcredit/docs/design-system.md`。样式页：`flowcredit/viewer/design.html`。
+证据面规范全文：`flowcredit/docs/design-system.md`；它的样式样例页是 `flowcredit/viewer/design.html`。
+外壳与对话面规范：`flowcredit/docs/kimi-skin.md`。
 Token 与新增样式唯一入口：`flowcredit/viewer/design.css`。
 
 ### Tokens
@@ -231,7 +245,8 @@ Agent 不替她选解释，而是把解释和反证摆齐；她选，或者要�
 5. **写文案。** 按 Copy and voice；把失败路径也写出来。
 6. **实现。** 新样式只进 `design.css`；旧 `app.css` 只做布局兼容。
 7. **验证五个面。** 运行页、需求确认、设置、报告、窄屏；再检查减少动效。
-8. **更新规范。** 新组件/新 token 必须同步 `design-system.md` 和 `design.html`。
+8. **更新规范。** 新组件/新 token 必须写进**对应那一面的规范**（证据面 → `design-system.md`；
+   外壳与对话面 → `kimi-skin.md`）。`design.html` 只是前者的样例页，跟随更新即可，不是第二份规范。
 
 ## Definition of done
 

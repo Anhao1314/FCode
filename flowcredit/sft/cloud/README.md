@@ -169,6 +169,8 @@ unknown；端点不支持结构化输出时去掉该参数，并接受更高的�
 
 ### 2026-10-21 实测结果（Qwen3-4B LoRA + Q4_K_M）
 
+> framework.md 的状态行引用这一节（含那条**否定结论**：packet 1/2，暂不默认启用）；改这里的结论时请同步 [../../docs/framework.md](../../docs/framework.md)。
+
 - 训练：558 步 / 2 epoch，`train_loss=0.1862`，`eval_loss=0.0995`。
 - 导出：必须从 4-bit 基座合并；fp16 合并会输出重复 `</tool_call>`。
 - `full`（full-proposal）：**通过**。9 轮、49 事件、`succeeded`、链验证通过。

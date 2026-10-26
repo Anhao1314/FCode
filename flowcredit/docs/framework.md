@@ -1,11 +1,23 @@
 # 框架 v3：Executive / Policy / Voice
 
+**状态：下一版（未实现）** — 设计文档，不在当前运行时里。当前权威是 [architecture.md](architecture.md)；语言规范见 [voice.md](voice.md)；策略层现状见 [executive-policy.md](executive-policy.md) 与 `../sft/cloud/README.md`。最后核对：2026-10-26。
+
 > Host 负责事实与权力，Policy 负责选择，Voice 负责表达。
 > 三者通过结构化契约连接，任何一层都不能越过证据链。
 
 现有实现见 `architecture.md`（运行时）与 `executive-policy.md`（EPA P1/P2）；
-本文定义下一版框架，重点补上语言层、领域模块和学习闭环。当前状态：
-policy head 正在训练，voice 只有规范（`voice.md`），尚未接入运行时。
+本文定义下一版框架，重点补上语言层、领域模块和学习闭环。
+
+**当前状态（2026-10-26 核对，实测见 [`../sft/cloud/README.md`](../sft/cloud/README.md) 的
+「2026-10-21 实测结果」）：**
+
+- **policy head 已训完**（Qwen3-4B LoRA，558 步 / 2 epoch，`train_loss=0.1862`、
+  `eval_loss=0.0995`），**但结论是否定的**：packet 验收 base 与 `fcode-qwen3-4b` 都是
+  **1/2**（`open-ended` 正确 `INSUFFICIENT_EVIDENCE`，`full` 过早阻塞），因此
+  **控制台默认不切 packet 模式**。
+- **voice 只有规范**（`voice.md`），尚未接入运行时；`--structured` 只约束格式，不解决策略。
+- **下一步**：补 choice SFT（每个决策点的候选与正确 choice），或在 host loop 加
+  「同一动作无状态变化即要求 `report_blocked`」的进度守卫。
 
 ## 一、为什么需要第三层
 

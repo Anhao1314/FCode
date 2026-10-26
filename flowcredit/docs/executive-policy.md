@@ -1,5 +1,7 @@
 # Executive–Policy（EPA）· P1 决策包
 
+**状态：设计 + 部分落地** — EPA P1/P2 的选择协议；运行时的选择面在 [architecture.md](architecture.md)，训练与验收实测在 `../sft/cloud/README.md`（当前结论：packet 验收 1/2，暂不默认启用）。下一版框架见 [framework.md](framework.md)。最后核对：2026-10-26。
+
 > Host 负责“想清楚”，4B 负责“选一下”，Ledger 负责“留下证据”。
 
 ## 问题

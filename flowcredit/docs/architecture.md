@@ -1,5 +1,7 @@
 # 架构
 
+**状态：当前权威** — 本文件描述**已实现**的运行时（门控、预算、循环、链、恢复）。从这里读起。相关：下一版框架 design 见 [framework.md](framework.md)；语言层规范见 [voice.md](voice.md)；与外部框架的对照见 [framework-mapping.md](framework-mapping.md)；能力与 MCP 桥边界见 [general-capabilities.md](general-capabilities.md)。最后核对：2026-10-26。
+
 > 下一版框架（Policy / Voice 分层、领域模块、评测与学习闭环）见
 > [`framework.md`](framework.md)。本文描述当前已落地的运行时。
 
