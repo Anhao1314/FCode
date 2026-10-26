@@ -290,3 +290,102 @@ Projects         0     ← Kimi 把 Projects 放在列表之前
 浏览器实测：`body #FBFAF9`、`.sidebar #FBFAF9`、新建对话 `224×40 / r12`、
 导航行 `224×36 / r8`、输入框 `768×114 / r24`、用户气泡 `#F5F5F5 / r12`、
 助手正文 `16/26`、发送键 `36×36`；无控制台错误、窄屏无横向溢出。
+
+## 侧栏复刻：数值来自桌面 app 自己的样式表
+
+「按 Kimi 桌面端复刻侧栏」这一步没有靠目测。Kimi 桌面端（本机 3.2.20，
+bundle id `com.moonshot.kimichat`）是 Electron 应用，渲染层资产就在
+`/Applications/Kimi.app/Contents/Resources/app.asar` 里；asar 是「头部 JSON 索引
+＋连续字节」的简单格式，用标准库 `json + struct` 就能按偏移读出其中的 CSS
+（`out/renderer/assets/kimi-agent-*.css`，157 KB）。下面每个数字都出自那份样式表：
+
+| 元素 | 桌面端实测 | 出处（选择器） |
+| --- | --- | --- |
+| 侧栏宽 | 240px | `--work-sidebar-width` |
+| 侧栏内边距 | `9px 8px 8px` | `.sidebar` |
+| header | 高 36（mac 上是 52 的系统标题栏高度），`margin: 0 -8px -3px` | `.sidebar-header` |
+| 折叠钮 | left 8、居中于 y=32、32×32 | `--work-sidebar-toggle-left/top` |
+| 品牌标记 | 距折叠钮 +36，gap 4 | `.sidebar-header-marks` |
+| flavor 徽章 | 高 18、padding 0 6、r5、KMBlue 底白字 11/600 | `.sidebar-flavor-badge` |
+| 行 | 高 36、padding 8、gap 6、**r12** | `.nav-item` |
+| 行悬停/选中 | Fills-F1 `rgba(0,0,0,.03)` / Fills-F2 `rgba(0,0,0,.05)` | `.nav-item:hover/.active` |
+| 分组标题 | 12/18、Tertiary `.45`、padding 4 8 | `.workspace-section-title` |
+| 滚动区 | 上下各 24px 渐变遮罩 | `.sidebar-scroll-top-mask` / `.sidebar-footer::before` |
+| footer | padding 8、`margin: 0 -8px -8px`、gap 6 | `.sidebar-footer` |
+| 分段开关 | 外 36/r10/F2 打底/padding 2；tab 32/r8、padding 0 12、14/20 | `.segmented-tabs--md` / `.segmented-tab` |
+| 标签色 | Primary `.9` / Secondary `.6` / Tertiary `.45`；KMBlue `#1783ff` | `--Labels-*` / `--Colors-KMBlue` |
+
+**两条没抄的**：① 负外边距——桌面端那条 `margin-right: -8px` 属于「包住 padding
+的外层容器」（滚动条贴窗外缘），而我们的 `.side-list` 本身就是带 padding 的那一层，
+照抄会把每行撑宽 8px；② mac 上 header 的 52px——那是它自绘标题栏的高度，我们用
+系统标题栏，取 36 的常规值。
+
+实现要点：`desktop.css` 用 `html.desktop-app .sidebar` 这类选择器抬了优先级，
+所以复刻块里每条规则都写成「单类名 + `html.desktop-app` 前缀」两遍，
+否则会被桌面模式的旧值盖掉（第一次就是这样：`.sidebar { padding }` 明明在文件末尾
+却不生效）。舞台页的 wordmark 不再出现在侧栏（桌面端 header 只有 logo + 徽章），
+侧栏顶部改成 logo 32 + WORK/CHAT flavor 徽章，`⌘K` 降为右上角的安静按钮。
+
+## 侧栏是两套：工作（Kimi Work）与对话（网页版）分别复刻
+
+「把左边侧栏按 Kimi 复刻」还有一个前提没写下来：**Kimi 桌面端的「工作」和「对话」
+并不是同一个侧栏**。证据来自应用自己的代码，而不是目测：
+
+1. `out/renderer/assets/kimi-agent-*.js`（980 KB）里有一个 `__name:"AppSidebar"`
+   的组件——把它按字节解出字符串后读它的渲染函数，就是**工作侧栏**的权威结构；
+2. 同一个 bundle 里 `KimiAgentChat` 渲染 `AppSidebar`，而 `SidebarModeTabs` 的
+   两个分段是 `[{value:"studio",label:"Work"},{value:"kimi",label:"Chat"}]`；
+   点「对话」执行的是 `closePage()`（遥测名 `close_kimi_agent_page`）——也就是
+   **关掉 kimi-agent 页面，回到网页版 chat**。所以对话侧栏的结构要去网页版那份
+   bundle 里找；
+3. 桌面 app 的 `Code Cache`（本机 `~/Library/Application Support/kimi-desktop/Code
+   Cache/js/*`）里缓存着网页版 chat 的 bundle，里面的类名直接给出**对话侧栏**的
+   结构：`sidebar next-sidebar` / `sidebar-mode-switch` / `sidebar-fixed-new-chat` /
+   `next-sidebar__top-list` / `next-sidebar__more-list` / `next-sidebar-pinned-list` /
+   `next-sidebar-project-list`（`__create-label`）/ `NextSidebarSection` /
+   `next-sidebar-history-list`（`__task-status` / `__action` / `__chat-unread`）/
+   `next-sidebar__footer` + `sidebar-user-menu-trigger`。
+
+两边的条目（从各自 bundle 的 i18n 键读出，不是编的）：
+
+| | 工作侧栏（Kimi Work） | 对话侧栏（网页版 chat） |
+| --- | --- | --- |
+| header | 折叠钮 + logo + **flavor 徽章**（`sidebar-flavor-badge`） | 只有 logo（无徽章） |
+| 分段 | `[Work｜Chat]`（⌘1 / ⌘2） | `mode-switcher`（同一组） |
+| 主按钮 | **New task**（图标 `addConversation` + ⌘K chip），固定区 | **New chat**（`sidebar-fixed-new-chat`） |
+| 顶部导航 | 平坦一列：canvas / plugins / cron / remoteControl / apps(Beta) | 主入口 4 条 + **More 折叠**：mykimi / plugin / scheduled-tasks / inspiration，More 里放 kimi-work / kfc / kimi-claw / platform |
+| 置顶 | Pinned（`pinned-list`，空则不渲染） | Pinned（同上） |
+| 分组 | Projects（`＋`：从零/用已有文件夹）→ Tasks（标题可折叠 + `＋` + 行 + 空态 `tasksEmpty`） | Projects（`__create-label`）→ 会话历史（行内 `pin` / `delete`，溢出 `showAllChats`） |
+| footer | quickstart 三步卡 + 账户行 | 账户行（无三步卡） |
+
+FCode 的两侧栏按这份对照落在 `core/side-nav.js`（纯渲染）+ `app.js` 接线 +
+`index.html` 两个面板（`#pane-work` / `#pane-chat`）：
+
+- 工作侧栏 = 看板·账本 / 判断记录 / 定时任务 **平坦一列**（`WORK_NAV`），
+  置顶 → Projects（`＋` 内联输入）→ 任务（标题可折叠 + `＋` + 行状态点 + 空态
+  「任务会出现在这里」），footer 里是**快速开始**三步卡；
+- 对话侧栏 = 判断记录 / 定时任务 作主入口，**看板·账本收进「更多」**
+  （`next-sidebar__more-list` 同构），置顶 → Projects → 对话（行内 ★ 置顶 / × 移除、
+  溢出「显示全部 · 还有 N 条」）；
+- 导航条目统一用 `data-open`，两个面板各放一份也不抢 active（`paintNavActive()`）。
+- 快捷键对齐：⌘1 工作 / ⌘2 对话 / ⌘B 折叠侧栏（网页版 chat 的 `⌘B` 同款），
+  ⌘K chip 按 Kimi 挪到主按钮行上；侧栏不再有搜索框（Kimi 两侧栏都没有），
+  搜索走命令面板（⌘K 或 `/`）。
+
+**有意保留的三处差异**（不是没对齐）：
+
+1. 任务行保留第二行 meta（模板 · 轮数 · 成本 µ）——Kimi 只有标题 + 时间，
+   但 FCode 的行要能一眼看出花了多少钱；
+2. 任务列表仍按「今天 / 昨天 / 更早」分组——强大到 5 条以上时折叠，
+   对应 Kimi 的溢出行（`showAllChats`）；
+3. 置顶语义两套：任务用服务端 `run.pinned`（`POST /api/runs/{id}/meta`），
+   对话目前没有可变 meta，用本机 `fa.pins`（行上 ★ 开关），
+   文档里写明「本机置顶」而不是假装是服务端事实。
+
+**验证**（`http://127.0.0.1:8643/?desktop=1`，桌面模式、真数据）：工作侧栏
+`#work-nav` 3 条 + 任务段 2 行 + 快速开始 1/3（由真实状态推导）；对话侧栏
+主入口 2 条 + 更多折叠开合、徽章隐藏、footer 无三步卡；⌘1/⌘2/⌘B 生效；
+段落折叠写 `body[data-hide]`（`tasks` / `projects` / `chats` / `pinned`）；
+置顶把运行移入置顶段、取消后回到主列表（两侧同步，`renderNav()` 一次重绘）；
+运行行的事件委托从 `#run-nav` 上移到侧栏容器——否则置顶段里复用的同一套行
+有菜单却点不开（这是本轮浏览器验证抓到的真 bug）。

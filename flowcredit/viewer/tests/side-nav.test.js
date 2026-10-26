@@ -1,0 +1,123 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+
+import {
+  CHAT_MORE_NAV, CHAT_NAV, WORK_NAV, chatRowsHtml, chatSectionHtml, modeChrome,
+  navItemsHtml, pinnedSectionHtml, projectSectionHtml, quickStartHtml, runRowsHtml,
+  statusDotHtml, taskSectionHtml,
+} from "../core/side-nav.js";
+
+test("两侧栏的导航条目是两套（工作平坦、对话折叠）", () => {
+  const work = navItemsHtml(WORK_NAV, {});
+  const chat = navItemsHtml(CHAT_NAV, {});
+  const more = navItemsHtml(CHAT_MORE_NAV, {});
+  assert.match(work, /data-open="ledger"/);
+  assert.match(work, /data-open="reviews"/);
+  assert.match(work, /data-open="scheduled"/);
+  assert.equal((chat.match(/data-open="ledger"/g) || []).length, 0, "工作侧的看板不进对话顶部列表");
+  assert.match(more, /data-open="ledger"/, "对话侧栏把看板收进 More");
+  assert.equal(WORK_NAV.length, 3);
+  assert.equal(CHAT_NAV.length, 2);
+});
+
+test("导航条目的图标与计数按 Kimi 的行结构渲染", () => {
+  const html = navItemsHtml(CHAT_NAV, { scheduled: 7 });
+  assert.match(html, /class="nav-item"/);
+  assert.match(html, /data-doodle="calendar"/);
+  assert.match(html, /<span class="side-count">7<\/span>/);
+  assert.equal((html.match(/<button/g) || []).length, CHAT_NAV.length);
+});
+
+test("置顶段只在真的置顶过东西时出现，任务行复用运行行", () => {
+  assert.equal(pinnedSectionHtml([], {}), "");
+  assert.equal(pinnedSectionHtml(null, {}), "");
+  const compact = pinnedSectionHtml([{ id: "run-1", title: "恒星毛利率", meta: "12:03" }], {});
+  assert.match(compact, /置顶/);
+  assert.match(compact, /data-section-toggle="pinned"/);
+  assert.match(compact, /data-run="run-1"/);
+
+  const reused = pinnedSectionHtml([{ id: "run-1" }], { rowHtml: r => `<div data-run="${r.id}" data-menu="1"></div>` });
+  assert.match(reused, /data-menu="1"/, "置顶的任务行保留行内菜单（能取消置顶）");
+
+  const chats = pinnedSectionHtml([{ id: "t1", title: "周三" }], { kind: "chat", pinnedOf: () => true });
+  assert.match(chats, /data-chat-id="t1"/);
+  assert.match(chats, /data-chat-pin="t1"/);
+  assert.match(chats, /取消置顶/);
+});
+
+test("Projects 段：标题可折叠 + ＋动作 + 真实空态", () => {
+  const empty = projectSectionHtml([], {});
+  assert.match(empty, /data-section-toggle="projects"/);
+  assert.match(empty, /data-proj-add/);
+  assert.match(empty, /section-empty/);
+  const filled = projectSectionHtml([{ id: "prj-1", name: "恒星" }], { countOf: () => 3, filter: "prj-1" });
+  assert.match(filled, /data-proj="prj-1"/);
+  assert.match(filled, /class="smeta">3</);
+  assert.match(filled, /active/);
+  assert.equal((filled.match(/section-empty/g) || []).length, 0, "有项目就不该有空态");
+});
+
+test("任务/对话列表交给调用方决定行渲染，空态文案是 Kimi 的原话", () => {
+  assert.match(runRowsHtml([], {}), /任务会出现在这里/);
+  const rows = runRowsHtml([1, 2], { rowHtml: n => `<div data-run="${n}"></div>` });
+  assert.equal((rows.match(/data-run=/g) || []).length, 2);
+
+  assert.match(chatRowsHtml([], {}), /还没有对话/);
+  const chats = chatRowsHtml([{ id: "t1", title: "周三高铁票" }], { activeId: "t1", total: 5, pinnedOf: () => false });
+  assert.match(chats, /data-chat-id="t1"/);
+  assert.match(chats, /data-chat-pin="t1"/);
+  assert.match(chats, /data-chat-delete="t1"/);
+  assert.match(chats, /显示全部 · 还有 4 条/);
+});
+
+test("对话行置顶状态写回文案与标志", () => {
+  const pinned = chatRowsHtml([{ id: "t9", title: "x" }], { pinnedOf: id => id === "t9" });
+  assert.match(pinned, /取消置顶/);
+  assert.match(pinned, /★/);
+});
+
+test("section 标题与折叠按钮在任务段带上 ＋ 与计数", () => {
+  const html = taskSectionHtml(4);
+  assert.match(html, /data-section-toggle="tasks"/);
+  assert.match(html, /data-task-count>4</);
+  assert.match(html, /data-new-task/);
+  assert.match(chatSectionHtml(2), /data-section-toggle="chats"/);
+});
+
+test("快速开始：三步由真实状态推导，全部完成后收敛，dismissed 后不再出现", () => {
+  const fresh = quickStartHtml({});
+  assert.match(fresh, /快速开始/);
+  assert.match(fresh, /0\/3/);
+  assert.equal((fresh.match(/quickstart-task"/g) || []).length, 3);
+  assert.match(fresh, /data-quickstart-close/);
+
+  const partial = quickStartHtml({ providerReady: true, firstRunDone: true });
+  assert.match(partial, /2\/3/);
+  assert.equal((partial.match(/quickstart-task done/g) || []).length, 2);
+
+  const done = quickStartHtml({ providerReady: true, firstRunDone: true, ledgerSeen: true });
+  assert.match(done, /3\/3/);
+  assert.match(done, /quickstart-done-text/);
+
+  assert.equal(quickStartHtml({ dismissed: true }), "");
+});
+
+test("chrome：flavor 徽章只属于工作侧栏，按钮文案分开", () => {
+  const work = modeChrome("work");
+  const chat = modeChrome("chat");
+  assert.equal(work.flavor, "WORK");
+  assert.equal(chat.flavor, "");
+  assert.equal(work.newLabel, "新建任务");
+  assert.equal(chat.newLabel, "新对话");
+});
+
+test("状态点沿用治理事实的类名", () => {
+  assert.equal(statusDotHtml("ok"), '<span class="smark ok" aria-hidden="true"></span>');
+  assert.match(statusDotHtml("bad"), /smark bad/);
+});
+
+test("渲染对 HTML 做转义（标题来自模型/用户输入）", () => {
+  const html = chatRowsHtml([{ id: "t1", title: '<img src=x onerror="alert(1)">' }], {});
+  assert.equal(html.includes("<img"), false);
+  assert.match(html, /&lt;img/);
+});

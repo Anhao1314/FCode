@@ -7,6 +7,11 @@ import { parseSseFrame, renderMarkdown } from "./core/chat-format.js";
 import { chatMessageHtml } from "./core/chat-view.js";
 import { actionCardHtml, mirrorFrom, runMirrorHtml } from "./core/run-card.js";
 import { foldRuns, foldSummary, isQuietRound } from "./core/round-fold.js";
+import {
+  WORK_NAV, CHAT_NAV, CHAT_MORE_NAV, chatRowsHtml, chatSectionHtml, modeChrome,
+  navItemsHtml, pinnedSectionHtml, projectSectionHtml, quickStartHtml, runRowsHtml,
+  taskSectionHtml,
+} from "./core/side-nav.js";
 
 /* =================================================================== 边界声明
    本轮结构重构只允许改“生成 DOM 的渲染函数”。
@@ -282,6 +287,7 @@ function renderMain(html, { mode = "run", scroll = null } = {}) {
   main.innerHTML = html;
   main.dataset.view = mode;
   store.mode = mode;
+  paintNavActive();
   setStageMode(mode === "empty");
   document.getElementById("app")?.classList.toggle("chat-mode", mode === "chat");
   // composer 只属于对话语境：功能页（账本 / 判断记录 / 定时任务 / 设置）不显示输入框
@@ -410,17 +416,51 @@ const shortObjective = text => {
 let ledgerOpen = false;
 let ledgerConfirmId = null;
 
-function renderNav() {
-  const desk = document.getElementById("desk-btn");
-  if (desk) desk.classList.toggle("active", ledgerOpen);
+/* 侧栏渲染：两套结构，同一份渲染函数。
+   - 工作侧栏照 Kimi Work（AppSidebar）：平坦导航 + 置顶 + Projects + 任务。
+   - 对话侧栏照 kimi.com 网页版：主入口 + More 折叠 + 置顶 + Projects + 对话。
+   导航条目全部走 data-open，两个面板各放一份也不会互相抢 active。 */
+let navCounts = {};
+let sidebarMode = "chat";   // setUiMode 每次都会同步；侧栏渲染只读它
+
+function navCountOf(open) {
+  if (open === "ledger") return runHistory.length;
+  return undefined;
+}
+
+function renderSidebarNav() {
+  const workNav = document.getElementById("work-nav");
+  if (workNav) workNav.innerHTML = navItemsHtml(WORK_NAV, navCounts);
+  const chatNav = document.getElementById("chat-top-nav");
+  if (chatNav) chatNav.innerHTML = navItemsHtml(CHAT_NAV, navCounts);
+  const more = document.getElementById("more-nav");
+  if (more) more.innerHTML = navItemsHtml(CHAT_MORE_NAV, navCounts);
   paintMoreNav();
+}
+
+function paintNavActive() {
+  const open = document.getElementById("main")?.dataset.view || "";
+  for (const el of document.querySelectorAll(".nav-item[data-open]")) {
+    const isLedger = el.dataset.open === "ledger";
+    el.classList.toggle("active", isLedger ? ledgerOpen : el.dataset.open === open);
+  }
+}
+
+function renderNav() {
+  renderSidebarNav();
+  paintNavActive();
   renderChats();
   renderProjects();
   renderRuns();
+  renderPinned();
+  renderQuickStart();
+  // 侧栏内容全部是注入的，图标槽位要在注入之后再水合一次
+  const frame = document.querySelector(".sidebar");
+  if (frame) hydrateDoodles(frame);
 }
 
-/* 侧栏「更多」：Kimi 把功能行收在同一层级，多余的直接折叠。
-   两个治理页（看板·账本、判断记录）放在这里可达但不占前门。 */
+/* 侧栏「更多」：对话侧栏把二级入口收进来（kimi.com 的 next-sidebar__more-list）；
+   工作侧栏是平坦列表，不参与折叠。 */
 const MORE_KEY = "fa.sideMore";
 
 function moreOpen() {
@@ -451,21 +491,148 @@ const saveProjects = () => {
   localStorage.setItem("fa.runProjects", JSON.stringify(runProjects));
 };
 
+const projectRunCount = pid => Object.values(runProjects).filter(x => x === pid).length;
+
 function renderProjects() {
-  const nav = document.getElementById("project-nav");
-  if (!nav) return;
-  const count = pid => Object.values(runProjects).filter(x => x === pid).length;
-  nav.innerHTML = projects.map(prj => '<button class="session proj-row' + (projectFilter === prj.id ? " active" : "") + '" data-proj="' + esc(prj.id) + '"><span class="slabel">' + esc(prj.name) + '</span><span class="smeta">' + (count(prj.id) || "") + '</span></button>').join("")
-    + '<button class="proj-add" id="proj-add">＋ 新建项目</button>';
-  const cnt = document.getElementById("proj-count");
-  if (cnt) cnt.textContent = String(projects.length);
+  const html = projectSectionHtml(projects, {
+    filter: projectFilter,
+    countOf: projectRunCount,
+  });
+  for (const id of ["chat-projects", "work-projects"]) {
+    const host = document.getElementById(id);
+    if (host) host.innerHTML = html;
+  }
+}
+
+/* 置顶分组（Kimi 的 pinned-list），没有置顶就整段不渲染。
+   运行用服务端 run.pinned（/api/runs/{id}/meta）；对话目前没有可变 meta，
+   本机置顶（fa.pins），语义在文档里写明。 */
+const PIN_KEY = "fa.pins";
+let pins = JSON.parse(localStorage.getItem(PIN_KEY) || "[]");
+const savePins = () => { try { localStorage.setItem(PIN_KEY, JSON.stringify(pins)); } catch { /* quota */ } };
+const isChatPinned = id => pins.includes(id);
+
+function toggleChatPin(threadId) {
+  pins = isChatPinned(threadId) ? pins.filter(id => id !== threadId) : pins.concat(threadId);
+  savePins();
+  renderNav();
+}
+
+function renderPinned() {
+  // 任务：复用运行行本身（带行内菜单，能取消置顶）
+  const runs = runHistory.filter(run => run.pinned);
+  const host = document.getElementById("work-pinned");
+  if (host) host.innerHTML = pinnedSectionHtml(runs, { rowHtml: runRowHtml });
+
+  // 对话：本机置顶，行上带 ★ 开关
+  const threads = chatThreads.filter(thread => isChatPinned(thread.id));
+  const chatHost = document.getElementById("chat-pinned");
+  if (chatHost) {
+    chatHost.innerHTML = pinnedSectionHtml(threads, { kind: "chat", pinnedOf: isChatPinned });
+  }
+}
+
+/* 首次使用的三步卡（Kimi Work footer 的 sidebar-quickstart）：状态真实推导。 */
+const QUICK_KEY = "fa.quickstart";
+function quickState() {
+  let seen = {};
+  try { seen = JSON.parse(localStorage.getItem(QUICK_KEY) || "{}"); } catch { seen = {}; }
+  return {
+    dismissed: !!seen.dismissed,
+    ledgerSeen: !!seen.ledgerSeen || ledgerOpen,
+    providerReady: !!quickState.providerReady,
+    firstRunDone: runHistory.some(run => stateClass(run.status) === "ok"),
+  };
+}
+
+function renderQuickStart() {
+  const host = document.getElementById("side-quickstart");
+  if (!host) return;
+  // Kimi 的 sidebar-quickstart 属于 Kimi Work 的 footer；对话侧栏没有这一段
+  host.innerHTML = sidebarMode === "work" ? quickStartHtml(quickState()) : "";
+  hydrateDoodles(host);
+}
+
+function dismissQuickStart() {
+  let seen = {};
+  try { seen = JSON.parse(localStorage.getItem(QUICK_KEY) || "{}"); } catch { seen = {}; }
+  seen.dismissed = true;
+  try { localStorage.setItem(QUICK_KEY, JSON.stringify(seen)); } catch { /* quota */ }
+  renderQuickStart();
+}
+
+function markQuickStart(key) {
+  let seen = {};
+  try { seen = JSON.parse(localStorage.getItem(QUICK_KEY) || "{}"); } catch { seen = {}; }
+  seen[key] = true;
+  try { localStorage.setItem(QUICK_KEY, JSON.stringify(seen)); } catch { /* quota */ }
+  renderQuickStart();
+}
+
+/* 侧栏动作：与 Kimi 的三个动作一一对应。
+   - 新建任务 = Kimi Work 固定区那一行（图标 addConversation + ⌘K chip）
+   - 新建项目 = Projects 标题右侧的「＋」（网页版叫 create-label）
+   - 段落折叠 = section-title-button 的 chevron（NextSidebarSection 的 collapsible） */
+function newTask() {
+  if (sidebarMode === "work") openWorkHome();
+  else newChat();
+}
+
+function addProject(button) {
+  if (!button) return;
+  const input = document.createElement("input");
+  input.className = "proj-new-input";
+  input.placeholder = "项目名称，回车保存";
+  button.replaceWith(input);
+  input.focus();
+  let settled = false;
+  const commit = () => {
+    if (settled) return;
+    settled = true;
+    const name = (input.value || "").trim();
+    if (name) { projects.push({ id: "prj-" + Date.now().toString(36), name }); saveProjects(); }
+    renderProjects();
+  };
+  input.addEventListener("keydown", event => {
+    if (event.key === "Enter") commit();
+    if (event.key === "Escape") { settled = true; renderProjects(); }
+  });
+  input.addEventListener("blur", commit);
+}
+
+const SECTIONS_KEY = "fa.sections";
+function hiddenSections() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(SECTIONS_KEY) || "[]");
+    return Array.isArray(raw) ? raw : [];
+  } catch { return []; }
+}
+
+function paintSections() {
+  const hidden = hiddenSections();
+  document.body.dataset.hide = hidden.join(" ");
+  for (const button of document.querySelectorAll("[data-section-toggle]")) {
+    button.setAttribute("aria-expanded", String(!hidden.includes(button.dataset.sectionToggle)));
+  }
+}
+
+function toggleSection(button) {
+  const key = button.dataset.sectionToggle;
+  const hidden = hiddenSections();
+  const next = hidden.includes(key) ? hidden.filter(item => item !== key) : hidden.concat(key);
+  try { localStorage.setItem(SECTIONS_KEY, JSON.stringify(next)); } catch { /* quota */ }
+  paintSections();
+}
+
+function quickStartGo(step) {
+  if (step === "provider") { if (!settingsOpen) toggleSettingsPage(); return; }
+  if (step === "firstRun") { newTask(); return; }
+  markQuickStart("ledgerSeen");
+  renderMode("ledger");
 }
 
 function clearNavActive() {
-  for (const id of ["desk-btn", "nav-reviews", "nav-scheduled"]) {
-    const el = document.getElementById(id);
-    if (el) el.classList.remove("active");
-  }
+  for (const el of document.querySelectorAll(".nav-item.active")) el.classList.remove("active");
 }
 
 /* ------------------ MIXED — trace 成本回填逻辑（不改）+ 账本渲染模板 */
@@ -670,9 +837,6 @@ function closeRowMenus() {
 
 /* ================= 判断记录（My Kimi 对应：操作者判断聚合） ================= */
 async function renderReviews() {
-  clearNavActive();
-  const nav = document.getElementById("nav-reviews");
-  if (nav) nav.classList.add("active");
   document.getElementById("tb-title").textContent = "判断记录";
   document.getElementById("tb-chips").innerHTML = "";
   setFoot("判断记录 · 只读汇总", "");
@@ -713,9 +877,6 @@ function scheduledList() {
 }
 
 function renderScheduledPage() {
-  clearNavActive();
-  const nav = document.getElementById("nav-scheduled");
-  if (nav) nav.classList.add("active");
   document.getElementById("tb-title").textContent = "定时任务";
   document.getElementById("tb-chips").innerHTML = "";
   setFoot("定时任务 · 草稿在本机", "");
@@ -770,16 +931,18 @@ function renderScheduledPage() {
 }
 
 function updateRunCounts() {
-  const total = String(runHistory.length);
-  for (const id of ["run-count", "desk-count"]) {
-    const el = document.getElementById(id);
-    if (el) el.textContent = total;
+  navCounts = { ledger: runHistory.length };
+  renderSidebarNav();
+  for (const el of document.querySelectorAll("[data-task-count]")) {
+    el.textContent = String(runHistory.length);
   }
 }
 
 function renderRuns() {
   const runNav = document.getElementById("run-nav");
   if (!runNav) return;
+  const tasks = document.getElementById("work-tasks");
+  if (tasks) tasks.innerHTML = taskSectionHtml(runHistory.length);
   updateRunCounts();
   const query = runFilter.trim().toLowerCase();
   let runs = runHistory
@@ -787,13 +950,13 @@ function renderRuns() {
   if (projectFilter) {
     runs = runs.filter(run => runProjects[run.id] === projectFilter);
   }
-  runs = runs.slice()
-    .sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
+  // 置顶的运行由「置顶」分组渲染（Kimi 的 pinned-list），主列表不再重复
+  runs = runs.filter(run => !run.pinned);
 
   if (!runs.length) {
     runNav.innerHTML = query
-      ? `<div class="side-empty side-empty-search">${doodleSvg("search")}<div>没有匹配的委托</div><div class="dim">换个关键词试试</div></div>`
-      : `<div class="side-empty">还没有运行记录<br>点上方「新建委托」开始</div>`;
+      ? `<div class="section-empty side-empty-search">没有匹配的任务</div>`
+      : `<div class="section-empty">任务会出现在这里</div>`;
     return;
   }
 
@@ -802,20 +965,12 @@ function renderRuns() {
     html += `<div class="side-head-label">${runs.length} 条结果</div>`;
     html += runs.map(runRowHtml).join("");
   } else {
-    const pinned = runs.filter(run => run.pinned);
-    if (pinned.length) {
-      html += `<div class="side-head-label"><span>${doodleSvg("star")}已固定</span><span class="grp-count">${pinned.length}</span></div>`;
-      html += pinned.map(runRowHtml).join("");
-    }
     const groups = [
       { label: "今天", items: [] },
       { label: "昨天", items: [] },
       { label: "更早", items: [] },
     ];
-    for (const run of runs) {
-      if (run.pinned) continue;
-      groups[runGroupOf(run.created)].items.push(run);
-    }
+    for (const run of runs) groups[runGroupOf(run.created)].items.push(run);
     for (const group of groups) {
       if (!group.items.length) continue;
       html += `<div class="side-head-label"><span>${group.label}</span><span class="grp-count">${group.items.length}</span></div>`;
@@ -2486,7 +2641,7 @@ function setChromeState({ sidebar = null, rail = null } = {}) {
     app.classList.toggle("side-collapsed", sidebar);
     const sideToggle = document.getElementById("sidebar-toggle");
     if (sideToggle) {
-      const label = sidebar ? "展开侧栏" : "折叠侧栏";
+      const label = sidebar ? "展开侧栏（⌘B）" : "折叠侧栏（⌘B）";
       sideToggle.title = label;
       sideToggle.setAttribute("aria-label", label);
     }
@@ -4762,7 +4917,8 @@ async function togglePin(id) {
   const run = runHistory.find(item => item.id === id);
   if (!run) return;
   run.pinned = !run.pinned;
-  renderRuns();
+  // 置顶会同时改变两处：主列表少一行、置顶段多一行 —— 一次重绘两处
+  renderNav();
   try {
     const response = await fetch(`/api/runs/${encodeURIComponent(id)}/meta`, {
       method: "POST",
@@ -4773,7 +4929,7 @@ async function togglePin(id) {
     toast(run.pinned ? "已固定" : "已取消固定");
   } catch {
     run.pinned = !run.pinned;
-    renderRuns();
+    renderNav();
     toast("固定失败");
   }
 }
@@ -5656,23 +5812,14 @@ async function loadChatThreads(reset = true) {
 function renderChats() {
   const nav = document.getElementById("chat-nav");
   if (!nav) return;
-  const count = document.getElementById("chat-count");
-  if (count) count.textContent = String(chatThreads.length);
-  if (!chatThreads.length) {
-    nav.innerHTML = `<div class="side-empty-inline">还没有对话</div>`;
-    return;
-  }
-  const items = chatThreads.map(thread => {
-    const active = chat.current && chat.current.id === thread.id;
-    return `<button class="session chat-row${active ? " active" : ""}" data-chat-id="${esc(thread.id)}" title="${esc(thread.title)}">
-      <span class="slabel">${esc(thread.title)}</span>
-      <span class="chat-del" data-chat-delete="${esc(thread.id)}" role="button" title="从列表移除（事件链保留）">×</span>
-    </button>`;
-  }).join("");
-  const more = chatThreads.length < chat.total
-    ? `<button class="chat-more" type="button" data-chat-more>加载更多 · 还有 ${chat.total - chatThreads.length} 条</button>`
-    : "";
-  nav.innerHTML = items + more;
+  const head = document.getElementById("chat-chats");
+  if (head) head.innerHTML = chatSectionHtml(chatThreads.length);
+  const list = chatThreads.filter(thread => !isChatPinned(thread.id));
+  nav.innerHTML = chatRowsHtml(list, {
+    activeId: chat.current ? chat.current.id : null,
+    total: chat.total,
+    pinnedOf: isChatPinned,
+  });
 }
 
 function handleChatDelete(threadId, el) {
@@ -6056,6 +6203,7 @@ function setUiMode(mode) {
     uiMode = mode;
     try { localStorage.setItem("fa.uiMode", mode); } catch { /* quota */ }
   }
+  sidebarMode = mode;
   const app = document.getElementById("app");
   app.classList.toggle("mode-chat", mode === "chat");
   app.classList.toggle("mode-work", mode === "work");
@@ -6073,10 +6221,20 @@ function setUiMode(mode) {
   const paneWork = document.getElementById("pane-work");
   if (paneChat) paneChat.hidden = mode !== "chat";
   if (paneWork) paneWork.hidden = mode !== "work";
+  // 两套侧栏的 chrome：工作侧栏 header 有 flavor 徽章（Kimi Work），
+  // 对话侧栏（网页版）没有徽章，只有 logo 与折叠钮。
+  const chrome = modeChrome(mode);
   const newLabel = document.getElementById("new-label");
-  if (newLabel) newLabel.textContent = mode === "work" ? "新建工作" : "新对话";
+  if (newLabel) newLabel.textContent = chrome.newLabel;
+  const flavor = document.getElementById("side-flavor");
+  if (flavor) {
+    flavor.textContent = chrome.flavor;
+    flavor.hidden = !chrome.flavor;
+  }
   const newBtn = document.getElementById("new-run");
-  if (newBtn) newBtn.title = mode === "work" ? "新建工作：受门控的委托运行" : "新对话";
+  if (newBtn) newBtn.title = chrome.newTitle;
+  renderNav();
+  paintSections();
   if (mode === "chat") {
     if (chat.active && document.getElementById("main")?.dataset.view === "empty") return;
     if (chat.current && (chat.current.messages || []).length) switchToChat();
@@ -7142,9 +7300,18 @@ function bind() {
       document.getElementById("foot-menu").hidden = true;
       document.getElementById("user-btn")?.setAttribute("aria-expanded", "false");
     }
-    if (event.target.closest("#nav-reviews")) { renderMode("reviews"); return; }
-    if (event.target.closest("#nav-scheduled")) { renderMode("scheduled"); return; }
+    const navOpen = event.target.closest(".nav-item[data-open]");
+    if (navOpen) { renderMode(navOpen.dataset.open); return; }
     if (event.target.closest("#nav-more")) { setMoreNav(!moreOpen()); return; }
+    if (event.target.closest("[data-new-task]")) { newTask(); return; }
+    if (event.target.closest("[data-proj-add]")) { addProject(event.target.closest("[data-proj-add]")); return; }
+    const sectionToggle = event.target.closest("[data-section-toggle]");
+    if (sectionToggle) { toggleSection(sectionToggle); return; }
+    if (event.target.closest("[data-quickstart-close]")) { dismissQuickStart(); return; }
+    const quick = event.target.closest("[data-quickstart]");
+    if (quick) { quickStartGo(quick.dataset.quickstart); return; }
+    const chatPin = event.target.closest("[data-chat-pin]");
+    if (chatPin) { toggleChatPin(chatPin.dataset.chatPin); return; }
     const chatDelete = event.target.closest("[data-chat-delete]");
     if (chatDelete) { handleChatDelete(chatDelete.dataset.chatDelete, chatDelete); return; }
     if (event.target.closest("[data-chat-more]")) { loadChatThreads(false); return; }
@@ -7210,13 +7377,12 @@ function bind() {
       return;
     }
     if (event.target.closest("#run-chip")) { stopRun(); return; }
-    if (event.target.closest("#desk-btn")) { renderMode("ledger"); return; }
     if (event.target.closest("#chain-badge")) { reverify(); return; }
     if (event.target.closest("[data-rail-close]")) { setChromeState({ rail: false }); return; }
     if (event.target.closest("#report-close") || event.target.closest("[data-report-close]")) { closeReport(); return; }
     if (event.target.closest("#report-print")) { printReport(); return; }
     if (event.target.closest("#report-download")) { downloadReport(); return; }
-    if (event.target.closest("#palette-btn")) { openPalette(); return; }
+    if (event.target.closest("#foot-palette")) { openPalette(); return; }
     if (event.target.closest("#settings-btn") || event.target.closest("#foot-settings")) { toggleSettingsPage(); return; }
     if (event.target.closest("#settings-mobile")) { renderMode("settings"); return; }
   });
@@ -7226,10 +7392,6 @@ function bind() {
     const holder = field.closest("[data-run-card]");
     if (!holder) return;
     readCardDraft(holder.dataset.runCard);
-  });
-  document.getElementById("run-search").addEventListener("input", event => {
-    runFilter = event.target.value;
-    renderRuns();
   });
   const palInput = document.getElementById("palette-input");
   palInput.addEventListener("input", () => { palActive = 0; renderPalette(); });
@@ -7259,8 +7421,10 @@ function bind() {
     const s = activeSession();
     if (changed && s && s.running) toast("已切换 · 下一个任务生效");
   });
-  document.getElementById("run-nav").addEventListener("click", event => {
-    const moreBtn = event.target.closest("[data-more]");
+  // 运行行出现在两处（主列表 + 置顶段），事件委托绑在侧栏容器上
+  const sidebarContainer = document.querySelector(".sidebar");
+  sidebarContainer.addEventListener("click", event => {
+    const moreBtn = event.target.closest("#run-nav [data-more], #work-pinned [data-more]");
     if (moreBtn) {
       event.stopPropagation();
       const row = moreBtn.closest("[data-run]");
@@ -7307,23 +7471,29 @@ function bind() {
     if (event.target.closest(".row-menu") || event.target.closest(".rename-input")) return;
     selectRun(row.dataset.run);
   });
-  document.getElementById("project-nav").addEventListener("click", event => {
-    const row = event.target.closest("[data-proj]");
-    if (!row) return;
-    projectFilter = projectFilter === row.dataset.proj ? null : row.dataset.proj;
-    renderProjects();
-    renderRuns();
-  });
-  document.getElementById("run-nav").addEventListener("keydown", event => {
-    const row = event.target.closest("[data-run]");
+  // Projects 段落在两个侧栏面板各渲染一份，事件由侧栏统一委托
+  for (const host of ["chat-projects", "work-projects"]) {
+    const el = document.getElementById(host);
+    if (!el) continue;
+    el.addEventListener("click", event => {
+      const row = event.target.closest("[data-proj]");
+      if (!row) return;
+      projectFilter = projectFilter === row.dataset.proj ? null : row.dataset.proj;
+      renderProjects();
+      renderRuns();
+      renderChats();
+    });
+  }
+  sidebarContainer.addEventListener("keydown", event => {
+    const row = event.target.closest("#run-nav [data-run], #work-pinned [data-run]");
     if (!row || event.target !== row) return;
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
       selectRun(row.dataset.run);
     }
   });
-  document.getElementById("run-nav").addEventListener("dblclick", event => {
-    const label = event.target.closest("[data-name]");
+  sidebarContainer.addEventListener("dblclick", event => {
+    const label = event.target.closest("#run-nav [data-name], #work-pinned [data-name]");
     if (!label) return;
     const row = label.closest("[data-run]");
     if (!row) return;
@@ -7604,6 +7774,19 @@ function bind() {
       return;
     }
     if (mod && e.key === ",") { e.preventDefault(); toggleSettingsPage(); return; }
+    // Kimi 桌面的两个模式各有一个数字快捷键（工具提示里就写着 ⌘1 / ⌘2），
+    // 侧栏折叠是 ⌘B（网页版 chat 同一套）。
+    if (mod && (e.key === "1" || e.key === "2")) {
+      e.preventDefault();
+      setUiMode(e.key === "1" ? "work" : "chat");
+      return;
+    }
+    if (mod && e.key.toLowerCase() === "b") {
+      e.preventDefault();
+      const shell = document.getElementById("app");
+      setChromeState({ sidebar: !shell.classList.contains("side-collapsed") });
+      return;
+    }
     if (mod && e.key === ".") { e.preventDefault(); if (chat.active && chat.streaming) { stopChat(); return; } if (s && s.running) stopRun(); return; }
     if (mod && s && s.pending && !s.deciding && (e.key === "Enter" || e.key === "Backspace" || e.key === "Delete")) {
       const palette = document.getElementById("palette");
@@ -7625,8 +7808,9 @@ function bind() {
       }
     }
     if (!typing && !mod && e.key === "/") {
+      // Kimi 的侧栏没有搜索框：搜索一律走命令面板（⌘K / "/"）
       e.preventDefault();
-      document.getElementById("run-search").focus();
+      openPalette();
       return;
     }
     if (!typing && s && s.pending && !s.deciding && (e.key === "1" || e.key === "2" || e.key === "3")) {

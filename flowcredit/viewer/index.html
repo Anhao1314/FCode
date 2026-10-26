@@ -10,7 +10,7 @@
 <link rel="stylesheet" href="design.css?v=76">
 <link rel="stylesheet" href="desktop.css?v=3">
 <link rel="stylesheet" href="chat.css?v=3">
-<link rel="stylesheet" href="kimi.css?v=15">
+<link rel="stylesheet" href="kimi.css?v=20">
 </head>
 <body>
 <div class="shell app rail-hidden" id="app">
@@ -18,19 +18,19 @@
   <div class="sidebar-frame">
   <aside class="sidebar">
     <div class="side-head">
-      <button class="side-fold" id="sidebar-toggle" type="button" title="折叠侧栏" aria-label="折叠侧栏">
+      <button class="side-fold" id="sidebar-toggle" type="button" title="折叠侧栏（⌘B）" aria-label="折叠侧栏">
         <svg class="i" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4v16"/></svg>
       </button>
-      <img class="brand-mark" src="brand/logo.svg" alt="" width="22" height="22">
-      <span class="side-brand">FCode</span>
-      <button class="kbtn" id="palette-btn" title="命令面板 (⌘K)">⌘K</button>
+      <img class="brand-mark" src="brand/logo.svg" alt="FCode" width="32" height="32">
+      <span class="side-flavor" id="side-flavor">WORK</span>
+      <span class="grow"></span>
     </div>
 
     <div class="mode-switch" role="tablist" aria-label="主功能切换">
-      <button class="mode-opt" id="mode-work" type="button" role="tab" aria-selected="false">
+      <button class="mode-opt" id="mode-work" type="button" role="tab" aria-selected="false" title="工作（⌘1）">
         <span data-doodle="work"></span><span>工作</span>
       </button>
-      <button class="mode-opt active" id="mode-chat" type="button" role="tab" aria-selected="true">
+      <button class="mode-opt active" id="mode-chat" type="button" role="tab" aria-selected="true" title="对话（⌘2）">
         <span data-doodle="message"></span><span>对话</span>
       </button>
     </div>
@@ -38,50 +38,47 @@
     <button class="side-new" id="new-run" title="新对话">
       <span data-doodle="kimi-plus"></span>
       <span id="new-label">新对话</span>
+      <kbd class="nav-shortcut" aria-hidden="true">⌘K</kbd>
     </button>
 
+    <!-- 对话侧栏 = kimi.com 网页版（桌面版点「对话」会 closePage 回到网页 chat）：
+         固定新建对话 → 顶部主入口 → More 折叠 → 置顶 → Projects → 对话列表。 -->
     <div class="side-list" id="pane-chat">
-      <div class="side-section"><span>对话</span><span class="side-count" id="chat-count">0</span></div>
-      <nav class="nav" id="chat-nav"></nav>
-    </div>
-
-    <div class="side-list" id="pane-work" hidden>
-      <label class="side-search">
-        <span data-doodle="search"></span>
-        <input id="run-search" placeholder="搜索任务…" autocomplete="off" spellcheck="false">
-      </label>
       <div class="side-nav">
-        <button class="nav-item" id="nav-scheduled" title="定时任务">
-          <span data-doodle="calendar"></span><span>定时任务</span>
-        </button>
+        <nav id="chat-top-nav"></nav>
         <button class="nav-item" id="nav-more" type="button" aria-expanded="false" aria-controls="more-nav" title="更多">
           <span data-doodle="ellipsis"></span><span>更多</span>
           <span class="chev" aria-hidden="true">▾</span>
         </button>
       </div>
-      <div class="side-nav more-nav" id="more-nav" hidden>
-        <button class="nav-item" id="desk-btn" title="委托汇总与成本账本">
-          <span data-doodle="layout-grid"></span>
-          <span>看板 · 账本</span>
-          <span class="side-count" id="desk-count">0</span>
-        </button>
-        <button class="nav-item" id="nav-reviews" title="判断记录">
-          <span data-doodle="clipboard-list"></span><span>判断记录</span>
-        </button>
-      </div>
-      <div class="side-section"><span>Projects</span><span class="side-count" id="proj-count">0</span></div>
-      <nav id="project-nav"></nav>
-      <div class="side-section"><span>任务</span><span class="side-count" id="run-count">0</span></div>
+      <div class="side-nav more-nav" id="more-nav" hidden></div>
+      <div id="chat-pinned"></div>
+      <div id="chat-projects"></div>
+      <div id="chat-chats"></div>
+      <nav class="nav" id="chat-nav"></nav>
+    </div>
+
+    <!-- 工作侧栏 = Kimi Work 的 AppSidebar：平坦导航（看板/判断/定时）→ 置顶 →
+         Projects（＋：新建项目）→ 任务（＋、状态点、空态）。 -->
+    <div class="side-list" id="pane-work" hidden>
+      <nav class="side-nav" id="work-nav"></nav>
+      <div id="work-pinned"></div>
+      <div id="work-projects"></div>
+      <div id="work-tasks"></div>
       <nav class="nav" id="run-nav"></nav>
     </div>
 
     <div class="side-foot">
+      <div id="side-quickstart"></div>
       <button class="side-user" id="user-btn" type="button" aria-expanded="false" aria-haspopup="menu">
         <span class="fdot" id="foot-dot"></span>
         <span class="foot-text" id="foot-text">offline-mock · 只读回放</span>
         <span class="side-gear" aria-hidden="true"><span data-doodle="chevron-up"></span></span>
       </button>
       <div class="foot-menu" id="foot-menu" role="menu" hidden>
+        <button class="foot-item" id="foot-palette" role="menuitem">
+          <span data-doodle="search"></span><span>命令面板</span><kbd class="nav-shortcut">⌘K</kbd>
+        </button>
         <button class="foot-item" id="foot-settings" role="menuitem">
           <span data-doodle="gear"></span><span>设置</span>
         </button>
@@ -374,6 +371,6 @@
 <script src="report.js?v=56"></script>
 <script src="icons-doodle.js?v=54"></script>
   <script src="brand/seal-icons.js"></script>
-<script src="app.js?v=98" type="module"></script>
+<script src="app.js?v=103" type="module"></script>
 </body>
 </html>
