@@ -1,300 +1,177 @@
-# FCode
+<div align="center">
+  <img src="flowcredit/viewer/brand/logo.svg" alt="FCode" width="72" />
 
-**可审计的通用 Agent Runtime：模型不掌权、出错不乱来、全程可审计。**
+  # FCode
 
-模型只能提议动作，主机掌握授权、预算、工具与凭证；Runtime 独立校验后才执行，每一步落进哈希链，崩溃可恢复，未知结果不重发。通用委托（文件、命令、网页）是默认入口；金融研究保留为可重算的参考负载。内核领域无关。
+  ## Build your own work.
 
-```sh
-cd flowcredit
-python demo.py general-research --fast   # 通用委托：写脚本、运行、锚定修复、复跑、归档（离线，5 轮）
-python demo.py full --fast               # 参考负载：9 轮治理故事
+  **让模型提议，让主机决定。**
+
+  一个本地优先、可恢复、可审计的 Agent Runtime。
+
+  `MODEL PROPOSES · HOST VERIFIES · YOU DECIDE`
+
+  <img src="flowcredit/viewer/docs/desktop-home.png" alt="FCode Work 控制台" width="100%" />
+</div>
+
+---
+
+FCode 是一个围绕**责任链**构建的 Agent 工作空间。模型负责理解与提议，Runtime 负责计划、权限、预算、工具、验证与恢复，人保留关键决定的控制权。
+
+它不是给聊天窗口加上工具，而是让每一次行动都有依据、每一个结果都能检查、每一次失败都有明确的下一步。
+
+## 不是更会回答，而是更能负责
+
+一个 Agent 说自己完成了，并不等于工作真的完成。
+
+FCode 把“完成”拆成可验证的过程：读取了什么证据，调用了哪个工具，为什么获得授权，消耗了多少预算，结果是否通过独立验证，崩溃后从哪里继续。
+
+```text
+                         ┌──────────────────────────┐
+                         │      Operator control    │
+                         │ approve · revise · resume│
+                         └─────────────┬────────────┘
+                                       │
+Objective → Plan → Proposal → Gate → Approval → Tool
+                       ↑                            │
+                       │                            ↓
+                       └────── Context ← Verify ← Observation
+
+             Budget guards every action.
+             A hash-chained event log remembers every decision.
 ```
 
-Python 3.11+，零第三方依赖，零配置，离线。在终端里给出场景菜单；无终端时直接跑参考负载的完整故事。
+### 模型不掌权
 
-下面这段是 `python demo.py full --fast` 的**实际输出**（同一条命令即可复现；轮次、事件数、
-成本三段稳定，链头每次运行都不同，所以此处只作示意）：
+工具来自封闭注册表，参数通过 schema 校验，并同时匹配任务范围与主机授权。模型可以提议，但不能绕过门控，也不能自行宣布成功。
 
-```sh
-cd flowcredit && python demo.py full --fast   # 约 10 秒，离线，零配置
+### 失败不乱来
+
+调用在发送前计入预算。结果未知的请求不盲目重发；进程崩溃后从事件日志重建状态，已完成的轮次不重复执行。
+
+### 全程可审计
+
+审批、工具调用、观测、预算和人工干预进入同一条哈希链。轨迹可回放、可导出、可重新校验，而不是只有一段无法检查的文字总结。
+
+## 四个核心层
+
+| 核心 | 已实现 | 边界 |
+| --- | --- | --- |
+| **大脑** | Provider 抽象；mock、本地与 OpenAI 兼容模型；模型只输出动作提议 | 模型回答不等于结果已验证 |
+| **规划** | 目标分解、todo、轮次循环、计划修订、失败停止 | 当前以单 Agent 执行为主 |
+| **记忆** | SQLite 事件日志、上下文重建、运行历史、案例与事实投影、断点续跑 | 不是无限记忆或完整知识系统 |
+| **工具** | 封闭注册表、权限门控、预算、签名收据、文件／命令／网页工具、MCP 桥 | 受限命令不是操作系统级沙箱 |
+
+金融研究是第一个可独立复算的参考负载，通用文件、命令与网页委托是默认工作入口。运行内核不绑定行业。
+
+## 开始工作
+
+需要 **Python 3.11+**。离线演示零第三方依赖、零配置。
+
+```bash
+git clone https://github.com/Anhao1314/FCode.git
+cd FCode/flowcredit
+python demo.py
 ```
 
-```
- 轮次 9   预算 calls 9/12  reads 9/20  cost 4500/20000 µUSD
- 轨迹自检  通过：49 个事件，链头 17a0f18f6519…
+### 打开 Work 控制台
 
-第 6 轮   预算 calls 5/12  reads 5/20  cost 2500/20000 µUSD
-  模型提议  reconcile_basis  doc_id=doc_fy2025_adjusted
-  主机门控  PASS  schema, scope and grant all agree
-  工具返回  FY2025  adjusted → IFRS  差异 -28 百万元
-  预算扣减  calls 6/12  reads 6/20  cost 3000/20000 µUSD
-...
- 终态  SUCCEEDED（Runtime 独立重算通过）
-  2024 毛利率  17.50%
-  2025 毛利率  15.00%
-  变化        -2.50 pp
+在 `flowcredit` 目录执行：
+
+```bash
+python viewer/server.py --repo . --port 8642
 ```
 
-想看治理过程本身，同一份 trace 可以直接拖进控制台：
+打开 `http://127.0.0.1:8642/`。
 
-```sh
-python demo.py full --fast --open   # 跑完后本地起服务并打开这次运行
+Work 用于规划与执行，Chat 用于流式对话；任务历史、审批、运行控制、证据与 Trace 回放共享同一个 Runtime。真实模型接入见 [Kimi 配置](flowcredit/docs/kimi.md)，密钥只保存在本机，不进入仓库。
+
+### 构建桌面应用
+
+```bash
+bash desktop/build.sh
 ```
 
-## 理念
+当前已实际验证 **macOS arm64** 构建。桌面端加载同一个控制台与内核，不维护另一套产品实现。
 
-**智能可以外包，责任不能外包。** FCode 不替专家做判断，而是放大专家的判断：让她做更多只有她能做的判断，并让这些判断可复用。用户、交互、审美与架构的完整论述见 [philosophy.md](flowcredit/docs/philosophy.md)。
+## 八个场景，检验八种纪律
 
-## 三个卖点
-
-| | 主张 | 代码里怎么落实 | 怎么验证 |
-| --- | --- | --- | --- |
-| **模型不掌权** | 模型只能提议，主机门控工具、参数、预算、授权 | 工具是封闭注册表；参数按 schema 校验；工具必须同时出现在任务范围与主机 grant 里；模型不能自报结果数值 | `demo.py tool-denied`：提议一个未注册工具，被拒且读取计数为 0 |
-| **出错不乱来** | 崩溃可恢复，unknown 不重发、不重复扣费，结果独立校验 | 调用在发送前扣预算；`unknown` 只能凭匹配的签名收据显式对账；成功必须由 Runtime 重算通过 | `demo.py crash`：真实 SIGKILL 后 9 轮 9 次调用，无一轮重复；`demo.py unknown` |
-| **全程可审计** | 每步签名收据 + 哈希链，Trace 可回放、可评测、防篡改 | 每事件 `sha256(canonical_json({sequence,type,payload,prev_hash,at}))`，链头写入任务行 | `flowcredit/viewer/` 用 `crypto.subtle` 重算全链，改一个字节就变红 |
-
-## 架构
-
-```mermaid
-flowchart TB
-    subgraph host["主机（可信边界）"]
-        A["authorizer<br/>当前授权"] --> G["permissions<br/>工具 / 参数 / grant"]
-        B["budget<br/>发送前扣减"] --> G
-        C["credential provider<br/>延迟解析"] -.->|"默认关闭"| G
-    end
-
-    M["模型<br/>只提议"] -->|"1. proposal"| G
-    G -->|"2. PASS"| T["tool registry<br/>只读工具"]
-    G -->|"DENIED + 原因"| X["终态 denied"]
-
-    T --> O["observation"]
-    O --> MEM["working memory<br/>从事件日志重建"]
-    MEM --> M
-
-    O --> V["独立重算<br/>Runtime 校验"]
-    V -->|"通过"| S["终态 succeeded"]
-    V -->|"不符"| F["终态 failed"]
-
-    subgraph durable["持久层"]
-        ST["sqlite<br/>task + event 哈希链"]
-        R["签名收据<br/>HMAC"]
-    end
-
-    G --> ST
-    T --> ST
-    V --> ST
-    R --> ST
-    ST --> TR["trace JSON"]
-    TR --> VW["console<br/>零构建，重算哈希"]
+```bash
+python demo.py general-research --fast  # 通用委托：写、跑、修、复跑、归档
+python demo.py full                     # 多轮研究：取证、口径桥接、独立复算
+python demo.py tool-denied              # 越权工具：主机拒绝，工具不执行
+python demo.py budget                   # 预算耗尽：发送前拦截
+python demo.py budget-resume            # 追加预算：从失败点续跑
+python demo.py crash                    # 真实 SIGKILL：恢复后不重复轮次
+python demo.py unknown                  # 结果未知：不重发，凭收据对账
+python demo.py open-ended               # 证据不足：诚实停止
+python demo.py all                      # 顺序运行全部场景并自检轨迹
 ```
 
-一次调用穿过四道关：**门控 → 预算 → 执行 → 独立重算**。任何一道不过，任务都不会被标记为成功。
+场景复用同一个 Runtime，通过不同主机策略与故障注入验证治理语义。每次运行生成 `work/demo/<scenario>.trace.json`，可阅读、回放并验证哈希链。
 
-## 八个场景
+## 验证，而不是感觉
 
-```sh
-cd flowcredit
-python demo.py general-research --fast  # 通用委托：离线脚本模式，写→跑→修→复跑→归档
-python demo.py general-research --sources https://example.com --fast
-                                        # 通用委托：抓取来源，写入 research.md
-python demo.py full          # 参考负载，9 轮
-python demo.py tool-denied   # 越权工具：主机拒绝，工具从未执行
-python demo.py budget        # 预算耗尽：发送前拦住，已占用不退
-python demo.py budget-resume # 预算追加：失败后续跑，已付的读取不重发
-python demo.py crash         # 进程被 SIGKILL，重启续跑不重复
-python demo.py unknown       # 供应商超时：不重发，凭签名收据对账
-python demo.py open-ended    # 计划被卡住：诚实停止，不给算不出的数字
-python demo.py all           # 顺序跑完并打印汇总表
-python demo.py --serve       # 打开只读回放控制台
+在 `flowcredit` 目录执行：
+
+```bash
+python -m unittest discover -s tests -q
+node --test viewer/tests/*.test.js
+python demo.py all
 ```
 
-```
- 场景                 终态                     轮次   调用   读取    花费µUSD   轨迹
- full               succeeded               9    9    9      4500   ok
- tool-denied        denied                  1    1    0       500   ok
- budget             failed                  5    4    4      2000   ok
- budget-resume      failed                  7    6    6      3000   ok
- crash              succeeded               9    9    9      4500   ok
- unknown            succeeded               9    9    9      4500   ok
- open-ended         failed                  9    9    9      4500   ok
- general-research   succeeded               5    5    5      2500   ok
-```
+当前回归基线：**642 项 Python 测试、71 项前端测试、8 个端到端场景**。
 
-`general-research` 是通用 agent 原型：默认离线脚本模式，也可以用 `--sources`
-切到“抓取来源 → 写 research.md”。其余七个场景是**参考负载**上的故障注入，
-它们不改 Runtime 代码，只是不同的主机策略与数据。场景到模块的显式绑定、以及
-这次从产品层移除的信用尽调域，见 [domain-layer.md](flowcredit/docs/domain-layer.md)。
+覆盖权限与参数门控、预算、状态机、并发 CAS、事件篡改、收据伪造、独立重算、人工审批、崩溃恢复、Provider 纪律与真实 HTTP 服务边界。CI 使用 Ubuntu／macOS × Python 3.11／3.13 矩阵。
 
-## 控制台
+这些数字说明回归覆盖范围，不代表真实通用任务成功率。
 
-`flowcredit/viewer/` 是可实时运行的 Agent 控制台：**对话优先**（流式回答、追问、重新生成、编辑上一条、文本附件、停止），也可以只读回放任意签名 trace。零依赖、零构建，由标准库 server 直接托管。
+## 诚实的边界
 
-```sh
-python3 flowcredit/viewer/server.py --repo .   # 打开 http://127.0.0.1:8642/
-```
+- 当前是治理较强的**单 Agent Runtime**，不是产品级多 Agent 集群。
+- 本地工具与命令有应用层约束，但不构成操作系统级安全沙箱。
+- Chat 附件以文本注入为主，不等于完整多模态理解管线。
+- Chat 回答有事件链与收据，不代表每个回答都经过领域 verifier 验证。
+- 网页内容会被保留为证据，但 Runtime 不因此证明网页内容真实。
+- 通用任务仍受模型能力、工具覆盖、上下文质量与任务可验证性的共同限制。
 
-![console](flowcredit/viewer/docs/desktop-chat.png)
+知道何时不能完成，和完成工作同样重要。
 
-- 左侧：目录式的任务历史——每条记录两行（名称/时间 + 模板/轮次/成本），今天 / 昨天 / 更早分组带计数；悬停 `⋯` 菜单固定 / 重命名 / 删除；`↑↓` 在记录间移动、`Enter` 打开、`/` 聚焦搜索；示例场景收进折叠的附录。
-- 对话优先：侧栏「新对话」或首页输入框进入对话；回答流式渲染，可追问 / 重新生成 / 编辑上一条 / 添加文本附件 / 停止。**对话不执行工具**；需要执行时用侧栏「委托运行」或消息上的「转为委托」。每次回答都扣预算、进事件链、签收据。模型与 API 配置在 设置 → 模型与工具 里填写（本机保存、不进仓库）。设计与边界见 [chat.md](flowcredit/docs/chat.md)。
-- 委托入口：用户先发消息，clarifier 返回理解摘要和 2–4 个选项——关注点 → 输出 → 审批，任务卡确认后才创建运行；选择写入 `binding.spec`，可回退、取消或继续描述。
-- 委托运行：侧栏「委托运行」或首页模板 chips 进入需求确认 → 任务卡 → 运行；通用 agent（文件、命令、网页）是默认域，金融研究作为参考负载保留在模板里。
-- 真实运行：Runtime 现场执行，Plan、预算、逐轮工具卡与哈希链边产生边渲染；`⌘.` 在轮次边界停止。
-- 键盘入口：composer 以 `/` 开头弹出命令面板（Tab 补全、↑↓ 选择），↑↓ 翻输入历史；视觉沿用 Codex 终端语言：等宽元信息、20% 分隔线、选中填充 `#A4CDFB`。
-- 本机偏好：左下角状态行右侧的齿轮（`⌘,`）让主区切到设置页——外观、委托默认、模型与工具、记忆统计、通知与快捷键、安全与关于；偏好只存本机，不影响签名链。
-- LLM 层实验：真实模型训练期间，用文件式 oracle 坐进 Provider 位置；协议与结果见 [oracle-lab.md](flowcredit/docs/oracle-lab.md)。
-- 前端收敛：建单向导已删除，创建统一走需求确认；结构与后续拆分见 [frontend-architecture.md](flowcredit/docs/frontend-architecture.md)。
-- 数据采集：`FCODE_SOURCES` 配置主机源后，模型可用 `collect_source` 抓取并把结果变成可检索证据；配置与安全边界见 [data-collection.md](flowcredit/docs/data-collection.md)。
-- Executive–Policy：决策包 + 候选动作 + fast path 的 P1 实验见 [executive-policy.md](flowcredit/docs/executive-policy.md)；控制台默认仍走旧 Provider。
-- 运行中插话：composer 直接输入消息，排队后在下一轮写入同一条哈希链；后台会话与新建委托各占一个标签，切换不丢画面。
-- 人工控制：审批门（关键步骤 / 逐步 / 自动）、计划跳过与提前、预算调高；失败于预算或轮次上限时可「追加预算并继续」，从事件日志续跑且不重发已付读取。
-- 审计报告：运行结束后「签发报告」生成一份自包含 HTML 工作底稿（结论、账单、证据、人工决定、链附录），可打印、下载或离线转发。
-- 只读回放：`cd flowcredit && python demo.py --serve`；页面加载时用 `crypto.subtle` 重算全链，改一个字节就变红。
-- 右侧案卷：事件按轮分组，关键/全部/人工三档过滤，机械事件折叠为「过程 N 条」；工具契约与用量、完整性封印（链头可复制）、带行号可复制/下载的原文。
-- 设计：外壳与对话采用 **Kimi 实测皮肤**（`#FBFAF9` / `#F5F5F5` / `#1783FF` / 5 点螺旋加载，见 [kimi-skin.md](flowcredit/docs/kimi-skin.md)）；审计底稿与证据区保留 **Paper & Proof**（纯白底稿、近黑墨、等宽证据）。规范见 [design-system.md](flowcredit/docs/design-system.md)，样式页 `viewer/design.html`；agent 的架构/交互约束见 [`.agents/skills/fcode-design/SKILL.md`](.agents/skills/fcode-design/SKILL.md)。
-- 长期记忆：终态运行自动投影进案例簿与双时态事实簿；从签名轨迹重建：
-  `PYTHONPATH=flowcredit/src python3 -m flowagent.memory.cases --repo .`、
-  `PYTHONPATH=flowcredit/src python3 -m flowagent.tools.finance.facts --repo .`。
+## 文档地图
 
-## 桌面端
-
-`desktop/` 把同一个内核与控制台打包成可下载的桌面应用（macOS `.app` / Windows 目录），通过 GitHub Releases 分发，不走应用商店。
-
-```sh
-bash desktop/build.sh          # macOS: desktop/dist/FCode.app
-open desktop/dist/FCode.app
-```
-
-- 窗口里加载的就是 `viewer/` 的同一套静态控制台——桌面端不是另一套实现
-- 桌面比例取自 kimi.com 实测（1600×1000）：侧栏 240 / 新建 41 / 导航 36 / 用户区 44 / 输入框 768×114 / 正文 14；首页不显示顶部工具条，运行页顶栏 52。测量、映射与边界见 [desktop-design.md](flowcredit/docs/desktop-design.md)
-- 内嵌 server 绑定随机回环端口，并要求每次启动生成的 token（HttpOnly cookie 引导）；其他本地页面无法驱动 agent
-- 运行记录写入 `~/Library/Application Support/FCode/runs`——打包后的 `.app` 只读，审计记录属于用户
-- 原生能力：报告走系统保存对话框、完成通知走系统通知、窗口标题跟随委托；在浏览器里自动降级
-- `.github/workflows/desktop.yml` 在 macOS / Windows 上构建，发布 Release 时自动附带 zip
-- 未签名构建首次打开需右键 → 打开；正式分发再加 Apple Developer 签名与公证
-
-## 能力清单
-
-| 能力 | 状态 |
+| 方向 | 文档 |
 | --- | --- |
-| 主机门控（注册表 / 任务范围 / grant / 参数 schema / effect） | 已实现 |
-| 硬预算（calls / reads / cost / tokens 四维，发送前扣减） | 已实现 |
-| 持久任务（sqlite WAL、`BEGIN IMMEDIATE`、序列号 CAS） | 已实现 |
-| 事件哈希链（写入校验 + 读取重算 + 链头锚定） | 已实现 |
-| 崩溃恢复（从事件日志重建工作记忆，不重放已完成轮次） | 已实现 |
-| 计划驱动的多轮执行（目标 → 可修订的计划 → todo 推进） | 已实现（确定性，无 LLM） |
-| 未知结果（不重发 / 不退费 / 签名收据显式对账） | 已实现 |
-| 工具输出契约（声明式输出 schema + 工具版本，漂移输出直接拒绝并终止） | 已实现 |
-| 证据摄入（沙箱文件 → 内容哈希 + 行锚点；拒绝绝对路径与越界） | 已实现 |
-| 写效果工具（工作底稿追加：内容寻址、原子落盘、按策略审批） | 已实现 |
-| 外部连接器（命名源 + 主机持有端点/凭证 + 超时不重试 + 大小上限） | 已实现（默认关闭） |
-| 数据采集（`collect_source`：安全抓取 + HTML/JSON 转文本 + 入证据；支持 Crawl4AI 侧车） | 已实现（默认关闭） |
-| 工具目录面板（允许/授权、effect、契约版本、每次运行用量） | 已实现 |
-| 长期案例记忆（终态轨迹 → 确定性案例簿；召回事件入链；首轮上下文注入 top-3；删除只墓碑） | 已实现 |
-| 双时态事实记忆（as-of / known-at 查询；修正追加不覆盖；每条事实带来源事件哈希） | 已实现（金融域抽取器） |
-| 域模块协议（模块自给世界/工具/规划器/验证器；装配层按 `scenario.module` 显式绑定） | 已实现 |
-| 对话（流式回答 / 追问 / 重新生成 / 编辑上一条 / 文本附件 / 停止；线程分页与归档；预算、事件链与收据） | 已实现 |
-| 模型配置（设置页填写 API Key / 模型 / 价格；本机保存、API 脱敏、优先级 设置>环境变量） | 已实现 |
-| 通用委托（文件读写 / 锚定编辑 / 受限命令 / 网页抓取；默认入口） | 已实现 |
-| MCP 桥接（导入即注册，调用仍经门控、预算与审批） | 已实现（stdio；未配置即关闭） |
-| 独立验证（Runtime 重算，模型不能自报完成） | 已实现 |
-| 人工审批门（关键步骤 / 逐步 / 自动、超时拒绝、本次运行免询） | 已实现 |
-| 运行时人工控制（计划跳过 / 提前、预算调高、失败续跑） | 已实现 |
-| 三步建单向导（类型 → 说明 → 审批，提交即开跑） | 已实现 |
-| 运行中操作员消息（插话排队 → 下一轮入链，人与机器同一个哈希链） | 已实现 |
-| 多会话并行（会话标签、后台运行持续流式、切换不丢画面） | 已实现 |
-| 增量事件流（SSE 首帧快照 + 逐事件追加，长任务不再全量重发） | 已实现 |
-| 斜杠命令与输入历史（/new /report /ledger /stop /allow /deny /help /clear，↑↓ 历史） | 已实现 |
-| 审计报告签发（自包含 HTML 底稿：结论、账单、证据、人工决定、链附录，可打印/离线转发） | 已实现 |
-| Evidence Authority（区分可用与不可用证据） | 已实现（金融域） |
-| Trace 导出与可视化重算 | 已实现 |
-| 实时控制台（SSE 直播 / 运行记录 / 只读回放） | 已实现 |
-| SFT 数据管线（轨迹 → 训练样本，训练与推理 prompt 逐字节一致） | 已实现（2271 条样本） |
-| LLM 层实验装置（文件式 oracle，复用真实 prompt / 门控 / 验证） | 已实现（实验） |
-| 澄清式委托（消息 → 理解摘要 → 选项 → TaskSpec → 任务卡） | 已实现（确定性 clarifier） |
-| Executive–Policy 决策包（候选动作 + fast path + LocalPolicy + choice SFT） | 已实现（P2 lab：上下文降 79.8%） |
-| Packet 评测平面（结果 / 模型调用 / 修复 / tokens / packet 体积） | 已实现（MockPolicy 基线：2/2 正确，平均降 79.1%） |
-| 判断面与审查记录（事实 / 解释候选 / 待判断 / 决定入链） | 已实现（v1，金融核查） |
-| Reviewer profile（同类历史判断聚合 / 建议只预填 / 报告带判断记录） | 已实现（v1） |
-| 模型验收（Ollama → packet eval → 结果/链/修复判定） | 已实现（等待本地 GGUF） |
-| 本地模型供应商（Qwen3-4B LoRA · OpenAI 兼容 · 零依赖） | **demo 可显式启用**（`--provider local`）；默认仍 mock |
-| 真实供应商（Kimi / DeepSeek / 任意 OpenAI 兼容端点） | **一套共享引擎 + preset 前端**；对话在设置页选，委托走环境变量或 `FCODE_OPENAI_COMPAT_PROVIDERS`；价格快照 + 预算预留 + 无重试 |
-| Kimi 实测 | **kimi-k2.6 真实 E2E 已通过**；K2 系列将于 2026-12 底下线，需按账号迁移 `KIMI_MODEL` |
+| 项目入口与完整使用说明 | [Runtime README](flowcredit/README.md) |
+| 系统架构 | [architecture](flowcredit/docs/architecture.md) |
+| 产品与判断哲学 | [philosophy](flowcredit/docs/philosophy.md) |
+| 通用 Agent 能力 | [general-capabilities](flowcredit/docs/general-capabilities.md) |
+| 上下文与记忆 | [context-management](flowcredit/docs/context-management.md) |
+| 多 Agent 探索 | [multi-agent-lab](flowcredit/docs/multi-agent-lab.md) |
+| 视觉与交互系统 | [design-system](flowcredit/docs/design-system.md) |
+| 桌面控制台设计 | [desktop-design](flowcredit/docs/desktop-design.md) |
+| 技术债与重构记录 | [refactor-evaluation](flowcredit/docs/refactor-evaluation.md) |
 
-## 数字（每个数字附一条复现命令）
+## 项目结构
 
-在 `flowcredit/` 下运行：
-
-```sh
-python -m unittest discover -s tests 2>&1 | sed -n 's/^Ran \([0-9]*\) tests.*/\1/p'                 # 506 项 Python 单元与场景测试，全部离线
-node --test viewer/tests/*.test.js 2>&1 | sed -n 's/^ℹ pass \([0-9]*\)$/\1/p'                         # 58 项前端纯函数测试（Node 内置 runner，无框架依赖）
-python demo.py --list | grep -c '^  '                                                                  # 8 个可复现场景（1 通用委托 + 7 参考负载故障注入）
-python -c "import tomllib; print(len(tomllib.load(open('pyproject.toml','rb'))['project'].get('dependencies', [])))"   # 0 个第三方运行时依赖
-ls docs/*.md | wc -l                                                                                   # 24 份文档
-python demo.py full --fast | grep -E '轮次|轨迹自检'                                                     # 9 轮 / 49 个事件 / 4500 µUSD，读时全量重算哈希链
+```text
+flowcredit/
+  src/flowagent/   Agent Runtime、Provider、工具、记忆与场景
+  viewer/          Work / Chat 控制台、SSE 与 Trace 回放
+  desktop/         桌面应用入口与构建脚本
+  tests/           Python 单元、集成与端到端测试
+  docs/            架构、设计、能力与评估文档
+  labs/            离线实验，不进入产品主路径
+archive/           v1 Node 研究原型，不参与当前 CI
 ```
 
-控制台是零构建静态文件 + **1** 个标准库 server（`viewer/server.py`），离线可用；
-通用委托 **5** 轮完成“写脚本 → 运行 → 锚定修复 → 复跑 → 归档”
-（`python demo.py general-research --fast`）。
+---
 
-## 目录
+<div align="center">
 
-```
-flowcredit/            Python Runtime、控制台与 Demo
-  src/flowagent/
-    core/              canonical JSON、契约与状态机、计划层、sqlite + 哈希链、签名收据
-    runtime/           门控、预算、单轮 harness、多轮 loop（含恢复）
-    chat.py            对话服务：线程、预算、事件投影
-    chat_config.py     provider 解析：设置 > 环境 > 默认
-    chat_provider.py   对话传输：mock + OpenAI 兼容 SSE
-    intake.py          委托入口：模板、审批档位、初始状态
-    review.py          判断面与判断记录（review_profile.py）的投影
-    pacing.py          进程级调用间隔（按 provider + base_url，对话与委托共用）
-    domains/           域模块注册表：general-work（默认）+ finance-research（参考负载）
-    tools/             封闭注册表：general/ 文件、命令、网页、提问；mcp/ 桥；finance/ 参考负载
-    providers/         mock / local / kimi / deepseek / openai-compatible / oracle（均只提议，不执行）
-    memory/            短期观测摘要 + 案例簿 + 双时态事实簿 + 产物簿（确定性投影、可解释检索）
-    trajectory/        记录、导出、独立重算
-    demo/              CLI、终端渲染、八个场景、模块装配、崩溃 worker
-    sft/               语音与选择头的离线数据与评估入口
-  viewer/              实时控制台 + Trace 回放（零依赖零构建）
-    server.py          唯一入口：静态文件 + JSON/SSE API
-    console_manager.py 运行管理（创建、历史恢复、产物簿接线）
-    console_runtime.py Runtime 装配与场景目录
-    console_common.py  共享契约（FINISHED_STATUS、trace 路径 jail、模型目录）
-    core/              前端纯函数层（markdown、SSE 解析、运行卡片、回合折叠、侧栏、AI 头像）
-    tests/             Node 内置 runner 的前端测试
-  tests/               506 项 unittest（含两个真起服务器子进程的边界测试）
-  docs/                24 份：架构、设计、框架对照、能力边界、JD 映射
-  labs/                离线实验（多智能体等，不进 CI 主路径）
-archive/               v1：Node.js 研究原型（保留，不参与 CI）
-mcp.json.example       MCP 桥的配置样例（stdio 服务器 + 只读标注）
-desktop/               pywebview 壳与打包脚本（GitHub Releases 分发）
-```
+**If it cannot be verified, it is not done.**
 
-更细的分层与数据流见 [architecture.md](flowcredit/docs/architecture.md)；每份文档的状态与
-管辖范围写在它自己的头部。
-## v1 与 v2
+Apache License 2.0 · [LICENSE](LICENSE)
 
-`archive/node-prototype/` 是 v1：一个 Node.js 研究原型，用来回答"该不该训练模型"，结论是 `NO_GO`——规则基线解掉了全部冻结任务。它保留了 291 项测试、冻结预注册和一份诚实的负结果报告，标签 `archive/node-research-prototype`。
+FCode 是一个独立开源项目，不是 Moonshot AI 官方产品。
 
-v2 不再问那个问题。它把 v1 里真正有价值的部分——可恢复、可审计、主机可控的执行语义——重写成 Python，并做成一条命令能跑完的演示。
-
-## 边界
-
-- 真实模型默认关闭。真实传输需要一次性授权（≤1h）、凭证提供者、主机复核的价格快照与硬预算，缺一不可。
-- 演示中的金额、公司、资料全部是合成的，不是真实财报，也不构成任何投资或信贷意见。金融研究只是参考负载。
-- 通用委托抓取的网页内容如实标注 `content_truth: not-verified`：Runtime 复核文件状态哈希、预算与链，不核实网页内容真伪。受限终端是命令级约束（白名单、参数策略、审批、收据），不是 OS 级沙箱。
-- 签名收据证明的是"这次调用发生了、内容是什么"，不证明供应商账单准确。`external_billing` 恒为 `not-verified`。
-- 哈希链保护的是本地记录的一致性。能同时改写数据库与签名密钥的攻击者不在威胁模型内。
-- 未做：RAG、FastAPI、前端工程化。这些不是遗漏，是刻意的范围边界。
-- 多智能体目前只有一个确定性角色编排 lab（`flowcredit/labs/multi_agent/`），不是产品能力；设计与边界见 [multi-agent-lab.md](flowcredit/docs/multi-agent-lab.md)。
-
-## 许可
-
-Apache License 2.0（见 [LICENSE](LICENSE)）。`archive/node-prototype/vendor/` 保留其原始 MIT 许可证。
-
-内核保持零第三方运行时依赖；桌面端的打包依赖（pywebview、PyInstaller）属于分发层，不进运行时。
-
-控制台的手绘图标来自 [oreo-design/doodle-icons](https://github.com/oreo-design/doodle-icons)（MIT），许可证随图标存放于 `flowcredit/viewer/icons/doodle/LICENSE`。
+</div>
