@@ -51,7 +51,7 @@ svg.i {
   cursor: pointer;
   transition: background-color var(--t) ease, border-color var(--t) ease, box-shadow var(--t) ease;
 }
-.side-new:hover { border-color: var(--ink3); box-shadow: 0 1px 4px rgba(0,0,0,.06); }
+.side-new:hover { border-color: var(--ink-3); box-shadow: 0 1px 4px rgba(0,0,0,.06); }
 .side-new svg, .side-new .d-icon { color: var(--text-3); }
 .kbtn {
   margin-left: auto; border: 1px solid var(--line); background: none;
@@ -2001,7 +2001,7 @@ body.reduce-motion *, body.reduce-motion *::before, body.reduce-motion *::after 
   color: var(--text-1); font: var(--fs-3)/1.5 var(--font-ui); padding: 8px 10px; outline: none;
 }
 .sch-form textarea { resize: vertical; }
-.sch-form textarea:focus, .sch-form select:focus, .sch-form input:focus { border-color: var(--ink3); }
+.sch-form textarea:focus, .sch-form select:focus, .sch-form input:focus { border-color: var(--ink-3); }
 .sch-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
 .sch-actions { display: flex; align-items: center; justify-content: space-between; margin-top: 12px; }
 .sch-honest { font-size: 11px; color: var(--warn); }
@@ -2137,3 +2137,108 @@ body.reduce-motion *, body.reduce-motion *::before, body.reduce-motion *::after 
 .side-new .s-icon, .side-nav .s-icon, .foot-item .s-icon { width: 15px; height: 15px; }
 .gate-ico .s-icon { width: 14px; height: 14px; }
 .attach-sum .s-icon { width: 15px; height: 15px; color: var(--text-3); }
+
+/* 预留槽位页（Kimi Work 的 4 个未实现槽位）。页面直说"对应什么 / 需要什么 / 现在能做什么"，
+   所以样式照 .sch-honest 的克制路线：事实成行，不装扮成功能。 */
+.slot-facts { margin: 4px 0 18px; border-top: 1px solid var(--line); }
+.slot-row { display: flex; gap: 16px; padding: 12px 2px; border-bottom: 1px solid var(--line); align-items: baseline; }
+.slot-k { flex: 0 0 84px; color: var(--ink-3); font-size: 12px; letter-spacing: .04em; }
+.slot-v { flex: 1 1 auto; min-width: 0; color: var(--text-1); font-size: 14px; }
+.slot-go { border: 0; background: none; padding: 0; color: var(--accent); font: inherit; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+.slot-note { margin-left: 10px; color: var(--ink-3); font-size: 13px; }
+.slot-why { max-width: var(--reading-w, 768px); color: var(--ink-2); font-size: 14px; line-height: 1.7; }
+
+/* Real-project Work: repository context, files and reviewable patch. */
+.project-attach-form { display: grid; gap: 12px; padding: 12px 10px 8px; }
+.project-attach-form label { display: grid; gap: 6px; color: var(--text-2); font-size: 12px; }
+.project-attach-form input { width: 100%; box-sizing: border-box; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--raised); color: var(--text-1); padding: 9px 10px; font: 12px var(--font-mono); outline: none; }
+.project-attach-form input:focus { border-color: var(--accent-line); }
+.project-context { display: flex; align-items: center; gap: 12px; max-width: var(--reading-w, 768px); margin: 10px auto; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--raised); }
+.project-context-mark { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 7px; background: var(--active); color: var(--accent); }
+.project-context > div { min-width: 0; flex: 1; display: grid; }
+.project-context b { font-size: 13px; }
+.project-context > div span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-3); font: 10px var(--font-mono); }
+.project-context code { max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); font-size: 11px; }
+.project-isolated { flex: none; border: 1px solid var(--line); border-radius: 999px; padding: 3px 8px; color: var(--text-2); font-size: 10px; }
+.project-result { max-width: min(1080px, calc(100% - 32px)); margin: 20px auto; overflow: hidden; }
+.project-result-head { display: flex; align-items: center; gap: 12px; padding: 16px 18px 4px; }
+.project-result-head > div { flex: 1; }
+.project-result-head h3 { margin: 3px 0 0; font-size: 17px; font-weight: 580; }
+.project-result-head .eyebrow { color: var(--text-3); font: 9px var(--font-mono); letter-spacing: .12em; }
+.project-result-source { padding: 4px 18px 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-3); font: 11px var(--font-mono); }
+.project-result-layout { display: grid; grid-template-columns: minmax(170px, 26%) 1fr; min-height: 160px; max-height: 480px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.project-file-list { overflow: auto; padding: 8px; border-right: 1px solid var(--line); }
+.project-file-list button { display: flex; align-items: baseline; gap: 8px; width: 100%; padding: 8px; border: 0; border-radius: 6px; background: transparent; color: var(--text-1); text-align: left; font: 11px var(--font-mono); cursor: pointer; }
+.project-file-list button:hover { background: var(--active); }
+.project-file-status { flex: none; color: var(--ok); }
+.project-diff { overflow: auto; padding: 10px 0; background: var(--code-bg, var(--raised)); font: 11px/1.65 var(--font-mono); }
+.project-diff-line { min-width: max-content; padding: 0 12px; white-space: pre; }
+.project-diff-line.add { color: var(--ok); background: rgba(21,128,61,.06); }
+.project-diff-line.del { color: var(--bad); background: rgba(220,38,38,.05); }
+.project-diff-line.hunk { color: var(--accent); }
+.project-file-content { max-height: 420px; overflow: auto; margin: 0; padding: 16px; border-bottom: 1px solid var(--line); white-space: pre-wrap; color: var(--text-1); font: 11px/1.65 var(--font-mono); }
+.project-result-foot { display: flex; align-items: center; gap: 12px; padding: 10px 14px; color: var(--text-3); font-size: 11px; }
+.project-result-foot > span:first-child { white-space: pre-wrap; }
+@media (max-width: 720px) { .project-context code { display: none; } .project-result-layout { grid-template-columns: 1fr; } .project-file-list { max-height: 150px; border-right: 0; border-bottom: 1px solid var(--line); } }
+
+/* Work 主交互：项目上下文始终属于 composer，代码与过程分视图阅读。 */
+.project-composer { padding: 10px 12px 0; }
+.project-composer[hidden] { display: none; }
+.project-context-button { display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; padding: 5px 7px; border: 0; border-radius: 8px; background: transparent; color: var(--text-2); text-align: left; cursor: pointer; }
+.project-context-button:hover { background: var(--active); }
+.project-context-icon { display: grid; place-items: center; flex: none; width: 22px; height: 22px; border-radius: 6px; background: var(--active); color: var(--accent); font-size: 12px; }
+.project-context-name { flex: none; max-width: 42%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-1); font-size: 12px; font-weight: 560; }
+.project-context-mode { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-3); font-size: 11px; }
+.project-context-chevron { color: var(--text-3); }
+.project-quick-edit { display: grid; gap: 10px; padding: 4px 4px 8px; }
+.project-quick-head { display: flex; align-items: baseline; gap: 10px; }
+.project-quick-head b { font-size: 12px; }
+.project-quick-head span, .project-quick-foot { color: var(--text-3); font-size: 10px; }
+.project-quick-edit label { display: grid; gap: 5px; color: var(--text-2); font-size: 11px; }
+.project-quick-edit input { box-sizing: border-box; width: 100%; padding: 8px 10px; border: 1px solid var(--line-strong); border-radius: 8px; outline: none; background: var(--canvas); color: var(--text-1); font: 12px var(--font-mono); }
+.project-quick-edit input:focus { border-color: var(--accent-line); }
+.project-quick-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.project-quick-foot .a-btn { padding: 5px 12px; }
+.mode-chat .project-composer { display: none; }
+
+.project-work-layout { width: 100%; min-width: 0; }
+.work-view-tabs { position: sticky; top: 0; z-index: 5; display: flex; gap: 24px; max-width: min(1120px, calc(100% - 40px)); margin: 0 auto 4px; padding: 0 4px; border-bottom: 1px solid var(--line); background: var(--canvas); }
+.work-view-tab { position: relative; padding: 10px 1px 11px; border: 0; background: transparent; color: var(--text-3); font-size: 13px; cursor: pointer; }
+.work-view-tab:hover { color: var(--text-1); }
+.work-view-tab.active { color: var(--text-1); font-weight: 580; }
+.work-view-tab.active::after { content: ""; position: absolute; right: 0; bottom: -1px; left: 0; height: 2px; border-radius: 2px; background: var(--text-1); }
+.work-pane { min-width: 0; }
+.work-pane[hidden] { display: none; }
+.work-pane-empty { display: flex; flex-direction: column; align-items: center; gap: 8px; max-width: 680px; margin: 80px auto; padding: 24px; color: var(--text-3); text-align: center; }
+.work-pane-empty b { color: var(--text-1); font-size: 15px; font-weight: 560; }
+.work-pane-empty span { font-size: 12px; }
+.project-result, .project-files { max-width: min(1120px, calc(100% - 40px)); margin: 18px auto 32px; }
+.project-result-layout { min-height: 280px; max-height: min(62vh, 680px); }
+.project-file-list button { min-width: 0; }
+.project-file-list button > span:nth-child(2) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.project-file-list button.selected { background: var(--active); }
+.project-file-list button small { margin-left: auto; color: var(--text-3); font-size: 9px; white-space: nowrap; }
+.project-files { overflow: hidden; }
+.project-files-head { display: flex; align-items: center; gap: 12px; padding: 14px 16px; border-bottom: 1px solid var(--line); }
+.project-files-head > div { display: grid; flex: 1; gap: 3px; }
+.project-files-head b { font-size: 14px; }
+.project-files-head span { color: var(--text-3); font-size: 10px; }
+.project-browser { display: grid; grid-template-columns: minmax(210px, 28%) minmax(0, 1fr); min-height: min(58vh, 620px); }
+.project-browser .project-file-list { max-height: min(62vh, 680px); }
+.project-browser-content { max-height: min(62vh, 680px); border: 0; white-space: pre; overflow: auto; }
+.project-files .project-file-content { color: var(--text-2); }
+.project-work-layout .process-details, .project-work-layout .turns, .project-work-layout #result-slot { max-width: min(920px, calc(100% - 32px)); margin-right: auto; margin-left: auto; }
+.project-work-layout .objective, .project-work-layout .project-context { max-width: min(860px, calc(100% - 40px)); }
+.project-work-layout .live-note { max-width: min(860px, calc(100% - 40px)); margin-right: auto; margin-left: auto; }
+
+@media (max-width: 720px) {
+  .project-context-mode { display: none; }
+  .project-context-name { max-width: calc(100% - 64px); }
+  .work-view-tabs { max-width: calc(100% - 24px); gap: 22px; }
+  .project-result, .project-files { max-width: calc(100% - 20px); }
+  .project-browser { grid-template-columns: 1fr; }
+  .project-browser .project-file-list { max-height: 180px; border-right: 0; border-bottom: 1px solid var(--line); }
+  .project-browser-content { min-height: 260px; }
+  .project-result-foot { flex-wrap: wrap; }
+  .project-result-foot .grow { display: none; }
+}

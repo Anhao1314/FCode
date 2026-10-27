@@ -57,6 +57,9 @@ class Harness:
         verifier: Callable[[Observation], dict[str, Any]] | None = None,
         state_fn: Callable[[Any], dict[str, Any]] | None = None,
         instruction: str | None = None,
+        prompt_profile: str | None = None,
+        plan_extension: bool = False,
+        verification: Any = None,
     ) -> None:
         self.store = store
         self.registry = registry
@@ -72,6 +75,23 @@ class Harness:
         #: DomainModule.instruction). ``None`` keeps the read-only default the
         #: finance reference workload is frozen against.
         self.instruction = instruction
+        #: The system-prompt profile this run is bound by (see
+        #: :mod:`flowagent.providers.prompt`). ``None`` selects the default and,
+        #: more importantly, emits no selector into the context — which is what
+        #: keeps finance contexts byte-identical to the frozen SFT set.
+        self.prompt_profile = prompt_profile
+        #: Whether the model may propose additional plan todos (see
+        #: DomainModule.plan_extension). Carried on the harness so every caller
+        #: that builds one — demo, console, tests — gets the domain's own
+        #: answer instead of having to repeat it.
+        self.plan_extension = plan_extension
+        #: The declared result obligation this task must satisfy, or ``None``.
+        #: A :class:`~flowagent.runtime.verification.VerificationScope`: the
+        #: loop dispatches its obligation through the ordinary gate/budget/event
+        #: path and the domain judges the observation. ``None`` means the task
+        #: declared no engineering-result obligation, and then the terminal
+        #: result must say that only file state was verified.
+        self.verification = verification
 
     # ------------------------------------------------------------------ setup
 
@@ -190,9 +210,11 @@ class Harness:
         else:
             reserve_tokens = int(getattr(provider, "reserve_tokens", self.RESERVED_TOKENS))
             reserve_cost = int(getattr(provider, "reserve_cost_microusd", self.RESERVED_COST_MICROUSD))
+        reserve_tokens = int(reserve_tokens)
+        reserve_cost = int(reserve_cost)
         self.budget(task).charge_call(
-            tokens=int(reserve_tokens),
-            cost_microusd=int(reserve_cost),
+            tokens=reserve_tokens,
+            cost_microusd=reserve_cost,
         )
 
         try:
@@ -201,6 +223,12 @@ class Harness:
             return self._unknown(task, intent, error), None
 
         try:
+            self.budget(task).settle_call(
+                reserved_tokens=reserve_tokens,
+                reserved_cost_microusd=reserve_cost,
+                actual_tokens=proposal.tokens,
+                actual_cost_microusd=proposal.cost_microusd,
+            )
             plan = validate_plan(proposal.plan)
         except AgentError as error:
             # A response arrived and it was illegal. That is a confirmed failure,

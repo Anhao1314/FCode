@@ -4,14 +4,22 @@ import {
   canonical, sha256Hex, verifyChain, esc, pct, pp, num, shortHash, stripTags,
 } from "./core/format.js";
 import { parseSseFrame, renderMarkdown } from "./core/chat-format.js";
+import { createReviewUI } from "./app/review.js";
+import { createChatRuns } from "./app/chat-runs.js";
+import { createRunEvidence } from "./app/run-evidence.js";
+import { createProjectWork, directWorkRunSpec, isProjectTrace, parseVerificationCommand, projectDraftRows } from "./app/project-work.js";
+import { createChatConfig } from "./app/chat-config.js";
+import { createChatUI } from "./app/chat-ui.js";
 import { chatMessageHtml } from "./core/chat-view.js";
 import { aiAvatarHtml } from "./core/ai-avatar.js";
 import { actionCardHtml, mirrorFrom, runMirrorHtml } from "./core/run-card.js";
 import { foldRuns, foldSummary, isQuietRound } from "./core/round-fold.js";
+import { moonshotStageHtml } from "./core/moonshot-stage.js";
+import { bindLatestScroll, bindWorkspaceNavigation } from "./core/work-surface.js";
 import {
   WORK_NAV, CHAT_NAV, CHAT_MORE_NAV, chatRowsHtml, chatSectionHtml, modeChrome,
-  navItemsHtml, pinnedSectionHtml, projectSectionHtml, quickStartHtml, runRowsHtml,
-  taskSectionHtml,
+  navItemsHtml, pinnedSectionHtml, projectSectionHtml, quickStartHtml, reservedSlots,
+  runRowsHtml, taskSectionHtml,
 } from "./core/side-nav.js";
 
 /* =================================================================== 边界声明
@@ -248,6 +256,7 @@ let modelChoice = (() => {
 modelChoice = {
   key: typeof modelChoice.key === "string" ? modelChoice.key : "mock",
   effort: EFFORT_LEVELS.includes(modelChoice.effort) ? modelChoice.effort : "medium",
+  touched: modelChoice.touched === true,
 };
 /* 草稿预览的预算联动：/api/models?template= 返回各模型在该模板下真实生效的
    预算顶（服务端是缩放的单一事实源），按模板缓存，选择器变更即失效。 */
@@ -264,8 +273,33 @@ const attach = {
   budget: null,          // null = 未改，用当前模型/模板的服务端草案
   sources: [],           // 通用委托：fetch_url 可访问的 URL 清单（spec.sources）
   sourcesDraft: "",
+  project: loadProjectContext(),
+  projectEditing: false,
   mcp: { servers: [], loaded: false },  // MCP 导入的真实可用性
 };
+const projectWork = createProjectWork({ esc });
+
+function loadProjectContext() {
+  try {
+    const saved = JSON.parse(localStorage.getItem("fa.workProject") || "{}");
+    return {
+      path: typeof saved.path === "string" ? saved.path : "",
+      verification: typeof saved.verification === "string" && saved.verification ? saved.verification : "pytest -q",
+    };
+  } catch { return { path: "", verification: "pytest -q" }; }
+}
+
+function saveProjectContext() {
+  try { localStorage.setItem("fa.workProject", JSON.stringify(attach.project)); } catch { /* quota */ }
+}
+
+function renderProjectComposer() {
+  const host = document.getElementById("project-composer");
+  if (!host) return;
+  host.hidden = sidebarMode !== "work" || chat.active;
+  host.innerHTML = projectWork.projectComposerHtml(attach.project, attach.projectEditing);
+}
+
 let scenesOpen = localStorage.getItem("fa.scenesOpen"); // null | "1" | "0"
 
 /* 多会话：每个 run 一个会话对象；后台会话保持 SSE 流，只是不渲染 */
@@ -291,6 +325,7 @@ function renderMain(html, { mode = "run", scroll = null } = {}) {
   paintNavActive();
   setStageMode(mode === "empty");
   document.getElementById("app")?.classList.toggle("chat-mode", mode === "chat");
+  renderProjectComposer();
   // composer 只属于对话语境：功能页（账本 / 判断记录 / 定时任务 / 设置）不显示输入框
   const composerWrap = document.querySelector(".composer-wrap");
   if (composerWrap) composerWrap.hidden = (mode === "reviews" || mode === "scheduled"
@@ -308,7 +343,62 @@ const MODE_ENTRY = {
   settings: () => openSettingsPage(),
   reviews: () => renderReviews(),
   scheduled: () => renderScheduledPage(),
+  // Kimi Work 侧的 4 个槽位：结构在侧栏里复刻到位，能力本身没有实现。
+  // 打开的是**明确标注的预留页**，不是伪装成可用的空页。
+  canvas: () => renderReservedPage("canvas"),
+  plugins: () => renderReservedPage("plugins"),
+  remoteControl: () => renderReservedPage("remoteControl"),
+  apps: () => renderReservedPage("apps"),
 };
+
+/* 预留槽位页。Kimi Work 的这 4 个条目在 FCode 里没有对应能力，所以页面直说三件事：
+   它对应 Kimi 的哪一项、落地需要什么、现在能做什么（指向已有的近似能力）。
+   页面文案与侧栏条目同源（reservedSlots()），不在两处各写一遍。 */
+function renderReservedPage(key) {
+  const slot = reservedSlots()[key];
+  if (!slot) throw new Error(`unknown reserved slot: ${key}`);
+  document.getElementById("tb-title").textContent = slot.label;
+  document.getElementById("tb-chips").innerHTML = "";
+  setFoot(slot.label + " · 预留槽位", "");
+  const near = {
+    canvas: ["看板 · 账本", "ledger", "先把这一轮的产物与来源看全"],
+    plugins: ["MCP 桥", "ledger", "工具可以按 mcp.json 导入，但那是工具不是插件"],
+    remoteControl: ["设置 · 安全", "settings", "运行的访问边界目前固定在本机 loopback"],
+    apps: ["设置 · 模型", "settings", "目前只有本地模板与主机声明的兼容端点"],
+  }[key];
+  renderMain(
+    '<section class="page-head"><p class="eyebrow">RESERVED SLOT</p>'
+    + '<h1 class="page-title">' + esc(slot.label) + '</h1>'
+    + '<p class="page-meta">这个位置对应用户界面里 Kimi Work 侧栏的一项，'
+    + 'FCode 保留了这个槽位，但该能力<strong>尚未实现</strong>。它不会假装可用。</p></section>'
+    + '<div class="slot-facts">'
+    + '<div class="slot-row"><span class="slot-k">Kimi 对应</span><span class="slot-v">'
+    + esc(slot.kimi || "—") + '</span></div>'
+    + '<div class="slot-row"><span class="slot-k">落地需要</span><span class="slot-v">'
+    + esc(slot.needs || "—") + '</span></div>'
+    + '<div class="slot-row"><span class="slot-k">现在能做的</span><span class="slot-v">'
+    + '<button class="slot-go" data-open-slot="' + esc(near[1]) + '">' + esc(near[0]) + '</button>'
+    + '<span class="slot-note">' + esc(near[2]) + '</span></span></div>'
+    + '</div>'
+    + '<p class="slot-why">为什么留着它：侧栏是复刻 Kimi Work 的结构，'
+    + '槽位对齐才能一眼看出"哪些是已有的、哪些是还欠的"。'
+    + '把未实现的能力说成已实现，比留一个标好的空位更糟。</p>',
+    { mode: key });
+}
+
+document.addEventListener("click", event => {
+  const jump = event.target.closest("[data-open-slot]");
+  if (jump) renderMode(jump.dataset.openSlot);
+  const suggestion = event.target.closest("[data-stage-prompt]");
+  if (suggestion) {
+    const input = document.getElementById("composer-ta");
+    input.value = suggestion.dataset.stagePrompt || "";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    autosize(input);
+    input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
+  }
+});
 
 function renderMode(mode, payload = {}) {
   if (mode !== "chat") leaveChat();
@@ -431,7 +521,7 @@ function navCountOf(open) {
 
 function renderSidebarNav() {
   const workNav = document.getElementById("work-nav");
-  if (workNav) workNav.innerHTML = navItemsHtml(WORK_NAV, navCounts);
+  if (workNav) workNav.innerHTML = navItemsHtml(WORK_NAV.filter(item => !item.reserved), navCounts);
   const chatNav = document.getElementById("chat-top-nav");
   if (chatNav) chatNav.innerHTML = navItemsHtml(CHAT_NAV, navCounts);
   const more = document.getElementById("more-nav");
@@ -458,6 +548,8 @@ function renderNav() {
   // 侧栏内容全部是注入的，图标槽位要在注入之后再水合一次
   const frame = document.querySelector(".sidebar");
   if (frame) hydrateDoodles(frame);
+  // 内容换了但没滚动时，滚动遮罩的显隐也要跟上（否则停在上一轮的判断上）
+  paintScrollMasks();
 }
 
 /* 侧栏「更多」：对话侧栏把二级入口收进来（kimi.com 的 next-sidebar__more-list）；
@@ -541,7 +633,11 @@ function quickState() {
   return {
     dismissed: !!seen.dismissed,
     ledgerSeen: !!seen.ledgerSeen || ledgerOpen,
-    providerReady: !!quickState.providerReady,
+    // 曾经写成 `!!quickState.providerReady`——那是个从未被赋值的静态属性，
+    // 所以"接通一个模型 provider"这一步永远不可能完成，0/3 卡住。
+    // 现在由真实状态推导：目录里存在任何可用的非 mock provider 才算接通
+    // （mock 是离线确定性替身，接通它不等于接通了模型）。
+    providerReady: Array.isArray(modelCatalog) && modelCatalog.some(m => m.available && m.key !== "mock"),
     firstRunDone: runHistory.some(run => stateClass(run.status) === "ok"),
   };
 }
@@ -549,9 +645,8 @@ function quickState() {
 function renderQuickStart() {
   const host = document.getElementById("side-quickstart");
   if (!host) return;
-  // Kimi 的 sidebar-quickstart 属于 Kimi Work 的 footer；对话侧栏没有这一段
-  host.innerHTML = sidebarMode === "work" ? quickStartHtml(quickState()) : "";
-  hydrateDoodles(host);
+  // 真实任务优先：不把演示引导当作 Work 的主入口。
+  host.innerHTML = "";
 }
 
 function dismissQuickStart() {
@@ -559,6 +654,17 @@ function dismissQuickStart() {
   try { seen = JSON.parse(localStorage.getItem(QUICK_KEY) || "{}"); } catch { seen = {}; }
   seen.dismissed = true;
   try { localStorage.setItem(QUICK_KEY, JSON.stringify(seen)); } catch { /* quota */ }
+  // Kimi 的 quickstart-dismiss：scale .804 + 淡出，不是"啪"地消失。
+  // 播放失败也要收场（兜底 timeout），否则卡片会留在那儿点不动。
+  const card = document.querySelector(".sidebar-quickstart");
+  if (card && !document.body.classList.contains("reduce-motion")) {
+    let settled = false;
+    const settle = () => { if (settled) return; settled = true; renderQuickStart(); };
+    card.classList.add("dismissing");
+    card.addEventListener("animationend", settle, { once: true });
+    setTimeout(settle, 260);
+    return;
+  }
   renderQuickStart();
 }
 
@@ -989,888 +1095,18 @@ function renderRuns() {
 
 /* ------------------------------- RENDER LAYER — 证据面板内容与事件列表 */
 
-const MACHINE_EVENTS = new Set([
-  "model_started", "plan_validated", "plan_updated", "execution_started",
-  "policy_requested", "policy_decided", "auto_action",
-  "execution_resumed", "tool_started",
-]);
+const {
+  renderRail, renderPlan, renderMeters, tokenSplitHtml, renderRound,
+  resultConclusion, failureConclusion,
+} = createRunEvidence({
+  esc, pct, pp, num, shortHash, stripTags, doodleSvg, isQuietRound, describe, lastBudget,
+  EVENT_DOT, HUMAN_EVENTS, REVIEW_LABEL, ICON, FAILURE_REASONS, evExpanded,
+  getRailFilter: () => railFilter,
+  getRailTab: () => railTab,
+  getToolContracts: () => toolContracts,
+});
 
-function setTabCount(name, value) {
-  const el = document.querySelector(`[data-count="${name}"]`);
-  if (el) el.textContent = value === "" ? "" : String(value);
-}
 
-function railEmptyHtml() {
-  return `<div class="rail-empty-doc">${doodleSvg("file-text")}
-    <div class="t">案卷尚未展开</div>
-    <div class="dim">从左侧选择一条委托，或运行一个新的任务</div>
-  </div>`;
-}
-
-function eventItemHtml(e) {
-  const human = HUMAN_EVENTS.has(e.type);
-  const detail = summariseEvent(e);
-  const mark = human
-    ? `<span class="ev-human">人</span>`
-    : `<span class="ev-mark ${EVENT_DOT[e.type] || ""}"></span>`;
-  return `<div class="ev-item${human ? " human" : ""}">
-    <div class="ev-line">
-      ${mark}
-      <span class="ev-type">${esc(e.type)}</span>
-      <span class="grow"></span>
-      <span class="ev-ref" data-copy="${esc(e.hash || "")}" title="点击复制完整哈希">#${e.sequence} · ${esc(shortHash(e.hash))}</span>
-    </div>
-    ${detail ? `<div class="ev-detail">${detail}</div>` : ""}
-  </div>`;
-}
-
-function renderEvents(trace, check) {
-  const all = trace.events || [];
-  const byRound = new Map();
-  for (const event of all) {
-    const round = Number((event.payload || {}).detail?.round) || 0;
-    if (!byRound.has(round)) byRound.set(round, []);
-    byRound.get(round).push(event);
-  }
-  const chips = [
-    ["key", "关键"], ["all", "全部"], ["human", "人工"],
-  ].map(([key, label]) => `<button class="rf${railFilter === key ? " active" : ""}" data-rail-filter="${key}">${label}</button>`).join("");
-
-  let html = `<div class="rail-filters">${chips}</div>`;
-  const rounds = [...byRound.keys()].sort((a, b) => a - b);
-  for (const round of rounds) {
-    const events = byRound.get(round);
-    const human = events.filter(e => HUMAN_EVENTS.has(e.type));
-    const machines = events.filter(e => MACHINE_EVENTS.has(e.type));
-    const shown = railFilter === "human"
-      ? human
-      : events.filter(e => railFilter === "all" || !MACHINE_EVENTS.has(e.type));
-    const expandable = railFilter === "key" && machines.length > 0;
-    const expanded = evExpanded.has(round);
-    if (!shown.length && !expandable) continue;
-    html += `<div class="ev-round">${round === 0 ? "任务" : "第 " + round + " 轮"}</div>`;
-    if (expanded) {
-      html += shown.concat(machines)
-        .sort((a, b) => a.sequence - b.sequence)
-        .map(eventItemHtml).join("");
-      html += `<button class="ev-more" data-ev-group="${round}">收起过程 · ${machines.length} 条</button>`;
-    } else {
-      html += shown.map(eventItemHtml).join("");
-      if (expandable) {
-        html += `<button class="ev-more" data-ev-group="${round}">过程 ${machines.length} 条 ▸</button>`;
-      }
-    }
-  }
-  if (!html.includes("ev-item")) {
-    html += `<div class="rail-empty">${railFilter === "human" ? "这条轨迹里还没有人工决定" : "没有可显示的事件"}</div>`;
-  }
-  return html;
-}
-
-function renderChain(trace, check) {
-  const events = trace.events || [];
-  const chain = trace.chain || {};
-  const ok = !!(check && check.ok);
-  const shield = doodleSvg("shield-check", "draw");
-  const head = chain.head_hash || "";
-  return `<div class="seal ${ok ? "ok" : "bad"}">
-    <div class="seal-head">${shield}<span>${check && check.live ? "签名中" : ok ? "全链验证通过" : "链验证失败"}</span><span class="grow"></span><span class="seal-count">${events.length} 事件</span></div>
-    ${!ok && check && check.reason ? `<div class="seal-reason">${esc(check.reason)}</div>` : ""}
-    <div class="seal-row"><span class="k">链头</span><span class="seal-hash" data-copy="${esc(head)}" title="点击复制">${esc(head)}</span></div>
-    <div class="seal-row"><span class="k">算法</span><span>${esc(chain.algorithm || "sha256 · canonical json")}</span></div>
-  </div>
-  <div class="rail-sec-title">链接明细</div>
-  <div class="chain-list">${events.map(e => `<div class="link-row">
-    <span class="n">#${e.sequence}</span>
-    <span class="h">${esc(shortHash(e.hash))}</span>
-    <span class="arrow">←</span>
-    <span class="p">${esc(shortHash(e.prev_hash))}${e.prev_hash ? "" : " (genesis)"}</span>
-  </div>`).join("")}</div>`;
-}
-
-function renderRaw(trace) {
-  const json = JSON.stringify(trace, null, 2);
-  const lines = json.split("\n").map((line, index) => `<span class="raw-line"><i>${index + 1}</i>${esc(line)}</span>`).join("");
-  return `<div class="raw-head">
-      <button class="rf" data-copy-raw>复制原文</button>
-      <button class="rf" data-download-raw>下载 trace</button>
-    </div>
-    <pre class="raw-pre">${lines}</pre>`;
-}
-
-function renderRail(trace, check) {
-  const body = document.getElementById("rail-body");
-  if (!trace) { body.innerHTML = railEmptyHtml(); return; }
-  for (const button of document.querySelectorAll("#rail-tabs button")) {
-    button.classList.toggle("active", button.dataset.tab === railTab);
-  }
-  const events = trace.events || [];
-  const count = document.getElementById("rail-count");
-  if (count) count.textContent = events.length ? `${events.length} 事件` : "";
-  setTabCount("events", events.length);
-  setTabCount("tools", toolContracts ? toolContracts.length : "");
-  setTabCount("chain", events.length);
-
-  if (railTab === "events") {
-    body.innerHTML = renderEvents(trace, check);
-    return;
-  }
-  if (railTab === "tools") {
-    body.innerHTML = renderTools(trace, check);
-    return;
-  }
-  if (railTab === "chain") {
-    body.innerHTML = renderChain(trace, check);
-    return;
-  }
-  body.innerHTML = renderRaw(trace);
-}
-
-const TOOL_DOODLE_ICON = {
-  list_documents: "list",
-  read_document: "doc",
-  normalize_units: "table",
-  reconcile_basis: "link",
-  check_restatement: "refresh-cw",
-  calculate_margin: "gauge",
-  report_blocked: "flag",
-  ingest_file: "upload",
-  search_corpus: "search",
-  read_slice: "file-text",
-  working_paper_append: "pen",
-  fetch_source: "globe",
-  search_cases: "search",
-  read_case: "file-text",
-  query_facts: "database",
-  ls_workspace: "layout-grid",
-  read_file: "book-open",
-  write_file: "report",
-  edit_file: "tool",
-  run_command: "gate",
-  fetch_url: "link",
-};
-
-function renderTools(trace, check) {
-  const task = trace.task || {};
-  const allowed = new Set(task.allowed_tools || []);
-  const granted = new Set((task.model_grant || {}).allowed_tools || []);
-  const usage = new Map();
-  const touch = name => {
-    if (!usage.has(name)) usage.set(name, { calls: 0, denied: 0, tokens: 0, cost: 0, latency: 0 });
-    return usage.get(name);
-  };
-  for (const round of trace.rounds || []) {
-    const denied = (round.decision || {}).allowed === false;
-    const tool = (round.observation || {}).tool
-      || (round.decision || {}).tool
-      || (((round.proposal || {}).steps || [])[0] || {}).tool;
-    if (!tool) continue;
-    const stat = touch(tool);
-    stat.calls += 1;
-    if (denied) stat.denied += 1;
-    const receipt = round.receipt || {};
-    if (receipt.tokens !== undefined) stat.tokens += Number(receipt.tokens) || 0;
-    if (receipt.cost_microusd !== undefined) stat.cost += Number(receipt.cost_microusd) || 0;
-    if (receipt.latency_ms !== undefined) stat.latency += Number(receipt.latency_ms) || 0;
-  }
-  if (!toolContracts) return `<div class="rail-empty">正在加载工具契约…</div>`;
-  const activeRound = [...(trace.rounds || [])].reverse().find(round =>
-    !round.observation && (round.decision || {}).allowed !== false);
-  const activeTool = activeRound
-    ? (((activeRound.proposal || {}).steps || [])[0] || {}).tool || (activeRound.decision || {}).tool
-    : null;
-  const rows = toolContracts
-    .slice()
-    .sort((a, b) => {
-      const ua = usage.get(a.name), ub = usage.get(b.name);
-      if ((ub ? ub.calls : 0) !== (ua ? ua.calls : 0)) return (ub ? ub.calls : 0) - (ua ? ua.calls : 0);
-      if (allowed.has(b.name) !== allowed.has(a.name)) return allowed.has(b.name) ? 1 : -1;
-      return a.name.localeCompare(b.name);
-    })
-    .map(contract => {
-      const stat = usage.get(contract.name);
-      const inScope = allowed.has(contract.name);
-      const inGrant = granted.has(contract.name);
-      const effect = contract.effect || "read";
-      const usageText = stat
-        ? `${stat.calls} 次${stat.denied ? " · 拒绝 " + stat.denied : ""}${stat.tokens ? " · " + num(stat.tokens) + " tokens" : ""}${stat.cost ? " · " + num(stat.cost) + " µUSD" : ""}${stat.latency ? " · " + num(stat.latency) + " ms" : ""}`
-        : "未使用";
-      const still = (window.DOODLE_ICONS && window.DOODLE_ICONS.still) || {};
-      const iconName = TOOL_DOODLE_ICON[contract.name];
-      const icon = iconName
-        ? `<span class="tr-ic">${doodleSvg(iconName, contract.name === activeTool)}</span>`
-        : "";
-      return `<div class="tool-row${inScope ? "" : " out-of-scope"}" title="${esc(contract.summary || "")}">
-        <div class="tr-head">
-          ${icon}
-          <span class="tr-name">${esc(contract.name)}</span>
-          <span class="eff eff-${esc(effect)}">${esc(effect)}</span>
-          <span class="tr-ver">v${esc(contract.version || "?")}</span>
-          <span class="grow"></span>
-          <span class="tr-scope">${inScope ? (inGrant ? "允许 · 已授权" : "允许 · 未授权") : "不在任务范围"}</span>
-        </div>
-        <div class="tr-usage">${esc(usageText)}</div>
-      </div>`;
-    }).join("");
-  return `<div class="rail-tools">
-      <span class="rf-hint">${allowed.size} 个允许 · ${granted.size} 个授权 · 契约来自注册表</span>
-    </div>${rows}`;
-}
-
-function summariseEvent(e) {
-  if (e.type === "review_decided") {
-    const detail = (e.payload && e.payload.detail) || (e.payload || {});
-    const label = REVIEW_LABEL[detail.decision] || detail.decision || "判断记录";
-    return detail.reason ? `${esc(label)} · ${esc(detail.reason)}` : esc(label);
-  }
-  const d = e.payload && e.payload.detail;
-  if (!d || Object.keys(d).length === 0) return "";
-  if (e.type === "tool_started" || e.type === "tool_succeeded") return `${esc(d.tool || "")} ${d.arguments && Object.keys(d.arguments).length ? "(" + Object.entries(d.arguments).map(([k, v]) => `${esc(k)}=${esc(v)}`).join(", ") + ")" : "()"}`;
-  if (e.type === "model_started") return `round ${esc(d.round)}`;
-  if (e.type === "policy_requested") return `${esc((d.packet && d.packet.candidates || []).length)} 个候选 · packet ${esc(shortHash(d.packet_hash))}…`;
-  if (e.type === "policy_decided") return `选择 ${esc(d.candidate_id || "—")} · packet ${esc(shortHash(d.packet_hash))}…`;
-  if (e.type === "auto_action") return `${esc((d.step || {}).tool || "")} · 无需模型调用`;
-  if (e.type === "memory_recalled") return `参考 ${esc(d.count || (d.hits || []).length)} 则旧案 · ${esc(((d.hits || [])[0] || {}).run_id || "")}`;
-  if (e.type === "model_unknown") return esc(d.cause || "");
-  if (e.type === "model_reconciled") return `receipt ${esc(shortHash(d.receipt_ref))}…`;
-  if (e.type === "plan_updated") { const p = d.plan || {}; const done = (p.todos || []).filter(t => t.status === "done").length; return `revision ${esc(p.revision)} · ${done}/${(p.todos || []).length} settled`; }
-  if (e.type === "plan_validated") return d.plan && d.plan.steps ? esc(d.plan.steps.map(s => s.id + ":" + s.tool).join(" ")) : "";
-  if (e.type === "approval_requested") {
-    const args = d.arguments && Object.keys(d.arguments).length
-      ? "(" + Object.entries(d.arguments).map(([k, v]) => `${esc(k)}=${esc(v)}`).join(", ") + ")" : "";
-    return `${esc(d.tool)} ${args} · ${esc(d.policy)}`;
-  }
-  if (e.type === "approval_granted") return `${esc(d.tool)} · ${esc(d.by || "operator")}${d.remember ? " · 本运行免询" : ""}`;
-  if (e.type === "approval_denied") return `${esc(d.tool)} · ${esc(d.code || "OPERATOR_DENIED")}`;
-  if (e.type === "approval_aborted") return `${esc(d.tool)} · ${esc(d.code || "ABORTED")}`;
-  if (e.type === "plan_steered") {
-    const p = d.plan || {};
-    return `revision ${esc(p.revision)} · ${esc(d.action)} ${esc(d.todo_id)}${d.note ? " · " + esc(d.note) : ""}`;
-  }
-  if (e.type === "budget_adjusted") {
-    const before = d.before || {}, after = d.after || {};
-    return `calls ${esc(before.max_calls)}→${esc(after.max_calls)} · µUSD ${esc(before.max_cost_microusd)}→${esc(after.max_cost_microusd)}`;
-  }
-  if (e.type === "control_rejected") return `${esc(d.kind)} · ${esc(d.reason)}`;
-  if (e.type === "task_resumed") return `by ${esc(d.by || "operator")}${d.limits ? " · calls " + esc(d.limits.max_calls) : ""}`;
-  if (e.type === "operator_message") return `第 ${esc(d.round)} 轮前 · ${esc(d.text || "")}`;
-  return esc(JSON.stringify(d).slice(0, 120));
-}
-
-/* ------------- MIXED — render() 内链验证/状态赋值不可改；阅读列模板可改 */
-
-function renderPlan(plan, opts = {}) {
-  if (!plan || !plan.todos || !plan.todos.length) return "";
-  const done = plan.todos.filter(t => t.status === "done").length;
-  const glyph = { done: "✓", blocked: "✕", abandoned: "–", active: "◐", pending: "○" };
-  const editable = !!opts.editable;
-  const editing = editable && !!opts.editing;
-  return `<div class="card plan${editing ? " editing" : ""}">
-    <div class="card-head">
-      <span class="card-title">${doodleSvg("clipboard-list", opts.editable ? "draw" : false)} Plan</span>
-      <span class="grow"></span>
-      <span class="card-meta">revision ${esc(plan.revision)} · <span style="color:var(--green)">${done}/${plan.todos.length}</span> 已完成</span>
-      ${editable ? `<button class="p-edit${editing ? " active" : ""}" data-plan-edit>${editing ? "完成" : "调整"}</button>` : ""}
-    </div>
-    <div class="card-rows">
-      ${plan.todos.map(t => `<div class="row ${esc(t.status)}">
-        <span class="r-icon">${glyph[t.status] || "○"}</span>
-        <span class="r-text">${esc(t.text)}</span>
-        <span class="r-meta">${esc(t.tool)}</span>
-        ${editing && (t.status === "pending" || t.status === "active") ? planActions(t, opts.confirmId) : ""}
-      </div>`).join("")}
-    </div>
-    ${opts.queued ? `<div class="plan-foot">${esc(opts.queued)}</div>` : ""}
-  </div>`;
-}
-
-function planActions(todo, confirmId) {
-  if (confirmId === todo.id) {
-    return `<span class="r-act confirm"><span class="q">跳过？</span><button data-plan-action="skip-confirm" data-todo="${esc(todo.id)}">是</button><button data-plan-action="cancel">否</button></span>`;
-  }
-  return `<span class="r-act">
-    <button data-plan-action="promote" data-todo="${esc(todo.id)}" title="提前：下一轮先做这一步">↑</button>
-    <button data-plan-action="skip" data-todo="${esc(todo.id)}" title="跳过：不再执行（不可撤销）">–</button>
-  </span>`;
-}
-
-/* token 分类计量（对照官方 ChatStatus 的分类显示）：
-   数据源是收据 metadata 的 usage_prompt_tokens / cached_tokens；
-   completion 由 total − prompt 推导。收据没有分类字段时如实说明。 */
-function tokenSplit(trace) {
-  let prompt = 0, cached = 0, total = 0, known = false;
-  for (const r of (trace.rounds || [])) {
-    const receipt = r.receipt || {};
-    const meta = receipt.metadata || {};
-    total += Number(receipt.tokens || 0);
-    if (meta.usage_prompt_tokens !== undefined && meta.usage_prompt_tokens !== null) {
-      known = true;
-      prompt += Number(meta.usage_prompt_tokens) || 0;
-      cached += Number(meta.cached_tokens) || 0;
-    }
-  }
-  return { prompt, cached, total, completion: known ? Math.max(0, total - prompt) : null, known };
-}
-
-function tokenSplitHtml(trace) {
-  const t = tokenSplit(trace);
-  if (!t.total) return "";
-  if (!t.known) {
-    return `<div class="tok-split unknown"><span class="tok-note">tokens ${num(t.total)} · 当前收据未含 token 分类（offline-mock 不产生 usage_prompt_tokens）</span></div>`;
-  }
-  return `<div class="tok-split">
-    <div class="tok-row"><span class="k">prompt</span><span class="v">${num(t.prompt)}</span></div>
-    <div class="tok-row"><span class="k">cached</span><span class="v">${num(t.cached)}</span><span class="note">缓存命中按输入价计费（v1）</span></div>
-    <div class="tok-row"><span class="k">completion</span><span class="v">${num(t.completion)}</span></div>
-  </div>`;
-}
-
-/* 运行中双轨：已完成轮的累计之外，再显示当前进行中轮已计入的增量
-   （含发送前预留）。只读 trace 预算快照推导，不参与治理。 */
-function activeRoundDelta(trace) {
-  const b = lastBudget(trace);
-  if (!b) return null;
-  const rounds = trace.rounds || [];
-  let settled = 0;
-  for (let i = rounds.length - 1; i >= 0; i--) {
-    const r = rounds[i];
-    if (r.receipt || (r.decision && r.decision.allowed === false)) {
-      settled = Number((r.budget_after || {}).tokens_used ?? 0);
-      break;
-    }
-    if (i === 0) settled = Number((r.budget_before || {}).tokens_used ?? 0);
-  }
-  const delta = Number(b.tokens_used || 0) - settled;
-  return delta > 0 ? delta : null;
-}
-
-function renderMeters(trace, opts = {}) {
-  const b = lastBudget(trace);
-  if (!b) return "";
-  const lim = b.limits || {};
-  const editable = !!opts.editable;
-  const editing = editable && !!opts.editing;
-  const active = opts.live ? activeRoundDelta(trace) : null;
-  const meters = [
-    ["calls", b.calls_used, lim.max_calls, ""],
-    ["reads", b.reads_used, lim.max_reads, ""],
-    ["µUSD", b.cost_used_microusd, lim.max_cost_microusd, ""],
-    ["tokens", b.tokens_used, lim.max_tokens, "m-tokens"],
-  ];
-  return `<div class="card meters${editing ? " editing" : ""}">
-    <div class="card-head">
-      <span class="card-title">${ICON.lock} 预算</span>
-      ${opts.queued ? `<span class="m-queued">已排队 · 下一轮生效</span>` : ""}
-      <span class="grow"></span>
-      ${meters.map(([label, used, max, cls]) => {
-        const ratio = max ? Math.min(1, (used || 0) / max) : 0;
-        const hot = ratio >= .95 ? " over" : ratio >= .7 ? " hot" : "";
-        const isActive = active !== null && label === "tokens";
-        return `<span class="meter${hot}${cls ? " " + cls : ""}">
-          <span class="m-k">${label}</span>
-          <span class="m-bar"><i style="width:${Math.round(ratio * 100)}%"></i></span>
-          <span class="m-v">${num(used || 0)}/${num(max || 0)}</span>
-          ${isActive ? `<span class="m-active">本轮 +${num(active)}</span>` : ""}
-        </span>`;
-      }).join("")}
-      ${editable ? `<button class="p-edit${editing ? " active" : ""}" data-budget-edit>${editing ? "取消" : "调整"}</button>` : ""}
-    </div>
-    ${tokenSplitHtml(trace)}
-    ${editing ? budgetForm(lim) : ""}
-  </div>`;
-}
-
-function budgetForm(lim) {
-  return `<div class="budget-edit">
-    <label>calls <input type="number" data-budget="maxCalls" min="${lim.max_calls}" value="${lim.max_calls}" inputmode="numeric"></label>
-    <label>reads <input type="number" data-budget="maxReads" min="${lim.max_reads}" value="${lim.max_reads}" inputmode="numeric"></label>
-    <label>µUSD <input type="number" data-budget="maxCostMicrousd" min="${lim.max_cost_microusd}" value="${lim.max_cost_microusd}" inputmode="numeric"></label>
-    <span class="hint">只允许调高 · 下一轮生效</span>
-    <span class="grow"></span>
-    <button class="a-btn" data-budget-cancel>取消</button>
-    <button class="a-btn strong" data-budget-apply>提交调整</button>
-  </div>`;
-}
-
-const TOOL_ICON = {
-  list_documents: ICON.folder,
-  read_document: ICON.file,
-  normalize_units: '<svg class="i" viewBox="0 0 24 24"><path d="M4 8h12M4 8l3-3M4 8l3 3"/><path d="M20 16H8M20 16l-3-3M20 16l-3 3"/></svg>',
-  reconcile_basis: ICON.branch,
-  check_restatement: '<svg class="i" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.6"/><path d="M20 4v4h-4"/></svg>',
-  calculate_margin: '<svg class="i" viewBox="0 0 24 24"><path d="M19 5 5 19"/><circle cx="7.5" cy="7.5" r="2.5"/><circle cx="16.5" cy="16.5" r="2.5"/></svg>',
-  report_blocked: ICON.alert,
-  ls_workspace: ICON.folder,
-  read_file: ICON.file,
-  write_file: '<svg class="i" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/><path d="M9 13h6M9 16h4"/></svg>',
-  edit_file: '<svg class="i" viewBox="0 0 24 24"><path d="m4 20 4.5-1 10-10-3.5-3.5-10 10z"/><path d="M13.5 7 16 9.5"/></svg>',
-  run_command: ICON.term,
-  fetch_url: '<svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.4 2.3 3.6 5.1 3.6 8.5S14.4 18.2 12 20.5c-2.4-2.3-3.6-5.1-3.6-8.5S9.6 5.8 12 3.5z"/></svg>',
-};
-
-function kvDetail(rows) {
-  const body = rows.filter(([, v]) => v !== undefined && v !== null && v !== "")
-    .map(([k, v]) => `<span class="k">${esc(k)}</span><span class="v">${esc(v)}</span>`).join("");
-  return body ? `<div class="t-detail"><div class="kv">${body}</div></div>` : "";
-}
-
-function alertDetail(kind, title, sub) {
-  return `<div class="t-detail"><div class="alert ${kind}"><div class="a-title">${esc(title)}</div>${sub ? `<div class="a-sub">${esc(sub)}</div>` : ""}</div></div>`;
-}
-
-/* 逐帧工具小人：只在正在执行的那一轮播放，完成后定格回静态图标。
-   每个场景两帧（CSS steps(2)），对应喜茶式的手绘逐帧节奏。 */
-const TOOL_DOODLE = {
-  list_documents: `<svg class="i doodle-tool" viewBox="0 0 24 24" aria-hidden="true">
-    <circle cx="7" cy="6.6" r="2.5"/><path d="M7 9.1v6.6M5 15.7h4"/>
-    <path class="dm-rock" d="M13.2 8.2h5.6v9.4h-5.6z"/>
-    <path class="dm-rock2" d="M14.6 6.4h5.6v9.4h-5.6z"/></svg>`,
-  read_document: `<svg class="i doodle-tool" viewBox="0 0 24 24" aria-hidden="true">
-    <circle cx="8" cy="6.8" r="2.6"/><path d="M8 9.4v6.4M6 15.8h4"/>
-    <path class="dm-rock" d="M12.4 9.6l5.2-.8 1.2 7.6-5.2.8z"/></svg>`,
-  normalize_units: `<svg class="i doodle-tool" viewBox="0 0 24 24" aria-hidden="true">
-    <circle cx="7" cy="7" r="2.6"/><path d="M7 9.6v6M5 15.6h4"/>
-    <path d="M13 7.4h6v4.6h-6z"/>
-    <path class="dm-flip" d="M14.2 14.2h6v4.6h-6z"/></svg>`,
-  reconcile_basis: `<svg class="i doodle-tool" viewBox="0 0 24 24" aria-hidden="true">
-    <circle cx="6.4" cy="6.6" r="2.4"/><path d="M6.4 9v6.8M4.4 15.8h4"/>
-    <path d="M10.6 16h3M15.4 16h3"/>
-    <path class="dm-rock" d="M10.8 12.2h8.4"/></svg>`,
-  check_restatement: `<svg class="i doodle-tool" viewBox="0 0 24 24" aria-hidden="true">
-    <circle cx="7.4" cy="6.4" r="2.4"/><path d="M7.4 8.8v6.4M5.4 15.2h4"/>
-    <path d="M11.6 9.2h6.4v8.2h-6.4z"/>
-    <g class="dm-scan"><circle cx="16.4" cy="11.6" r="2.2"/><path d="M18 13.2l1.6 2"/></g></svg>`,
-  calculate_margin: `<svg class="i doodle-tool" viewBox="0 0 24 24" aria-hidden="true">
-    <circle cx="8" cy="6.6" r="2.5"/><path d="M8 9.1v6.5M6 15.6h4"/>
-    <path d="M12 10.4h6v6.4h-6z"/>
-    <path class="dm-crank" d="M18 12.4l2-1.3"/></svg>`,
-  report_blocked: `<svg class="i doodle-tool" viewBox="0 0 24 24" aria-hidden="true">
-    <circle cx="8" cy="6.6" r="2.5"/><path d="M8 9.1v6.5M6 15.6h4"/>
-    <g class="dm-wave"><path d="M14 15.4V8"/><path d="M14 8h5v3.6h-5z"/></g></svg>`,
-};
-
-/* 工具渲染注册表：已知工具给专属视图，未知工具走通用兜底 */
-const TOOL_RENDERERS = {
-  list_documents(obs) {
-    const docs = (obs.result || {}).documents || [];
-    if (!docs.length) return "";
-    return `<div class="t-detail">${docs.map(d => `<div class="doc-row">
-      <span class="id">${esc(d.id)}</span>
-      <span class="meta2">${esc(d.kind || "")} · ${esc(d.period || "")}</span>
-      <span class="grow"></span>
-      <span class="meta2">${esc(d.unit_label || d.unit || "")} · ${esc(d.basis || "")}</span>
-    </div>`).join("")}</div>`;
-  },
-  read_document(obs) {
-    const r = obs.result || {};
-    const body = String(r.body || "");
-    return `<div class="t-detail">
-      <div class="doc-row"><span class="id">${esc(r.id || "")}</span><span class="meta2">${esc(r.title || "")}</span></div>
-      ${body ? `<pre class="doc-body">${esc(body)}</pre>` : ""}
-    </div>`;
-  },
-  normalize_units(obs) {
-    const r = obs.result || {};
-    return kvDetail([
-      ["换算", `${r.source_unit} → ${r.target_unit}`],
-      ["系数", `×${num(r.factor)}`],
-      ["毛利（元）", num(r.gross_profit_cny)],
-    ]);
-  },
-  reconcile_basis(obs) {
-    const r = obs.result || {};
-    if (r.reconciled === false) return alertDetail("warn", "无法桥接口径", r.reason || "没有公布的桥接说明");
-    return kvDetail([
-      ["期间", r.period],
-      ["口径", `${r.from_basis} → ${r.to_basis}`],
-      ["差异", `${r.delta >= 0 ? "+" : ""}${r.delta}`],
-      ["说明", r.reason || ""],
-    ]);
-  },
-  check_restatement(obs) {
-    const r = obs.result || {};
-    if (!r.restated) return kvDetail([["重述", "无重述记录"]]);
-    return kvDetail([
-      ["原值 → 重述", `${num(r.original_gross_profit)} → ${num(r.restated_gross_profit)}`],
-      ["差异", `${r.delta >= 0 ? "+" : ""}${r.delta}`],
-      ["说明", r.reason || ""],
-    ]);
-  },
-  calculate_margin(obs) {
-    const r = obs.result || {};
-    if (!r.computed) return alertDetail("bad", "无法计算", (r.blockers || []).join("；"));
-    return `<div class="t-detail"><div class="t-metrics">
-      <div><div class="k">FY2024</div><div class="v">${pct(r.margin_bp_2024)}</div></div>
-      <div><div class="k">FY2025</div><div class="v">${pct(r.margin_bp_2025)}</div></div>
-      <div><div class="k">变化</div><div class="v ${r.change_bp >= 0 ? "up" : "down"}">${pp(r.change_bp)}</div></div>
-    </div></div>`;
-  },
-  report_blocked(obs) {
-    return alertDetail("bad", "声明受阻", (obs.result || {}).reason || "");
-  },
-  ls_workspace(obs) {
-    const entries = (obs.result || {}).entries || [];
-    if (!entries.length) return `<div class="t-detail"><div class="doc-row"><span class="id">（空工作区）</span></div></div>`;
-    return `<div class="t-detail">${entries.map(entry => `<div class="doc-row">
-      <span class="id">${esc(entry.path)}</span>
-      <span class="grow"></span>
-      <span class="meta2">${num(entry.bytes)} B</span>
-    </div>`).join("")}</div>`;
-  },
-  read_file(obs) {
-    const r = obs.result || {};
-    const content = String(r.content || "");
-    return `<div class="t-detail">
-      <div class="doc-row"><span class="id">${esc(r.path || "")}</span><span class="grow"></span><span class="meta2">${num(r.bytes)} B · sha ${esc(shortHash(r.sha256))}…</span></div>
-      ${content ? `<pre class="doc-body">${esc(content.slice(0, 4000))}</pre>` : ""}
-    </div>`;
-  },
-  write_file(obs) {
-    const r = obs.result || {};
-    return kvDetail([
-      ["文件", r.path],
-      ["状态", r.changed ? "已写入" : "内容未变化"],
-      ["大小", `${num(r.bytes)} B`],
-      ["写入哈希", `${shortHash(r.sha256_after)}…`],
-      ["git commit", r.commit || "—"],
-    ]);
-  },
-  edit_file(obs) {
-    const r = obs.result || {};
-    return kvDetail([
-      ["文件", r.path],
-      ["状态", r.changed ? "唯一锚点已替换" : "内容未变化"],
-      ["大小", `${num(r.bytes)} B`],
-      ["写入哈希", `${shortHash(r.sha256_after)}…`],
-      ["git commit", r.commit || "—"],
-    ]);
-  },
-  run_command(obs) {
-    const r = obs.result || {};
-    return `${kvDetail([
-      ["命令", r.command],
-      ["退出码", r.exit_code],
-      ["耗时", `${num(r.duration_ms)} ms`],
-    ])}<div class="t-detail"><pre class="doc-body">${esc(String(r.output || "(no output)").slice(0, 4000))}</pre></div>`;
-  },
-  fetch_url(obs) {
-    const r = obs.result || {};
-    return `<div class="t-detail">
-      <div class="doc-row"><span class="id">${esc(r.url || "")}</span><span class="grow"></span><span class="meta2">HTTP ${esc(r.status)} · ${num(r.bytes)} B</span></div>
-      <div class="doc-row"><span class="meta2">${esc(r.title || "")} · content_truth ${esc(r.content_truth || "not-verified")}</span></div>
-      ${r.text ? `<pre class="doc-body">${esc(String(r.text).slice(0, 2400))}</pre>` : ""}
-    </div>`;
-  },
-};
-
-/* 通用兜底：原始值铺成 KV 表，嵌套对象折叠展示——任何工具输出都至少可读 */
-function genericToolDetail(obs) {
-  const r = obs.result || {};
-  if (!r || typeof r !== "object" || Object.keys(r).length === 0) return "";
-  const flat = [];
-  const nested = [];
-  for (const [k, v] of Object.entries(r)) {
-    if (v === null || v === undefined || v === "") continue;
-    if (typeof v === "object") nested.push([k, v]);
-    else flat.push([k, String(v)]);
-  }
-  const kv = kvDetail(flat);
-  const extra = nested.length
-    ? `<details class="raw"><summary>嵌套字段</summary><pre>${esc(JSON.stringify(Object.fromEntries(nested), null, 2))}</pre></details>`
-    : "";
-  if (!kv && !extra) return `<div class="t-detail"><pre class="doc-body">${esc(JSON.stringify(r, null, 2))}</pre></div>`;
-  return (kv || "") + extra;
-}
-
-function renderToolDetail(obs, kind = "brief") {
-  if (kind === "diff") return writeDiffHtml(obs);
-  if (kind === "removed") return removedResultHtml(obs);
-  if (kind === "qa") return askAnswerHtml(obs);
-  return (TOOL_RENDERERS[obs.tool] || genericToolDetail)(obs);
-}
-
-/* 提问与回答：运行把问题交给人，答案回到模型下一轮的上下文里。
-   未回答也如实呈现——那不是失败，是"操作员没答，模型自己判断"。 */
-function askAnswerHtml(obs) {
-  const result = obs.result || {};
-  const question = String(result.asked || (obs.arguments || {}).question || "");
-  const why = String((obs.arguments || {}).why || "");
-  const answered = !!result.answered;
-  const answer = answered ? String(result.answer || "") : "";
-  const note = answered
-    ? ""
-    : `<div class="qa-note">${result.timed_out ? "等待超时" : "操作员未回答"} · ${esc(result.reason || "模型据此自行判断")}</div>`;
-  return `<div class="qa-block">
-    <div class="qa-line q"><span class="qa-who">问操作员</span><span class="qa-text">${esc(question)}</span></div>
-    ${why ? `<div class="qa-why">${esc(why)}</div>` : ""}
-    ${answered ? `<div class="qa-line a"><span class="qa-who">回答</span><span class="qa-text">${esc(answer)}</span></div>` : note}
-  </div>`;
-}
-
-/* ================================================== 执行结果四块（对照官方 DisplayBlocks）
-   brief   读取类：摘要行 + 展开全文（缺省回退）
-   todo    计划变更：前后对照列表（round.plan → round.plan_after）
-   diff    写入/追加类：目标对象 + 变更内容；语义色只用于状态点
-   removed 拒绝/删除类：弱化呈现，不产生证据 */
-const RESULT_BLOCK_KINDS = {
-  list_documents: "brief",
-  read_document: "brief",
-  check_restatement: "brief",
-  reconcile_basis: "brief",
-  normalize_units: "brief",
-  calculate_margin: "brief",
-  working_paper_append: "diff",
-  collect_source: "diff",
-  write_document: "diff",
-  report_blocked: "removed",
-  ls_workspace: "brief",
-  read_file: "brief",
-  write_file: "diff",
-  edit_file: "diff",
-  run_command: "brief",
-  fetch_url: "brief",
-  ask_operator: "qa",
-};
-
-function resultBlockKind(round) {
-  if (round.decision && round.decision.allowed === false) return "removed";
-  const obs = round.observation || {};
-  const step = ((round.proposal || {}).steps || [])[0] || {};
-  const tool = obs.tool || (round.decision || {}).tool || step.tool || "";
-  return RESULT_BLOCK_KINDS[tool] || "brief";
-}
-
-/* 写入/追加类：目标对象 + 变更内容（+/− 行语义，色只做状态点） */
-function writeDiffHtml(obs) {
-  const args = obs.arguments || {};
-  const result = obs.result || {};
-  const target = ["target", "doc_id", "document_id", "section", "path"]
-    .map(k => args[k])
-    .find(v => v !== undefined && v !== null && v !== "")
-    || result.target || result.doc_id || "(目标未声明)";
-  const added = result.content || result.appended || result.summary || result.text || "";
-  const rest = Object.entries(result).filter(([k, v]) =>
-    !["content", "appended", "summary", "text", "target", "doc_id"].includes(k)
-    && v !== null && v !== undefined && v !== "");
-  return `<div class="t-detail block-diff">
-    <div class="diff-head">目标 · <code>${esc(String(target))}</code></div>
-    ${added ? `<div class="diff-line add"><span class="sign">+</span><span class="body">${esc(String(added))}</span></div>` : ""}
-    ${kvDetail(rest)}
-  </div>`;
-}
-
-/* 拒绝/删除类：弱化呈现 */
-function removedResultHtml(obs) {
-  const r = obs.result || {};
-  const reason = r.reason || r.message || r.blocked || "";
-  return `<div class="t-detail block-removed">
-    <div class="removed-line">该调用未产生可采信证据 · 结果弱化呈现</div>
-    ${reason ? `<div class="removed-why">${esc(String(reason))}</div>` : ""}
-  </div>`;
-}
-
-/* 计划变更：对照“上一轮的 plan_after → 本轮 plan”。steer 在轮边界前生效，
-   所以变更跨轮可见（本轮 plan 的 revision 高于上一轮终态）；轮内
-   plan→plan_after 是自然推进，不算变更。 */
-function planTodoBlock(round, prevRound) {
-  const plan = round.plan;
-  if (!plan || !prevRound) return "";
-  const before = prevRound.plan_after || prevRound.plan;
-  if (!before) return "";
-  if (Number(plan.revision || 1) <= Number(before.revision || 1)) return "";
-  const beforeMap = new Map((before.todos || []).map(t => [t.id, t]));
-  const glyph = { done: "✓", blocked: "✕", abandoned: "–", active: "◐", pending: "○" };
-  const rows = (plan.todos || []).map(t => {
-    const prev = beforeMap.get(t.id);
-    const changed = !prev || prev.status !== t.status || prev.text !== t.text;
-    return `<div class="todo-row ${esc(t.status)}${changed ? " changed" : ""}">
-      <span class="todo-glyph">${glyph[t.status] || "○"}</span>
-      <span class="todo-text">${esc(t.text || t.id)}${t.reason ? ` · ${esc(t.reason)}` : ""}</span>
-      ${changed ? `<span class="todo-tag">${esc(prev ? "本轮修订" : "本轮新增")}</span>` : ""}
-    </div>`;
-  }).join("");
-  return `<div class="block-todo">
-    <div class="todo-head">计划变更 · rev ${esc(String(before.revision))} → ${esc(String(plan.revision))}</div>
-    ${rows}
-  </div>`;
-}
-
-function outcomeText(round, ann) {
-  if (ann && ann.unknown) return "等待显式对账（未知结果不自动重发）";
-  const decision = round.decision || {};
-  if (decision.allowed === false) return (decision.code || "DENIED") + (decision.reason ? " · " + decision.reason : "");
-  if (!round.observation) {
-    const hasStep = round.proposal && round.proposal.steps && round.proposal.steps.length;
-    return hasStep ? "等待工具结果…" : `已进入第 ${round.index} 轮，等待提议…`;
-  }
-  return describe(round.observation).map(stripTags).join(" · ");
-}
-
-function turnBudgetDelta(round) {
-  const before = round.budget_before || {};
-  const after = round.budget_after || {};
-  const delta = (key) => Number(after[key] ?? 0) - Number(before[key] ?? 0);
-  const parts = [];
-  const calls = delta("calls_used");
-  const reads = delta("reads_used");
-  const cost = delta("cost_used_microusd");
-  if (calls) parts.push(`calls +${calls}`);
-  if (reads) parts.push(`reads +${reads}`);
-  if (cost) parts.push(`${num(cost)} µUSD`);
-  return parts.join(" · ");
-}
-
-function renderRound(round, index, ann = {}, prevRound = null) {
-  const empty = !round.proposal && !round.decision && !round.observation && !round.receipt;
-  if (empty && ann.terminal) {
-    return `<article class="round turn terminal" data-quiet="0" data-open="false">
-      <button class="turn-summary" type="button" data-toggle>
-        <span class="t-ic">${ICON.term}</span>
-        <span class="turn-no">第 ${round.index} 轮</span>
-        <span class="turn-tool dim">未完成的轮次</span>
-        <span class="turn-state pending"><i class="ev-dot info"></i>TERMINATED</span>
-        <span class="turn-budget"></span>
-        <span class="chev">▾</span>
-      </button>
-      <div class="turn-body">
-        <div class="proposal-card muted">
-          <div class="proposal-args">任务在此终结（${esc(ann.terminal)}）——没有提议落进签名链</div>
-        </div>
-      </div>
-    </article>`;
-  }
-  if (empty && !ann.unknown) {
-    return `<article class="round turn live" data-quiet="0" data-open="true">
-      <button class="turn-summary" type="button" data-toggle>
-        <span class="t-ic">${ICON.term}</span>
-        <span class="turn-no">第 ${round.index} 轮</span>
-        <span class="turn-tool dim">等待提议…</span>
-        <span class="turn-state pending"><i class="ev-dot info"></i>运行中</span>
-        <span class="turn-budget"></span>
-        <span class="chev">▾</span>
-      </button>
-      <div class="turn-body">
-        <div class="gate-line pending"><span class="ev-dot info"></span><span>等待模型返回</span></div>
-      </div>
-    </article>`;
-  }
-  if (empty) {
-    const cause = ann.unknown || "UNKNOWN";
-    return `<article class="round turn unknown" data-quiet="0" data-open="true">
-      <button class="turn-summary" type="button" data-toggle>
-        <span class="t-ic">${ICON.term}</span>
-        <span class="turn-no">第 ${round.index} 轮</span>
-        <span class="turn-tool dim">模型调用</span>
-        <span class="turn-state warn"><i class="ev-dot warn"></i>${esc(cause)}</span>
-        <span class="turn-budget"></span>
-        <span class="chev">▾</span>
-      </button>
-      <div class="turn-body">
-        <div class="proposal-card muted">
-          <div class="proposal-args">未知不等于失败；不自动重发、不退费、不换供应商。</div>
-        </div>
-        <div class="gate-line pending"><span class="ev-dot warn"></span><span>等待匹配的签名收据显式对账</span></div>
-      </div>
-    </article>`;
-  }
-
-  const obs = round.observation || {};
-  const decision = round.decision || {};
-  const denied = decision.allowed === false;
-  const step = (round.proposal && round.proposal.steps && round.proposal.steps[0]) || null;
-  const tool = obs.tool || decision.tool || (step && step.tool) || "—";
-  const argsObj = obs.arguments || (step && step.arguments) || {};
-  const args = Object.keys(argsObj).length
-    ? Object.entries(argsObj).map(([k, v]) => `${esc(k)}=${esc(v)}`).join("  ")
-    : "";
-  const icon = (!round.observation && !denied && TOOL_DOODLE[tool])
-    ? TOOL_DOODLE[tool]
-    : (TOOL_ICON[tool] || ICON.term);
-  const gateClass = denied ? "denied" : round.observation ? "pass" : "pending";
-  const sealSvg = (name, anim) => {
-    const set = window.SEAL_ICONS && window.SEAL_ICONS.state;
-    const svg = set && set[name];
-    return svg ? svg.replace('class="s-icon"', `class="s-icon${anim ? " " + anim : ""}"`) : "";
-  };
-  const gateText = denied
-    ? `主机门控 DENIED · ${decision.code || ""}${decision.reason ? " · " + decision.reason : ""}`
-    : !round.observation
-      ? "主机门控 · 等待执行"
-      : `主机门控 PASS · ${decision.reason || "schema, scope and grant all agree"}`;
-  const hash = obs.result_hash || "";
-  const raw = { proposal: round.proposal, decision: round.decision, receipt: round.receipt, observation: round.observation };
-  const receiptMeta = [
-    round.receipt && round.receipt.tokens !== undefined ? `tokens ${num(round.receipt.tokens)}` : "",
-    round.receipt && round.receipt.cost_microusd !== undefined ? `${num(round.receipt.cost_microusd)} µUSD` : "",
-    round.receipt && round.receipt.latency_ms !== undefined ? `${round.receipt.latency_ms} ms` : "",
-    ann.reconciled ? `receipt ${esc(shortHash(ann.reconciled))}…` : "",
-  ].filter(Boolean).join(" · ");
-  const blockKind = resultBlockKind(round);
-  const removedBlock = denied ? `<div class="block-removed standalone">
-      <div class="removed-line">提议被主机拒绝 · 未执行 · 不产生证据</div>
-      <div class="removed-why">${esc(decision.code || "DENIED")}${decision.reason ? " · " + esc(decision.reason) : ""}</div>
-    </div>` : "";
-
-  const gateShort = denied ? "DENIED" : round.observation ? "PASS" : "等待";
-  const dotClass = denied ? "bad" : round.observation ? "ok" : "info";
-  // ``data-quiet`` is what the folding pass reads: a settled, passed round with
-  // nothing the operator must see at rest. The pass also checks the annotation
-  // and whether an interjection landed here, so this is only the round's own
-  // half of the answer.
-  const quiet = isQuietRound(round, ann) ? "1" : "0";
-  return `<article class="round turn${!round.observation && !denied ? " live" : ""}" data-open="${denied ? "true" : "false"}" data-quiet="${quiet}">
-    <button class="turn-summary" type="button" data-toggle>
-      <span class="t-ic">${icon}</span>
-      <span class="turn-no">第 ${round.index} 轮</span>
-      <span class="turn-tool">${esc(tool)}</span>
-      <span class="turn-state ${gateClass}"><i class="ev-dot ${dotClass}"></i>${gateShort}</span>
-      <span class="group-size" hidden></span>
-      <span class="chev">▾</span>
-    </button>
-    <div class="turn-body">
-      <div class="turn-meta">${esc(turnBudgetDelta(round))}</div>
-      ${args ? `<div class="turn-args"><code>${args}</code></div>` : ""}
-      <div class="gate-line ${gateClass}">
-        <span class="ev-dot ${dotClass}"></span>
-        <span class="gate-ico">${sealSvg(denied ? "gate-denied" : "gate-stamp", "stamp-in")}</span><span>${esc(gateText)}</span>
-      </div>
-
-      ${round.observation ? `
-      <div class="tool-result" data-block="${esc(blockKind)}">
-        <div class="tool-result-head">
-          <span class="tool-result-title">执行结果 · ${esc(tool)}</span>
-          <span class="tool-result-summary">${esc(outcomeText(round, ann)).slice(0, 160)}</span>
-        </div>
-        <div class="tool-result-body">
-          ${renderToolDetail(obs, blockKind)}
-          <details class="raw"><summary>完整返回与收据</summary><pre>${esc(JSON.stringify(raw, null, 2))}</pre></details>
-        </div>
-      </div>` : removedBlock}
-
-      ${planTodoBlock(round, prevRound)}
-
-      <footer class="turn-receipt">
-        <code>${hash ? esc(hash) : "result hash pending"}</code>
-        <span class="receipt-meta">${esc(receiptMeta)}</span>
-        ${hash ? `<button class="copy-mini" type="button" data-copy="${esc(hash)}">复制</button>` : ""}
-      </footer>
-    </div>
-  </article>`;
-}
-
-function resultConclusion(result) {
-  if (!result || result.change_bp === undefined) return "";
-  if (result.comparable === false) return "两期数据口径不可比，不能给出变化结论。";
-  const chg = result.change_bp;
-  const direction = chg > 0 ? "上升" : chg < 0 ? "下降" : "持平";
-  const amount = chg === 0 ? "" : ` ${(Math.abs(chg) / 100).toFixed(2)} 个百分点`;
-  return `两期合并毛利率可比：FY2024 ${pct(result.margin_bp_2024)}，FY2025 ${pct(result.margin_bp_2025)}，${direction}${amount}。`;
-}
-
-function failureConclusion(failure) {
-  const reason = FAILURE_REASONS[failure.code] || failure.message || "运行未能完成";
-  return `未能给出结论：${reason}。`;
-}
 
 /* ----------------------- RENDER LAYER — 判断面 / 结论后的结构化块 */
 
@@ -1882,413 +1118,13 @@ function resultUnit(result) {
   return "—";
 }
 
-/* 判断只属于当前打开的运行；静态 trace 没有可写入的 run id。 */
-function reviewRunId() {
-  const key = store.key || "";
-  if (!key.startsWith("run:")) return null;
-  const run = currentRun();
-  if (run && run.id) return run.id;
-  const s = activeSession();
-  if (s && s.id && key === "run:" + s.id) return s.id;
-  return null;
-}
-
-const reviewStates = new Map();
-/* reviewer profile 按作用域缓存；同 module/template/outcome 的同类判断只取一次 */
-const reviewProfiles = new Map();
-
-function reviewStateFor(runId) {
-  if (!reviewStates.has(runId)) {
-    reviewStates.set(runId, { decision: "", reason: "", sending: false, error: "", recorded: null, appending: false });
-  }
-  return reviewStates.get(runId);
-}
-
-function recordedReview(trace, runId) {
-  const state = reviewStates.get(runId);
-  if (state && state.appending) return null;
-  if (state && state.recorded) return state.recorded;
-  const events = (trace && trace.events) || [];
-  for (let i = events.length - 1; i >= 0; i--) {
-    const event = events[i];
-    if (!event || event.type !== "review_decided") continue;
-    const detail = (event.payload && event.payload.detail) || (event.payload || {});
-    return {
-      decision: detail.decision || "",
-      reason: detail.reason || "",
-      reviewer: detail.reviewer || "reviewer",
-      sequence: event.sequence !== undefined ? event.sequence : detail.sequence,
-    };
-  }
-  return null;
-}
-
-function reviewReasonId(runId) {
-  return "review-reason-" + String(runId).replace(/[^a-zA-Z0-9_-]/g, "-");
-}
-
-function reviewPanelElement(runId) {
-  return [...document.querySelectorAll("[data-review-panel]")]
-    .find(panel => panel.dataset.reviewRun === runId) || null;
-}
-
-/* --------------------------------------------------------- 你的历史判断
-   历史只做参考，不替人拍板：显示同类运行里她以前怎么判，最多把上次的
-   决定和理由放回判断面板，提交仍然要她自己点。 */
-
-function reviewProfileParams(trace) {
-  const task = (trace && trace.task) || {};
-  const binding = task.binding || {};
-  const terminal = (trace && trace.terminal) || {};
-  return {
-    module: binding.module || "",
-    template: binding.scenario || "",
-    outcome: terminal.status || "",
-  };
-}
-
-function reviewProfileKey(params) {
-  return JSON.stringify([params.module, params.template, params.outcome]);
-}
-
-function truncateReviewText(value, max) {
-  const text = String(value || "").replace(/\s+/g, " ").trim();
-  const chars = Array.from(text);
-  return chars.length > max ? chars.slice(0, max).join("") + "…" : text;
-}
-
-function latestRecentReview(recent) {
-  let best = null;
-  let bestKey = -Infinity;
-  for (const item of recent) {
-    if (!item) continue;
-    const sequence = Number(item.sequence);
-    const at = Date.parse(item.at);
-    const key = Number.isFinite(sequence) ? sequence : (Number.isFinite(at) ? at : -Infinity);
-    if (!best || key > bestKey) {
-      best = item;
-      bestKey = key;
-    }
-  }
-  return best;
-}
-
-function reviewProfileHtml(data) {
-  const counts = data.counts || {};
-  const countText = REVIEW_DECISIONS
-    .map(item => `${REVIEW_COUNT_LABEL[item.key]} <b>${Number(counts[item.key] || 0)}</b>`)
-    .join(" · ");
-  const suggested = data.suggested && REVIEW_DECISION[data.suggested.decision] ? data.suggested : null;
-  const recent = Array.isArray(data.recent) ? data.recent : [];
-  const latest = latestRecentReview(recent);
-  let latestDecision = "";
-  let latestReason = "";
-  if (latest) {
-    latestDecision = latest.decision || "";
-    latestReason = latest.reason || "";
-  } else if (suggested) {
-    latestDecision = suggested.decision || "";
-    latestReason = suggested.last_reason || "";
-  }
-  const label = REVIEW_LABEL[latestDecision] || latestDecision;
-  const reasonText = truncateReviewText(latestReason, 72);
-  const writable = !!reviewRunId();
-  return `<div class="rp-head">
-    <span class="rp-kicker">REVIEW PROFILE</span>
-    <span class="rp-title">你的历史判断</span>
-    <span class="rp-total">同类 <b>${Number(data.total) || 0}</b> 次</span>
-  </div>
-  <div class="rp-counts">${countText}</div>
-  ${label ? `<div class="rp-last"><span class="rp-last-k">上次：</span>${esc(label)}${reasonText ? ` · <span class="rp-reason" title="${esc(latestReason)}">${esc(reasonText)}</span>` : ""}</div>` : ""}
-  ${writable && suggested ? `<div class="rp-actions"><button type="button" class="review-apply" data-review-apply="${esc(suggested.decision)}" data-review-apply-reason="${esc(suggested.last_reason || "")}" title="只选中这个判断并填入上次理由，不会自动提交">采用上次判断</button></div>` : ""}`;
-}
-
-function paintReviewProfile(key, data) {
-  const el = document.querySelector("[data-review-profile]");
-  if (!el || el.dataset.reviewProfileKey !== key) return;
-  if (!data || !(Number(data.total) > 0)) {
-    el.hidden = true;
-    el.innerHTML = "";
-    return;
-  }
-  el.innerHTML = reviewProfileHtml(data);
-  el.hidden = false;
-}
-
-function loadReviewProfile(trace, options = {}) {
-  const el = document.querySelector("[data-review-profile]");
-  if (!el) return;
-  const params = reviewProfileParams(trace);
-  if (!params.module && !params.template) {
-    el.hidden = true;
-    return;
-  }
-  const key = reviewProfileKey(params);
-  el.dataset.reviewProfileKey = key;
-  let entry = reviewProfiles.get(key);
-  if (!entry) {
-    entry = { data: null, promise: null, token: 0 };
-    reviewProfiles.set(key, entry);
-  }
-  if (entry.data) paintReviewProfile(key, entry.data);
-  if (entry.promise && !options.force) return;
-  const token = ++entry.token;
-  const query = new URLSearchParams();
-  if (params.module) query.set("module", params.module);
-  if (params.template) query.set("template", params.template);
-  if (params.outcome) query.set("outcome", params.outcome);
-  const promise = fetch(`/api/review-profile?${query.toString()}`, {
-    cache: "no-store",
-    headers: { Accept: "application/json" },
-  })
-    .then(response => (response.ok ? response.json() : null))
-    .then(data => {
-      if (entry.token !== token) return;
-      entry.promise = null;
-      if (!data || typeof data !== "object" || !(Number(data.total) > 0)) {
-        entry.data = { total: 0, counts: {}, recent: [], suggested: null };
-        paintReviewProfile(key, entry.data);
-        return;
-      }
-      entry.data = data;
-      paintReviewProfile(key, data);
-    })
-    .catch(() => {
-      if (entry.token === token) entry.promise = null;
-      /* 历史判断加载失败不打扰用户：保持隐藏，不弹错误。 */
-    });
-  entry.promise = promise;
-}
-
-function reviewRecordedHtml(recorded) {
-  const sequence = recorded.sequence === undefined || recorded.sequence === null ? "—" : recorded.sequence;
-  const label = REVIEW_LABEL[recorded.decision] || recorded.decision || "判断记录";
-  return `<div class="review-recorded" role="status">
-    <span class="review-stamp">已记录</span>
-    <span class="rr-sep">·</span>
-    <span class="rr-line">${esc(label)} <span class="rr-sep">·</span> #${esc(sequence)}</span>
-    <span class="rr-meta">${esc(recorded.reviewer || "reviewer")}</span>
-    <button type="button" class="review-append" data-review-append title="在签名链末尾追加一次判断，不覆盖这次记录">追加判断</button>
-    ${recorded.reason ? `<p class="rr-reason">${esc(recorded.reason)}</p>` : ""}
-  </div>`;
-}
-
-function reviewPanelInnerHtml(trace, runId) {
-  const recorded = recordedReview(trace, runId);
-  if (recorded) return reviewRecordedHtml(recorded);
-
-  const state = reviewStateFor(runId);
-  const selected = REVIEW_DECISION[state.decision] || null;
-  const disabled = state.sending ? " disabled" : "";
-  const reason = String(state.reason || "");
-  const choices = REVIEW_DECISIONS.map(item => {
-    const active = item.key === state.decision;
-    return `<button type="button" class="review-choice${active ? " selected" : ""}" data-review-decision="${esc(item.key)}" aria-pressed="${active ? "true" : "false"}"${disabled}>
-      <span class="rc-label">${esc(item.label)}</span>
-      <span class="rc-hint">${esc(item.hint)}</span>
-    </button>`;
-  }).join("");
-  const reasonHtml = selected
-    ? `<div class="review-reason">
-        <div class="review-reason-head">
-          <label class="review-reason-label" for="${reviewReasonId(runId)}">判断理由</label>
-          <span class="${selected.requiresReason ? "review-required" : "review-optional"}">${selected.requiresReason ? "必填" : "可选"}</span>
-        </div>
-        <textarea class="review-textarea" id="${reviewReasonId(runId)}" data-review-reason rows="2" maxlength="1000"
-          placeholder="${esc(selected.placeholder)}"${disabled}>${esc(reason)}</textarea>
-        <div class="review-foot">
-          <span class="review-error" data-review-error role="alert"${state.error ? "" : " hidden"}>${esc(state.error || "")}</span>
-          <span class="grow"></span>
-          <span class="review-count" data-review-count>${reason.length} 字</span>
-          <button type="button" class="a-btn strong" data-review-submit${disabled || (selected.requiresReason && !reason.trim()) ? " disabled" : ""}>${state.sending ? "记录中…" : "记录判断"}</button>
-        </div>
-      </div>`
-    : `<p class="review-prompt">先选择你的判断，再写理由。</p>`;
-  return `<div class="review-head">
-    <span class="review-kicker">REVIEW · 判断记录</span>
-    <span class="review-hint">${state.appending ? "追加判断 · 写入签名链" : "reviewer · 写入签名链"}</span>
-  </div>
-  <div class="review-choices" role="group" aria-label="判断决定">${choices}</div>
-  ${reasonHtml}`;
-}
-
-function reviewPanelHtml(trace) {
-  const runId = reviewRunId();
-  if (!runId) {
-    return `<div class="review review-readonly">
-      <div class="review-head">
-        <span class="review-kicker">REVIEW · 判断记录</span>
-        <span class="review-hint">只读</span>
-      </div>
-      <p>只读回放 · 没有可写入的运行 id，判断不会进入签名链。</p>
-    </div>`;
-  }
-  return `<div class="review" data-review-panel data-review-run="${esc(runId)}">${reviewPanelInnerHtml(trace, runId)}</div>`;
-}
-
-function paintReviewPanel(runId) {
-  const panel = reviewPanelElement(runId);
-  if (!panel) return;
-  const trace = shownTrace() || {};
-  panel.innerHTML = reviewPanelInnerHtml(trace, runId);
-}
-
-function chooseReviewDecision(runId, decision) {
-  if (!runId || !REVIEW_DECISION[decision]) return;
-  const state = reviewStateFor(runId);
-  if (state.sending || (state.recorded && !state.appending)) return;
-  state.decision = decision;
-  state.error = "";
-  paintReviewPanel(runId);
-  const panel = reviewPanelElement(runId);
-  const textarea = panel && panel.querySelector("[data-review-reason]");
-  if (textarea) textarea.focus();
-}
-
-/* 追加判断：后端追加事件，不覆盖已有记录；本地先把记录卡收回成判断面板。 */
-function startAppendReview(runId) {
-  if (!runId) return;
-  const state = reviewStateFor(runId);
-  if (state.sending) return;
-  state.appending = true;
-  state.recorded = null;
-  state.decision = "";
-  state.reason = "";
-  state.error = "";
-  paintReviewPanel(runId);
-  const panel = reviewPanelElement(runId);
-  const first = panel && panel.querySelector("[data-review-decision]");
-  if (first) first.focus({ preventScroll: true });
-}
-
-/* 采用上次判断只做两件事：选中决定、填入上次理由；绝不自动提交。 */
-function applyReviewSuggestion(runId, decision, reason) {
-  if (!runId || !REVIEW_DECISION[decision]) return;
-  const state = reviewStateFor(runId);
-  if (state.sending) return;
-  const trace = shownTrace() || {};
-  if (!state.appending && recordedReview(trace, runId)) {
-    state.appending = true;
-    state.recorded = null;
-  }
-  state.decision = decision;
-  state.reason = String(reason || "");
-  state.error = "";
-  paintReviewPanel(runId);
-  const panel = reviewPanelElement(runId);
-  const textarea = panel && panel.querySelector("[data-review-reason]");
-  if (textarea) {
-    textarea.focus();
-    textarea.setSelectionRange(textarea.value.length, textarea.value.length);
-  }
-}
-
-function syncReviewDraft(runId, panel, input) {
-  const state = reviewStateFor(runId);
-  state.reason = input.value;
-  state.error = "";
-  const selected = REVIEW_DECISION[state.decision];
-  const submit = panel.querySelector("[data-review-submit]");
-  if (submit) submit.disabled = !!state.sending || !!(selected && selected.requiresReason && !input.value.trim());
-  const count = panel.querySelector("[data-review-count]");
-  if (count) count.textContent = `${input.value.length} 字`;
-  const error = panel.querySelector("[data-review-error]");
-  if (error && !error.hidden) {
-    error.hidden = true;
-    error.textContent = "";
-  }
-}
-
-function reviewErrorText(data, status) {
-  const raw = data && (data.error || data.message || data.detail);
-  if (typeof raw === "string" && raw.trim()) return raw.trim();
-  if (raw) {
-    try { return JSON.stringify(raw); } catch { return String(raw); }
-  }
-  return `HTTP ${status}`;
-}
-
-/* 判断落链后后端会重建 trace；这里把新 trace 拉回来，报告才能带上刚追加的事件。 */
-const reviewTraceRefreshes = new Map();
-
-function refreshReviewedTrace(runId) {
-  if (!runId) return Promise.resolve(null);
-  const promise = fetch(runTraceUrl(runId), { cache: "no-store" })
-    .then(response => (response.ok ? response.json() : null))
-    .then(trace => {
-      if (!trace || !Array.isArray(trace.events)) return null;
-      cache.set("run:" + runId, trace);
-      if (store.key !== "run:" + runId) return trace;
-      store.trace = trace;
-      const s = activeSession();
-      if (s && s.id === runId) s.trace = trace;
-      verifyChain(trace).then(check => {
-        if (store.key !== "run:" + runId) return;
-        store.check = check;
-        setChainBadge(check);
-      }).catch(() => { /* 链验证失败不阻断判断记录 */ });
-      return trace;
-    })
-    .catch(() => null)
-    .finally(() => {
-      if (reviewTraceRefreshes.get(runId) === promise) reviewTraceRefreshes.delete(runId);
-    });
-  reviewTraceRefreshes.set(runId, promise);
-  return promise;
-}
-
-async function submitReview(runId) {
-  if (!runId) return;
-  const state = reviewStateFor(runId);
-  const decision = REVIEW_DECISION[state.decision];
-  if (!decision || state.sending || (state.recorded && !state.appending)) return;
-  const reason = String(state.reason || "").trim();
-  if (decision.requiresReason && !reason) {
-    state.error = "请填写判断理由：说明缺什么材料、保留什么，或为什么退回。";
-    paintReviewPanel(runId);
-    const panel = reviewPanelElement(runId);
-    const textarea = panel && panel.querySelector("[data-review-reason]");
-    if (textarea) textarea.focus();
-    return;
-  }
-  state.sending = true;
-  state.error = "";
-  paintReviewPanel(runId);
-  try {
-    const response = await fetch(`/api/runs/${encodeURIComponent(runId)}/review`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ decision: state.decision, reason, reviewer: "reviewer" }),
-    });
-    let data = {};
-    try { data = await response.json(); } catch { /* 非 JSON 错误也走可读提示 */ }
-    if (!response.ok || (data && data.ok === false)) {
-      throw new Error(reviewErrorText(data, response.status));
-    }
-    const event = data.event || {};
-    const sequence = data.sequence !== undefined ? data.sequence : event.sequence;
-    state.recorded = {
-      decision: data.decision || state.decision,
-      reason,
-      reviewer: "reviewer",
-      sequence,
-    };
-    state.sending = false;
-    state.appending = false;
-    state.decision = "";
-    state.reason = "";
-    state.error = "";
-    paintReviewPanel(runId);
-    loadReviewProfile(shownTrace() || {}, { force: true });
-    refreshReviewedTrace(runId);
-    const label = REVIEW_LABEL[state.recorded.decision] || state.recorded.decision;
-    toast(`已记录 · ${label} · #${sequence === undefined || sequence === null ? "—" : sequence}`);
-  } catch (error) {
-    state.sending = false;
-    state.error = `记录失败：${error && error.message ? error.message : "网络错误"}`;
-    paintReviewPanel(runId);
-  }
-}
+const {
+  reviewRunId, loadReviewProfile, reviewPanelHtml, chooseReviewDecision,
+  startAppendReview, applyReviewSuggestion, syncReviewDraft, submitReview,
+} = createReviewUI({
+  esc, verifyChain, REVIEW_DECISIONS, REVIEW_DECISION, REVIEW_LABEL, REVIEW_COUNT_LABEL,
+  store, cache, activeSession, currentRun, shownTrace, runTraceUrl, setChainBadge, toast,
+});
 
 function judgmentFactsHtml(result) {
   const periods = result.periods || [];
@@ -2409,6 +1245,63 @@ function generalResultHtml(trace, result, artifacts) {
 }
 
 function renderResult(trace) {
+  return isProjectTrace(trace) ? projectWork.projectOutcomeHtml(trace) : baseResultHtml(trace);
+}
+
+function projectRunId(trace) {
+  const taskId = String(trace?.task?.id || "");
+  return taskId.startsWith("task-") ? taskId.slice(5) : (activeSession()?.id || "");
+}
+
+function currentWorkTab() {
+  return activeSession()?.workTab || store.workTab || "activity";
+}
+
+function refreshProjectViews(trace) {
+  if (!isProjectTrace(trace) || shownTrace()?.task?.id !== trace.task?.id) return;
+  const active = currentWorkTab();
+  const tabs = document.querySelector("[data-work-tabs]");
+  if (tabs) tabs.innerHTML = projectWork.projectTabsHtml(trace, active);
+  const changes = document.getElementById("changes-slot");
+  if (changes) changes.innerHTML = projectWork.projectResultHtml(trace);
+  const files = document.getElementById("files-slot");
+  if (files && trace.projectWorkspace) files.innerHTML = projectWork.projectFilesHtml(trace);
+  if (active === "files" && !trace.projectWorkspace) loadProjectWorkspace(trace);
+}
+
+async function loadProjectDelivery(trace) {
+  if (!trace.project || trace.project.patchAvailable || trace.project.loading) return;
+  const runId = projectRunId(trace);
+  if (!runId) return;
+  trace.project.loading = true;
+  try {
+    const response = await fetch(`/api/runs/${encodeURIComponent(runId)}/project`, { cache: "no-store" });
+    if (!response.ok) return;
+    trace.project = await response.json();
+    refreshProjectViews(trace);
+  } catch { /* The code changes remain visible in the trace and workspace. */ }
+  finally { if (trace.project) delete trace.project.loading; }
+}
+
+async function loadProjectWorkspace(trace) {
+  if (!isProjectTrace(trace) || trace.projectWorkspace || trace.projectWorkspaceLoading) return;
+  const runId = projectRunId(trace);
+  if (!runId) return;
+  trace.projectWorkspaceLoading = true;
+  try {
+    const response = await fetch(`/api/runs/${encodeURIComponent(runId)}/workspace`, { cache: "no-store" });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+    trace.projectWorkspace = data;
+  } catch (error) {
+    trace.projectWorkspace = { entries: [], error: error.message };
+  } finally {
+    delete trace.projectWorkspaceLoading;
+    refreshProjectViews(trace);
+  }
+}
+
+function baseResultHtml(trace) {
   const terminal = trace.terminal || {};
   const result = terminal.result || {};
   const failure = terminal.failure || {};
@@ -2529,16 +1422,8 @@ function renderHead(trace, title) {
 
 /* RENDER LAYER — 舞台式空状态：标识、字标与提示；composer 由 setStageMode
    以单实例 appendChild 搬进 stage-dock，模板 chips 在其下。 */
-function stageEmptyHtml(note = "还没有运行记录", opts = {}) {
-  const badge = opts.work ? `<span class="stage-badge">WORK</span>` : "";
-  return `<section class="stage-empty" aria-label="空状态">
-    <img class="stage-logo" src="brand/logo.svg" alt="FCode" width="56" height="56">
-    <div class="stage-mark">FCode${badge}</div>
-    <p class="stage-note">${esc(note)}</p>
-    <div class="stage-dock" id="stage-dock"></div>
-    <div class="stage-chips" id="stage-chips" aria-label="按模板开始委托"${opts.work ? "" : " hidden"}></div>
-    ${opts.work ? `<p class="stage-foot">${esc(WORK_STAGE_FOOTNOTE)}</p>` : ""}
-  </section>`;
+function stageEmptyHtml(note = "给想法一个运行空间", opts = {}) {
+  return moonshotStageHtml(note, { ...opts, footnote: WORK_STAGE_FOOTNOTE });
 }
 
 /* RENDER LAYER — composer 双形态（对齐 kimi.com 的居中舞台 → 吸底节奏）。
@@ -2575,6 +1460,7 @@ const DEMO_SCENARIOS = new Set([
 function renderStageChips() {
   const slot = document.getElementById("stage-chips");
   if (!slot) return;
+  if (sidebarMode === "work") { slot.innerHTML = ""; return; }
   const source = (templates && templates.length)
     ? templates.map(t => [t.key, (t.title || t.key).split("：")[0]])
     : SCENARIOS.map(([key, label]) => [key, label]);
@@ -2634,6 +1520,12 @@ function setChainBadge(check) {
     : `<span class="dot"></span><span>链断裂 · ${esc(check.reason)}</span>`;
 }
 
+function setMobileNavigation(open) {
+  const app = document.getElementById("app");
+  app.classList.toggle("mobile-nav-open", !!open);
+  document.getElementById("workspace-menu")?.setAttribute("aria-expanded", String(!!open));
+}
+
 /* RENDER LAYER — 纯 UI 开关：侧栏折叠与证据浮层不接触运行状态。 */
 function setChromeState({ sidebar = null, rail = null } = {}) {
   const app = document.getElementById("app");
@@ -2643,7 +1535,11 @@ function setChromeState({ sidebar = null, rail = null } = {}) {
     const sideToggle = document.getElementById("sidebar-toggle");
     if (sideToggle) {
       const label = sidebar ? "展开侧栏（⌘B）" : "折叠侧栏（⌘B）";
-      sideToggle.title = label;
+      // 提示文案写进 Kimi 形态的 tooltip 浮层（.side-tip，带 ⌘B 键帽），
+      // 不再用原生 title——两者同时存在会出现双提示。
+      const tip = sideToggle.querySelector(".side-tip-label");
+      const short = sidebar ? "展开侧栏" : "折叠侧栏";
+      if (tip) tip.textContent = short;
       sideToggle.setAttribute("aria-label", label);
     }
   }
@@ -2656,6 +1552,32 @@ function setChromeState({ sidebar = null, rail = null } = {}) {
 
 function bindToggles(root) {
   /* toggle 已改为 #main 上的事件委托（bind()），这里保留空实现以兼容旧调用 */
+}
+
+function projectRunHtml(trace, { live = false } = {}) {
+  const active = currentWorkTab();
+  const terminal = trace.terminal || {};
+  const rounds = live ? [] : (trace.rounds || []);
+  const anns = live ? [] : annotateRounds(trace);
+  return `<div class="project-work-layout" data-project-work="${esc(trace.task?.id || "")}">
+    <div class="work-view-tabs" data-work-tabs role="tablist" aria-label="项目任务视图">${projectWork.projectTabsHtml(trace, active)}</div>
+    <section class="work-pane" data-work-pane="activity"${active === "activity" ? "" : " hidden"}>
+      ${objectiveMsgHtml(trace)}
+      ${projectWork.projectContextHtml(trace)}
+      <p class="live-note" id="live-note" aria-live="polite">${live ? liveNote(trace) : ""}</p>
+      <details class="process-details" id="thought" open>
+        <summary class="process-head"><span>工作计划</span><span class="thought-meta" id="thought-meta">${thoughtMeta(trace)}</span><span class="grow"></span><span class="chev">▾</span></summary>
+        <div class="process-body"><div id="plan-slot">${live ? "" : renderPlan(lastPlan(trace))}</div><div id="budget-slot">${live ? "" : renderMeters(trace)}</div></div>
+      </details>
+      <section class="turns" id="turns" aria-label="执行过程">
+        <div id="rounds-slot">${rounds.map((r, i) => roundWrapHtml(messagesByRound(trace), r, anns[i], i > 0 ? rounds[i - 1] : null)).join("")}</div>
+        <div id="approval-slot"></div><div id="queued-slot"></div>
+      </section>
+      <div id="result-slot">${terminal.status ? renderResult(trace) : ""}</div>
+    </section>
+    <section class="work-pane" data-work-pane="changes"${active === "changes" ? "" : " hidden"}><div id="changes-slot">${projectWork.projectResultHtml(trace)}</div></section>
+    <section class="work-pane" data-work-pane="files"${active === "files" ? "" : " hidden"}><div id="files-slot">${trace.projectWorkspace ? projectWork.projectFilesHtml(trace) : '<div class="work-pane-empty"><b>查看任务文件</b><span>读取本次运行的隔离工作区，不会访问原目录。</span></div>'}</div></section>
+  </div>`;
 }
 
 async function render(trace, title) {
@@ -2676,31 +1598,25 @@ async function render(trace, title) {
   const events = (trace.events || []).length;
   const note = `Fcode · ${rounds.length} 轮 · ${events} 个事件 · ${check.ok ? "全链验证通过" : "链验证失败"}${started ? " · " + started + "Z" : ""}`;
 
-  renderMain(`
-    ${sessionHeadHtml(trace, title, note)}
+  const body = isProjectTrace(trace) ? projectRunHtml(trace) : `
     ${objectiveMsgHtml(trace)}
-    <details class="process-details" id="thought">
-      <summary class="process-head">
-        <span>计划与预算</span>
-        <span class="thought-meta">${thoughtMeta(trace)}</span>
-        <span class="grow"></span>
-        <span class="chev">▾</span>
-      </summary>
-      <div class="process-body">
-        <div id="plan-slot">${renderPlan(lastPlan(trace))}</div>
-        <div id="budget-slot">${renderMeters(trace)}</div>
-      </div>
+    <details class="process-details" id="thought" open>
+      <summary class="process-head"><span>工作计划</span><span class="thought-meta">${thoughtMeta(trace)}</span><span class="grow"></span><span class="chev">▾</span></summary>
+      <div class="process-body"><div id="plan-slot">${renderPlan(lastPlan(trace))}</div><div id="budget-slot">${renderMeters(trace)}</div></div>
     </details>
     <section class="turns" id="turns" aria-label="运行时间轴">
       <div id="rounds-slot">${rounds.map((r, i) => roundWrapHtml(messagesByRound(trace), r, anns[i], i > 0 ? rounds[i - 1] : null)).join("")}</div>
-      <div id="approval-slot"></div>
-      <div id="queued-slot"></div>
+      <div id="approval-slot"></div><div id="queued-slot"></div>
     </section>
-    <div id="result-slot">${terminal && terminal.status ? renderResult(trace) : ""}</div>
-  `, { mode: "run" });
+    <div id="result-slot">${terminal && terminal.status ? renderResult(trace) : ""}</div>`;
+  renderMain(`${sessionHeadHtml(trace, title, note)}${body}`, { mode: "run" });
   applyRoundFolding();
+  if (isProjectTrace(trace)) refreshProjectViews(trace);
 
-  if (terminal && terminal.status) loadReviewProfile(trace);
+  if (terminal && terminal.status) {
+    loadReviewProfile(trace);
+    loadProjectDelivery(trace);
+  }
   setFoot(
     `${model.provider || "—"} · ${store.key && store.key.startsWith("run:") ? "运行记录" : "只读回放"}`,
     ""
@@ -2727,28 +1643,18 @@ function autosize(ta) {
 
 function liveShell(trace) {
   const task = trace.task || {};
-  renderMain(`
-    ${sessionHeadHtml(trace, "运行 · " + tplTitle(trace.task && trace.task.binding ? trace.task.binding.scenario : ""), "已提交，等待 Runtime 启动…")}
+  const body = isProjectTrace(trace) ? projectRunHtml(trace, { live: true }) : `
     ${objectiveMsgHtml(trace)}
     <p class="live-note" id="live-note" aria-live="polite">已提交，等待 Runtime 启动…</p>
     <details class="process-details" id="thought" open>
-      <summary class="process-head">
-        <span>计划与预算</span>
-        <span class="thought-meta" id="thought-meta">启动中</span>
-        <span class="grow"></span>
-        <span class="chev">▾</span>
-      </summary>
-      <div class="process-body">
-        <div id="plan-slot"></div>
-        <div id="budget-slot"></div>
-      </div>
+      <summary class="process-head"><span>工作计划</span><span class="thought-meta" id="thought-meta">启动中</span><span class="grow"></span><span class="chev">▾</span></summary>
+      <div class="process-body"><div id="plan-slot"></div><div id="budget-slot"></div></div>
     </details>
     <section class="turns" id="turns" aria-label="运行时间轴">
-      <div id="rounds-slot"></div>
-      <div id="approval-slot"></div>
-      <div id="queued-slot"></div>
+      <div id="rounds-slot"></div><div id="approval-slot"></div><div id="queued-slot"></div>
     </section>
-    <div id="result-slot"></div>`, { mode: "run" });
+    <div id="result-slot"></div>`;
+  renderMain(`${sessionHeadHtml(trace, "运行 · " + tplTitle(task.binding ? task.binding.scenario : ""), "已提交，等待 Runtime 启动…")}${body}`, { mode: "run" });
   const summary = document.querySelector("#thought > summary");
   if (summary) summary.addEventListener("click", () => { const s = activeSession(); if (s) s.thoughtPinned = true; });
   applyRoundFolding();
@@ -2762,10 +1668,10 @@ function liveNote(trace) {
   if (s && s.pending) return `<span class="yel">等待你的决定 · ${esc(s.pending.tool)}</span>`;
   if (terminal.status) {
     const code = (terminal.failure || {}).code;
-    const label = terminal.status === "succeeded" ? "已完成" : "已结束";
-    return `${label} · ${rounds.length} 轮 · ${events.length} 个事件${code ? " · " + esc(code) : ""} · 过程见思考链`;
+    const label = terminal.status === "succeeded" ? "任务已完成" : "任务已结束";
+    return `${label}${code ? " · " + esc(code) : ""}`;
   }
-  return `Fcode 正在处理${rounds.length ? ` · 第 ${rounds.length} 轮` : ""} · ${events.length} 个事件 · 过程见思考链`;
+  return `FCode 正在执行${rounds.length ? ` · 第 ${rounds.length} 轮` : " · 正在准备任务"}${events.length ? ` · ${events.length} 个执行事件` : ""}`;
 }
 
 function thoughtMeta(trace) {
@@ -2900,7 +1806,10 @@ function liveApply(s, data) {
     if (slot) slot.innerHTML = resultHtml;
     s.resultHtml = resultHtml;
   }
-  if (resultHtml) loadReviewProfile(trace);
+  if (resultHtml) {
+    loadReviewProfile(trace);
+    loadProjectDelivery(trace);
+  }
 
   const thought = document.getElementById("thought");
   if (thought && !s.thoughtPinned) {
@@ -3628,6 +2537,7 @@ function finishSession(s, data) {
       if (slot) slot.innerHTML = html;
       s.resultHtml = html;
       loadReviewProfile(trace);
+      loadProjectDelivery(trace);
     }
     cache.set("run:" + s.id, trace);
     verifyChain(trace).then(check => {
@@ -3785,8 +2695,9 @@ function intakeDraftHtml() {
   const approval = intake.spec.approval
     ? approvalTitle(intake.spec.approval)
     : ((intake.readyTask || {}).approval ? approvalTitle(intake.readyTask.approval) : "待选择");
+  const projectSelected = !!(template.module && template.module !== "finance-research") && !!attach.project.path.trim();
   const entry = (modelBudget.models || []).find(m => m.key === modelChoice.key);
-  const scaled = entry && entry.budget ? entry.budget : null;
+  const scaled = !projectSelected && entry && entry.budget ? entry.budget : null;
   const operatorTuned = !!attach.budget;
   const shown = operatorTuned
     ? {
@@ -3794,8 +2705,11 @@ function intakeDraftHtml() {
         max_reads: attach.budget.maxReads,
         max_cost_microusd: attach.budget.maxCostMicrousd,
       }
-    : (scaled || limits);
-  const rescaled = scaled && (scaled.max_cost_microusd !== limits.max_cost_microusd
+    : (projectSelected
+      ? { max_calls: 24, max_reads: 64, max_cost_microusd: 500000 }
+      : (scaled || limits));
+  const rescaled = scaled && (scaled.max_calls !== limits.max_calls
+    || scaled.max_cost_microusd !== limits.max_cost_microusd
     || scaled.max_tokens !== limits.max_tokens);
   const budget = limits.max_calls
     ? `${num(shown.max_calls ?? limits.max_calls)} calls · ${num(shown.max_reads ?? limits.max_reads)} reads · ${num(shown.max_cost_microusd ?? limits.max_cost_microusd)} µUSD`
@@ -3805,23 +2719,28 @@ function intakeDraftHtml() {
     : "";
   const scaleNote = operatorTuned
     ? `<span class="intake-scale-note">操作者已微调治理上限</span>`
-    : (rescaled && entry
-      ? `<span class="intake-scale-note">已按 ${esc(entry.model)} 价格重算成本顶（上限而非目标）</span>`
-      : "");
+    : (scaled && scaled.error
+      ? `<span class="intake-scale-note">${esc(scaled.error)}</span>`
+      : (rescaled && entry
+        ? `<span class="intake-scale-note">已按 ${esc(entry.model)} 价格适配调用容量（硬上限不变）</span>`
+        : ""));
   const general = !!(template.module && template.module !== "finance-research");
   const mode = general ? (((intake.readyTask || {}).spec || {}).mode || "") : "";
-  const modeText = mode === "script" ? "脚本：写 → 运行 → 修复 → 复跑"
+  const projectMode = general && !!attach.project.path.trim();
+  const modeText = projectMode ? "项目：探索 → 修改 → 测试 → 修复 → 独立复跑"
+    : mode === "script" ? "脚本：写 → 运行 → 修复 → 复跑"
     : mode === "research" ? "调研：抓取来源 → 写报告"
     : "按描述自动判断";
-  const sourcesText = mode === "script"
-    ? "工作区脚本，无需 URL"
+  const sourcesText = projectMode ? "本地项目隔离副本"
+    : mode === "script" ? "工作区脚本，无需 URL"
     : `${attach.sources.length}/5 个 URL`;
   const headTag = general
     ? (template.title ? template.title.split("：")[0] : "通用委托")
     : "内置合成资料 · 恒星智算";
   const detailRows = general
     ? `<div class="intake-row"><span>模式</span><b>${esc(modeText)}</b></div>
-       <div class="intake-row"><span>来源</span><b>${esc(sourcesText)}</b>${attach.sources.length ? `<span class="intake-scale-note">只有 + 面板里列出的地址可被 fetch_url 访问</span>` : ""}</div>
+       <div class="intake-row"><span>来源</span><b>${esc(sourcesText)}</b>${attach.sources.length && !projectMode ? `<span class="intake-scale-note">只有 + 面板里列出的地址可被 fetch_url 访问</span>` : ""}</div>
+       ${projectDraftRows(attach.project)}
        <div class="intake-row"><span>审批</span><b>${esc(approval)}</b></div>`
     : `<div class="intake-row"><span>问题</span><b>${esc(intent)}</b></div>
        <div class="intake-row"><span>输出</span><b>${esc(output)}</b></div>
@@ -4059,9 +2978,14 @@ function intakeBack() {
 async function startIntakeRun() {
   if (!intake.active || !intake.readyTask) return;
   const task = intake.readyTask;
+  const projectMode = !!attach.project.path.trim();
   const scriptMode = (task.spec && task.spec.mode) === "script";
-  if (String(task.template) === tplKey && isGeneralTemplate() && !scriptMode && !attach.sources.length) {
-    toast("调研委托至少需要 1 个来源 URL：点 + 添加（脚本委托可留空）");
+  if (String(task.template) === tplKey && isGeneralTemplate() && !projectMode && !scriptMode && !attach.sources.length) {
+    toast("调研委托至少需要 1 个来源 URL：点 + 添加（脚本或本地项目可留空）");
+    return;
+  }
+  if (projectMode && !parseVerificationCommand(attach.project.verification)) {
+    toast("请填写项目独立验证命令，例如 pytest -q");
     return;
   }
   const button = document.querySelector("[data-intake-start]");
@@ -4340,13 +3264,67 @@ function saveQueueEdit(s, msg) {
   })();
 }
 
+let projectStarting = false;
+
+async function startProjectRun(text) {
+  if (projectStarting) return;
+  const hasProject = !!attach.project.path.trim();
+  let spec;
+  try { spec = { ...directWorkRunSpec(attach.project), ...delegationSpecExtras() }; }
+  catch (error) {
+    attach.projectEditing = true;
+    renderProjectComposer();
+    toast(error.message);
+    return;
+  }
+  const ta = document.getElementById("composer-ta");
+  const button = document.getElementById("send");
+  projectStarting = true;
+  if (button) button.disabled = true;
+  try {
+    const response = await fetch("/api/runs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        objective: text,
+        template: "general-research",
+        approval: approvalMode,
+        spec,
+        ...(modelChoice.key !== "mock" ? { model: modelChoice.key, effort: modelChoice.effort || "medium" } : {}),
+      }),
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.error || `HTTP ${response.status}`);
+    }
+    const run = await response.json();
+    ta.value = "";
+    autosize(ta);
+    attach.projectEditing = false;
+    attach.open = false;
+    renderProjectComposer();
+    renderAttachPanel();
+    toast(hasProject ? "任务已开始 · 正在隔离副本中执行" : "任务已开始");
+    openLive(run.id, text, run.template);
+    refreshRuns();
+  } catch (error) {
+    toast("任务启动失败：" + error.message);
+    ta.focus();
+  } finally {
+    projectStarting = false;
+    if (!activeSession()?.running) paintSendState();
+  }
+}
+
 async function sendTask() {
   const ta = document.getElementById("composer-ta");
   const text = (ta.value || "").trim();
+  if (!text) { toast("先描述要完成的任务"); return; }
   if (!health || !health.live) {
     toast("回放模式：用 python3 viewer/server.py 启动后才能派任务");
     return;
   }
+  if (sidebarMode === "work") return startProjectRun(text);
   ta.value = "";
   autosize(ta);
   startIntake(text);
@@ -4421,6 +3399,15 @@ function saveModelChoice() {
   localStorage.setItem("fa.model", JSON.stringify(modelChoice));
 }
 
+function adoptDefaultWorkModel(defaultKey) {
+  if (modelChoice.touched || !defaultKey) return;
+  const entry = modelCatalog.find(model => model.key === defaultKey && model.available);
+  if (!entry || modelChoice.key === entry.key) return;
+  modelChoice.key = entry.key;
+  saveModelChoice();
+  paintModelBadge();
+}
+
 function liveRunEffortLabel(trace) {
   const rounds = (trace || {}).rounds || [];
   for (let i = rounds.length - 1; i >= 0; i--) {
@@ -4486,6 +3473,9 @@ function isGeneralTemplate() {
 
 function effectiveDraftBudget() {
   const template = templates.find(t => t.key === tplKey) || {};
+  if (isGeneralTemplate() && attach.project.path.trim()) {
+    return { max_calls: 24, max_reads: 64, max_cost_microusd: 500000, max_tokens: 120000 };
+  }
   const entry = (modelBudget.models || []).find(m => m.key === modelChoice.key);
   return (entry && entry.budget) || template.limits || {};
 }
@@ -4595,6 +3585,9 @@ function renderAttachPanel() {
     { key: "tpl", label: "委托模板", note: "决定授权、预算与故障注入",
       summary: esc(curTpl),
       body: `<div class="attach-tpls">${tplItems}</div>` },
+    ...(general ? [{ key: "project", label: "本地项目 / 修 Bug", note: "真实仓库的隔离副本",
+      summary: attach.project.path.trim() ? attach.project.path.trim().split("/").pop() : "未选择",
+      body: projectWork.projectAttachBody(attach.project) }] : []),
     general
       ? { key: "sources", label: "外部来源", note: "fetch_url 可访问",
           summary: attach.sources.length ? `${attach.sources.length} 个来源` : "未添加",
@@ -4606,7 +3599,7 @@ function renderAttachPanel() {
     { key: "tools", label: "工具注册表", note: "全部经门控与预算",
       summary: `${attach.tools.length} 个已注册工具`,
       body: `<div class="attach-tools">${tools || '<div class="attach-empty">正在读取注册表…</div>'}</div>${general ? mcpGroup : ""}<div class="attach-rule">工具由主机注册；任何调用须经门控与预算</div>` },
-    { key: "budget", label: "预算微调", note: raised ? "已上调" : "默认 = 模型价格重算的上限",
+    { key: "budget", label: "预算微调", note: raised ? "已上调" : "默认 = 按模型价格适配的调用容量",
       summary: `${budget.maxCalls} calls · ${budget.maxReads} reads · ${num(budget.maxCostMicrousd)} µ`,
       body: `<div class="attach-budget">
         <label>calls <input type="number" min="1" inputmode="numeric" data-attach-budget="maxCalls" value="${Number(budget.maxCalls)}"></label>
@@ -4696,6 +3689,14 @@ function delegationSpecExtras() {
   const spec = {};
   if (isGeneralTemplate()) {
     if (attach.sources.length) spec.sources = [...attach.sources];
+    if (attach.project.path.trim()) {
+      const verification = parseVerificationCommand(attach.project.verification);
+      if (!verification) throw new Error("请填写项目独立验证命令，例如 pytest -q");
+      spec.mode = "open";
+      spec.project = { path: attach.project.path.trim() };
+      spec.verification = verification;
+      spec.reportPath = "FCODE_RESULT.md";
+    }
   } else {
     const allIds = new Set(attach.corpus.map(doc => doc.id));
     if (attach.scope.size && attach.scope.size !== allIds.size) {
@@ -5580,8 +4581,8 @@ function focusComposer() {
 function paletteActions() {
   const s = activeSession();
   const actions = [
-    { ic: "＋", label: "新委托 · 需求选择", run: () => startIntake("") },
-    { ic: "✎", label: "新任务 · 聚焦输入框", run: focusComposer },
+    { ic: "＋", label: sidebarMode === "work" ? "新任务 · 直接执行" : "新委托 · 需求选择", run: () => sidebarMode === "work" ? focusComposer() : startIntake("") },
+    { ic: "✎", label: "聚焦任务输入框", run: focusComposer },
   ];
   if (s && s.running) actions.push({ ic: "■", label: "停止当前运行", run: stopRun });
   if (currentRun() && !(s && s.running)) actions.push({ ic: "↻", label: "重试当前运行", run: retryCurrent });
@@ -5689,7 +4690,7 @@ function runPaletteItem(index) {
 /* -------------------- MIXED — 命令匹配/执行（不改）+ 菜单渲染 */
 /* Codex 式入口：输入框以 / 开头弹出命令面板，↑↓ 选择，Tab 补全，Enter 执行。 */
 const SLASH_COMMANDS = [
-  { cmd: "/new", desc: "新建委托 · 需求确认", run: () => startIntake("") },
+  { cmd: "/new", desc: "新建任务", run: () => sidebarMode === "work" ? focusComposer() : startIntake("") },
   { cmd: "/ledger", desc: "打开工作台账本", run: () => renderMode("ledger") },
   { cmd: "/report", desc: "签发当前运行的审计报告", run: () => openReport() },
   { cmd: "/stop", desc: "在轮次边界停止当前运行", run: () => stopRun() },
@@ -5792,910 +4793,57 @@ function hydrateDoodles(root = document) {
    对话是“回答”，不是“运行”：每次回答仍是一笔受预算约束、进事件链的
    模型调用，但不执行工具。需要执行时，用户点「转为委托」。 */
 
-async function loadChatThreads(reset = true) {
-  if (!health || !health.live) return;
-  const offset = reset ? 0 : chatThreads.length;
-  try {
-    const data = await fetch(
-      `/api/chat/threads?limit=${chat.limit}&offset=${offset}`,
-      { cache: "no-store" },
-    ).then(r => r.ok ? r.json() : null);
-    const list = data && Array.isArray(data.threads) ? data.threads : [];
-    if (data && Number.isFinite(Number(data.total))) chat.total = Number(data.total);
-    chatThreads = reset
-      ? list
-      : chatThreads.concat(list.filter(thread => !chatThreads.some(item => item.id === thread.id)));
-    chat.threads = chatThreads;
-    renderChats();
-  } catch { /* 侧栏列表失败不阻塞对话 */ }
-}
+const {
+  adoptDefaultChatModel, loadChatModels, renderChatModelMenu, syncChatConfig,
+  renderChatConfig, saveChatConfig, clearChatConfigKey, setDefaultChatModel,
+} = createChatConfig({
+  esc, num, chat, chatModelChoice, saveChatModelChoice, paintModelBadge, toast,
+  adoptDefaultWorkModel,
+  getHealth: () => health,
+  getChatModels: () => chatModels,
+  setChatModels: value => { chatModels = value; },
+  getChatConfig: () => chatConfig,
+  setChatConfig: value => { chatConfig = value; },
+  getChatConfigSource: () => chatConfigSource,
+  setChatConfigSource: value => { chatConfigSource = value; },
+  getChatModelTouched: () => chatModelTouched,
+});
 
-function renderChats() {
-  const nav = document.getElementById("chat-nav");
-  if (!nav) return;
-  const head = document.getElementById("chat-chats");
-  if (head) head.innerHTML = chatSectionHtml(chatThreads.length);
-  const list = chatThreads.filter(thread => !isChatPinned(thread.id));
-  nav.innerHTML = chatRowsHtml(list, {
-    activeId: chat.current ? chat.current.id : null,
-    total: chat.total,
-    pinnedOf: isChatPinned,
-  });
-}
-
-function handleChatDelete(threadId, el) {
-  if (chat.deleteArmed !== threadId) {
-    chat.deleteArmed = threadId;
-    el.textContent = "确认";
-    el.classList.add("armed");
-    clearTimeout(chat.deleteTimer);
-    chat.deleteTimer = setTimeout(() => {
-      chat.deleteArmed = null;
-      chat.deleteTimer = null;
-      renderChats();
-    }, 3000);
-    return;
-  }
-  chat.deleteArmed = null;
-  clearTimeout(chat.deleteTimer);
-  (async () => {
-    try {
-      const response = await fetch(`/api/chat/threads/${encodeURIComponent(threadId)}`, { method: "DELETE" });
-      const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
-      chatThreads = chatThreads.filter(thread => thread.id !== threadId);
-      chat.threads = chatThreads;
-      chat.total = Math.max(0, chat.total - 1);
-      if (chat.current && chat.current.id === threadId) newChat();
-      renderChats();
-      toast("对话已从列表移除（事件链保留）");
-    } catch (error) {
-      toast("删除失败：" + error.message);
-    }
-  })();
-}
-
-function adoptDefaultChatModel(defaultKey) {
-  if (chatModelTouched || !defaultKey) return;
-  const entry = chatModels.find(m => m.key === defaultKey && m.available);
-  if (entry && chatModelChoice.key !== entry.key) {
-    chatModelChoice.key = entry.key;
-    saveChatModelChoice();
-    paintModelBadge();
-  }
-}
-
-async function loadChatModels() {
-  if (!health || !health.live) return;
-  try {
-    const data = await fetch("/api/chat/models", { cache: "no-store" }).then(r => r.ok ? r.json() : null);
-    if (data && Array.isArray(data.models)) {
-      chatModels = data.models;
-      adoptDefaultChatModel(data.default);
-      if (chat.active) paintModelBadge();
-    }
-  } catch { /* 菜单打开时会重试 */ }
-}
-
-function renderChatModelMenu() {
-  const menu = document.getElementById("model-menu");
-  if (!menu) return;
-  const items = chatModels.map(m => {
-    const current = m.available && m.key === chatModelChoice.key;
-    return `<button class="tpl-item model-item${current ? " active" : ""}${m.available ? "" : " disabled"}" data-chatmodel-pick="${esc(m.key)}"${m.available ? "" : " disabled"}>
-      <span class="t"><span>${esc(m.label)}${current ? '<span class="check">✓</span>' : ""}</span><span class="m">${esc(m.model)}</span></span>
-      <span class="d">${m.available ? (m.remote && m.price ? `${num(m.price.inputMicrousdPerMtok)} / ${num(m.price.outputMicrousdPerMtok)} µUSD·MTok⁻¹` : "离线 · 不产生外部计费") : esc(m.reason)}</span>
-    </button>`;
-  }).join("");
-  menu.innerHTML = items + `<div class="tpl-note">对话模型；委托运行的模型仍由环境变量配置</div>
-    <button class="tpl-item" type="button" data-chatmodel-settings><span class="t"><span>管理模型配置…</span></span><span class="d">设置 → 模型与工具：填写 API Key 与价格</span></button>`;
-}
-
-async function syncChatConfig() {
-  if (!health || !health.live) return;
-  try {
-    const data = await fetch("/api/settings/chat-config", { cache: "no-store" }).then(r => r.ok ? r.json() : null);
-    if (!data) return;
-    chatConfig = data.config || { providers: {}, default_model: "mock" };
-    chatConfigSource = data.source || null;
-    chatModels = Array.isArray(data.models) ? data.models : chatModels;
-    renderChatConfig(true);
-  } catch { /* 设置页会显示加载失败 */ }
-}
-
-/* 一组设置同时喂两个面：对话与委托运行。价格与日期是必填项——预算顶不能
-   建立在猜来的价格上，这条规则委托侧一直有，现在对话侧也一致。 */
-const CHATCFG_FIELDS = {
-  kimi: [
-    ["model", "模型", "kimi-k2.6"],
-    ["api_key", "API Key", ""],
-    ["input_price_microusd_per_mtok", "输入价 µUSD/MTok", "950000"],
-    ["output_price_microusd_per_mtok", "输出价 µUSD/MTok", "4000000"],
-    ["price_as_of", "价格日期（YYYY-MM-DD）", "2026-10-25"],
-    ["price_source", "价格来源", "moonshot-cn-published"],
-    ["min_interval_seconds", "最小间隔（秒）", "22"],
-    ["max_completion_tokens", "最大补全 tokens", "2048"],
-  ],
-  deepseek: [
-    ["model", "模型", "deepseek-chat"],
-    ["api_key", "API Key", ""],
-    ["input_price_microusd_per_mtok", "输入价 µUSD/MTok", ""],
-    ["output_price_microusd_per_mtok", "输出价 µUSD/MTok", ""],
-    ["price_as_of", "价格日期（YYYY-MM-DD）", ""],
-    ["price_source", "价格来源", ""],
-    ["min_interval_seconds", "最小间隔（秒）", "0"],
-    ["max_completion_tokens", "最大补全 tokens", "2048"],
-  ],
-  local: [
-    ["base_url", "端点（OpenAI 兼容）", "http://127.0.0.1:11434/v1"],
-    ["model", "模型", "fcode-qwen3-4b"],
-    ["api_key", "API Key（可选）", ""],
-    ["max_completion_tokens", "最大补全 tokens", "2048"],
-  ],
-};
-
-function renderChatConfig(preserveInputs = false) {
-  const defaultSlot = document.getElementById("chatcfg-default");
-  const cardsSlot = document.getElementById("chatcfg-cards");
-  if (!defaultSlot || !cardsSlot) return;
-  const before = {};
-  if (preserveInputs) {
-    document.querySelectorAll("#chatcfg input").forEach(input => {
-      // Passwords are intentionally not restored: a saved key clears the field.
-      if (input.type !== "password") before[input.id] = input.value;
-    });
-  }
-  const providers = (chatConfig && chatConfig.providers) || {};
-  const fallbacks = { kimi: "Kimi 云端", deepseek: "DeepSeek 云端", local: "本地模型", mock: "离线 Mock" };
-  const currentDefault = (chatConfig && chatConfig.default_model) || "mock";
-  defaultSlot.innerHTML = `<span class="chatcfg-label">默认对话模型</span>` + ["mock", "kimi", "deepseek", "local"].map(key => {
-    const entry = chatModels.find(m => m.key === key);
-    const usable = key === "mock" || (entry && entry.available);
-    return `<button type="button" class="chatcfg-radio${currentDefault === key ? " active" : ""}" data-chatcfg-default="${esc(key)}"${usable ? "" : " disabled"} title="${usable ? "" : esc(entry ? entry.reason : "未配置")}">
-      <span class="dot${usable ? " ok" : ""}"></span>${esc(fallbacks[key])}
-    </button>`;
-  }).join("");
-  const sourceLine = (() => {
-    if (!chatConfigSource || !chatConfigSource.path) return "";
-    const fmt = seconds => seconds ? new Date(seconds * 1000).toLocaleString() : "—";
-    const stale = chatConfigSource.stale
-      ? `<b class="bad">配置文件比本进程新（本进程加载于 ${esc(fmt(chatConfigSource.loadedAt))}）——重启后生效</b>`
-      : `<span class="dim">本进程已加载最新配置</span>`;
-    return `<p class="chatcfg-source">配置文件：<code>${esc(chatConfigSource.path)}</code> · 最后修改 ${esc(fmt(chatConfigSource.fileMtime))} · ${stale}</p>`;
-  })();
-  cardsSlot.innerHTML = sourceLine + Object.entries(CHATCFG_FIELDS).map(([provider, fields]) => {
-    const stored = providers[provider] || {};
-    const entry = chatModels.find(m => m.key === provider);
-    let status;
-    if (entry && entry.available) {
-      status = `<span class="chatcfg-status ok">可用 · ${esc(entry.model)}</span>`;
-    } else {
-      const reason = entry ? entry.reason : "未配置";
-      const missing = reason.includes("缺少")
-        ? (reason.split("缺少")[1].match(/、/g) || []).length + 1
-        : 1;
-      status = `<span class="chatcfg-status bad" title="${esc(reason)}">未配置 · 缺 ${missing} 项</span>`;
-    }
-    const inputs = fields.map(([name, label, placeholder]) => {
-      const value = name === "api_key" ? "" : String(stored[name] ?? "");
-      const hint = name === "api_key"
-        ? (stored.api_key_set ? `已保存 ${esc(stored.api_key_masked || "")} · 留空保持不变` : "未设置")
-        : "";
-      return `<label class="chatcfg-field">
-        <span>${esc(label)}${hint ? `<i>${hint}</i>` : ""}</span>
-        <input id="chatcfg-${provider}-${name}" type="${name === "api_key" ? "password" : "text"}"
-          value="${esc(value)}" placeholder="${esc(placeholder)}" autocomplete="off" spellcheck="false">
-      </label>`;
-    }).join("");
-    return `<div class="chatcfg-card" data-chatcfg-card="${provider}">
-      <div class="chatcfg-card-head"><b>${esc(fallbacks[provider])}</b>${status}</div>
-      <p class="chatcfg-scope">同时用于对话与委托运行（设置 &gt; 环境 &gt; 默认）。云端端点固定为官方地址，不能在这里改。</p>
-      <div class="chatcfg-grid">${inputs}</div>
-      <div class="chatcfg-actions">
-        <button type="button" class="chat-act strong" data-chatcfg-save="${provider}">保存</button>
-        ${stored.api_key_set ? `<button type="button" class="chat-act" data-chatcfg-clearkey="${provider}">清除密钥</button>` : ""}
-        <span class="chatcfg-note">留空保存 = 清除该项（回落到环境变量/默认）</span>
-      </div>
-    </div>`;
-  }).join("");
-  if (preserveInputs) {
-    for (const [id, value] of Object.entries(before)) {
-      const input = document.getElementById(id);
-      if (input) input.value = value;
-    }
-  }
-}
-
-async function saveChatConfig(provider) {
-  if (!provider || !CHATCFG_FIELDS[provider]) return;
-  const values = {};
-  for (const [name] of CHATCFG_FIELDS[provider]) {
-    const input = document.getElementById(`chatcfg-${provider}-${name}`);
-    if (!input) continue;
-    const value = String(input.value || "").trim();
-    if (name === "api_key" && !value) continue; // 留空 = 保持不变
-    values[name] = value;
-  }
-  try {
-    const response = await fetch("/api/settings/chat-config", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ provider, values }),
-    });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
-    chatConfig = data.config;
-    chatConfigSource = data.source || chatConfigSource;
-    chatModels = Array.isArray(data.models) ? data.models : chatModels;
-    renderChatConfig(true);
-    paintModelBadge();
-    toast("已保存（本机）");
-  } catch (error) {
-    toast("保存失败：" + error.message);
-  }
-}
-
-async function clearChatConfigKey(provider) {
-  try {
-    const response = await fetch("/api/settings/chat-config", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ provider, values: { api_key: "" } }),
-    });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
-    chatConfig = data.config;
-    chatConfigSource = data.source || chatConfigSource;
-    chatModels = Array.isArray(data.models) ? data.models : chatModels;
-    renderChatConfig(true);
-    paintModelBadge();
-    toast("密钥已清除（回落到环境变量）");
-  } catch (error) {
-    toast("清除失败：" + error.message);
-  }
-}
-
-async function setDefaultChatModel(key) {
-  try {
-    const response = await fetch("/api/settings/chat-config", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ default_model: key }),
-    });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
-    chatConfig = data.config;
-    chatConfigSource = data.source || chatConfigSource;
-    chatModels = Array.isArray(data.models) ? data.models : chatModels;
-    if (!chatModelTouched) {
-      const entry = chatModels.find(m => m.key === key && m.available);
-      if (entry) { chatModelChoice.key = key; saveChatModelChoice(); }
-    }
-    renderChatConfig(true);
-    paintModelBadge();
-    toast(`默认对话模型：${key}`);
-  } catch (error) {
-    toast("设置失败：" + error.message);
-  }
-}
-
-function leaveChat() {
-  if (chat.abort) {
-    try { chat.abort.abort(); } catch { /* already settled */ }
-  }
-  if (chat.paintTimer) { clearTimeout(chat.paintTimer); chat.paintTimer = null; }
-  const wasActive = chat.active;
-  const wasStreaming = chat.streaming;
-  chat.active = false;
-  chat.streaming = false;
-  chat.abort = null;
-  chat.editing = null;
-  chat.current = null;
-  chat.attachments = [];
-  renderChatAttachChips();
-  document.getElementById("app")?.classList.remove("chat-mode");
-  paintChatChrome(false);
-  if (wasActive || wasStreaming) restoreSendButton();
-}
-
-function paintChatChrome(on) {
-  const show = (id, visible) => {
-    const el = document.getElementById(id);
-    if (el) el.style.display = visible ? "" : "none";
-  };
-  show("chain-badge", !on);
-  show("rail-toggle", !on);
-  show("approval-btn", !on);
-  show("composer-open", !on);
-  const attach = document.getElementById("chat-attach");
-  if (attach) {
-    attach.hidden = !on;
-    attach.style.display = on ? "" : "none";
-  }
-  const runChip = document.getElementById("run-chip");
-  if (runChip && on) runChip.hidden = true;
-  if (on) {
-    const panel = document.getElementById("attach-panel");
-    if (panel) panel.hidden = true;
-    const open = document.getElementById("composer-open");
-    if (open) open.setAttribute("aria-expanded", "false");
-    document.getElementById("composer-box")?.classList.remove("open-attach");
-  }
-}
-
-function renderChatHead() {
-  const title = chat.current && chat.current.title ? chat.current.title : "新对话";
-  document.getElementById("tb-title").textContent = title;
-  document.getElementById("tb-chips").innerHTML = `<span class="chip">对话</span>`;
-}
-
-const WORK_STAGE_NOTE = "把任务交给 FCode：自己规划、动手执行、完成后给你产物。";
-const WORK_STAGE_FOOTNOTE = "每次工具调用都过权限门控与预算，全程写入签名链——需要你确认的动作会停下来问。";
-const WORK_PLACEHOLDER = "给 FCode 派一个任务…";
+const WORK_STAGE_NOTE = "给想法一个运行空间。你定义目标，FCode 负责规划、执行与交付。";
+const WORK_STAGE_FOOTNOTE = "模型提议，主机守门。每次工具调用都过权限与预算，每一步都有证据。";
+const WORK_PLACEHOLDER = "描述你想实现的事，FCode 从这一步开始…";
 let uiMode = (() => {
   try { return localStorage.getItem("fa.uiMode") === "work" ? "work" : "chat"; }
   catch { return "chat"; }
 })();
 
-function detachChatChrome() {
-  /* 模式切换用：拆掉对话的界面件，但保留 chat.current，
-     让「对话 ↔ 工作」往返后线程可以从内存恢复。 */
-  if (chat.abort) {
-    try { chat.abort.abort(); } catch { /* already settled */ }
-  }
-  if (chat.paintTimer) { clearTimeout(chat.paintTimer); chat.paintTimer = null; }
-  chat.active = false;
-  chat.streaming = false;
-  chat.abort = null;
-  chat.editing = null;
-  chat.attachments = [];
-  renderChatAttachChips();
-  document.getElementById("app")?.classList.remove("chat-mode");
-  paintChatChrome(false);
-  restoreSendButton();
-}
-
-function openWorkHome() {
-  detachChatChrome();
-  if (intake.active) closeIntake(false);
-  if (settingsOpen) closeSettingsPage(false);
-  ledgerOpen = false;
-  if (activeSession()) detachLive();
-  setChromeState({ rail: false });
-  store.key = null;
-  store.trace = null;
-  chat.active = false;          /* chat.current 保留：切回对话可恢复线程 */
-  chat.streaming = false;
-  chat.editing = null;
-  renderNav();
-  renderMain(stageEmptyHtml(WORK_STAGE_NOTE, { work: true }), { mode: "empty" });
-  paintChatChrome(false);
-  document.getElementById("tb-title").textContent = "FCode";
-  document.getElementById("tb-chips").innerHTML = "";
-  const ta = document.getElementById("composer-ta");
-  if (ta) {
-    ta.value = "";
-    autosize(ta);
-    ta.placeholder = WORK_PLACEHOLDER;
-    ta.focus();
-  }
-  renderChatAttachChips();
-  paintSendState();
-}
-
-function switchToChat() {
-  if (chat.current && (chat.current.messages || []).length) {
-    chat.active = true;
-    chat.streaming = false;
-    chat.editing = null;
-    renderNav();
-    renderChat({ forceBottom: true });
-    paintChatChrome(true);
-    const ta = document.getElementById("composer-ta");
-    if (ta) { ta.value = ""; autosize(ta); ta.placeholder = "给 FCode 发消息…"; }
-    paintSendState();
-  } else {
-    newChat();
-  }
-}
-
-function setUiMode(mode) {
-  if (uiMode !== mode) {
-    uiMode = mode;
-    try { localStorage.setItem("fa.uiMode", mode); } catch { /* quota */ }
-  }
-  sidebarMode = mode;
-  const app = document.getElementById("app");
-  app.classList.toggle("mode-chat", mode === "chat");
-  app.classList.toggle("mode-work", mode === "work");
-  const chatTab = document.getElementById("mode-chat");
-  const workTab = document.getElementById("mode-work");
-  if (chatTab) {
-    chatTab.classList.toggle("active", mode === "chat");
-    chatTab.setAttribute("aria-selected", mode === "chat" ? "true" : "false");
-  }
-  if (workTab) {
-    workTab.classList.toggle("active", mode === "work");
-    workTab.setAttribute("aria-selected", mode === "work" ? "true" : "false");
-  }
-  const paneChat = document.getElementById("pane-chat");
-  const paneWork = document.getElementById("pane-work");
-  if (paneChat) paneChat.hidden = mode !== "chat";
-  if (paneWork) paneWork.hidden = mode !== "work";
-  // 两套侧栏的 chrome：工作侧栏 header 有 flavor 徽章（Kimi Work），
-  // 对话侧栏（网页版）没有徽章，只有 logo 与折叠钮。
-  const chrome = modeChrome(mode);
-  const newLabel = document.getElementById("new-label");
-  if (newLabel) newLabel.textContent = chrome.newLabel;
-  const flavor = document.getElementById("side-flavor");
-  if (flavor) {
-    flavor.textContent = chrome.flavor;
-    flavor.hidden = !chrome.flavor;
-  }
-  const newBtn = document.getElementById("new-run");
-  if (newBtn) newBtn.title = chrome.newTitle;
-  renderNav();
-  paintSections();
-  if (mode === "chat") {
-    if (chat.active && document.getElementById("main")?.dataset.view === "empty") return;
-    if (chat.current && (chat.current.messages || []).length) switchToChat();
-    else if (!chat.active) newChat();
-  } else {
-    const view = document.getElementById("main")?.dataset.view;
-    if (view === "empty" && !chat.active) {
-      renderMain(stageEmptyHtml(WORK_STAGE_NOTE, { work: true }), { mode: "empty" });
-      const ta = document.getElementById("composer-ta");
-      if (ta) ta.placeholder = WORK_PLACEHOLDER;
-      return;
-    }
-    if (activeSession()) selectRun(activeSession().id);
-    else openWorkHome();
-  }
-}
-
-function newChat() {
-  leaveChat();
-  if (intake.active) closeIntake(false);
-  if (settingsOpen) closeSettingsPage(false);
-  ledgerOpen = false;
-  if (activeSession()) detachLive();
-  setChromeState({ rail: false });
-  store.key = null;
-  store.trace = null;
-  chat.active = true;
-  chat.current = null;
-  chat.streaming = false;
-  chat.editing = null;
-  chat.attachments = [];
-  renderNav();
-  renderMain(stageEmptyHtml("向 FCode 提问，或让 FCode 帮你整理思路", { chat: true }), { mode: "empty" });
-  paintChatChrome(true);
-  document.getElementById("tb-title").textContent = "FCode";
-  document.getElementById("tb-chips").innerHTML = "";
-  const ta = document.getElementById("composer-ta");
-  if (ta) {
-    ta.value = "";
-    autosize(ta);
-    ta.placeholder = "给 FCode 发消息…";
-    ta.focus();
-  }
-  renderChatAttachChips();
-  paintSendState();
-  adoptDefaultChatModel(chatConfig && chatConfig.default_model);
-  loadChatModels();
-}
-
-async function openChat(threadId) {
-  leaveChat();
-  if (intake.active) closeIntake(false);
-  if (settingsOpen) closeSettingsPage(false);
-  ledgerOpen = false;
-  if (activeSession()) detachLive();
-  setChromeState({ rail: false });
-  store.key = null;
-  store.trace = null;
-  chat.active = true;
-  chat.current = null;
-  chat.streaming = false;
-  chat.editing = null;
-  chat.attachments = [];
-  renderNav();
-  renderMain(`<div class="empty">加载对话…</div>`, { mode: "loading" });
-  try {
-    const response = await fetch(`/api/chat/threads/${encodeURIComponent(threadId)}`, { cache: "no-store" });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    chat.current = await response.json();
-    await prepareCardRuns(chat.current);
-  } catch (error) {
-    toast("对话加载失败：" + error.message);
-    newChat();
-    return;
-  }
-  paintChatChrome(true);
-  renderChatHead();
-  renderChat({ forceBottom: true });
-  renderNav();
-  const ta = document.getElementById("composer-ta");
-  if (ta) {
-    ta.value = "";
-    autosize(ta);
-    ta.placeholder = "给 FCode 发消息…";
-    ta.focus();
-  }
-  paintSendState();
-}
-
-function renderChat({ forceBottom = false } = {}) {
-  const thread = chat.current;
-  if (!thread || !(thread.messages || []).length) {
-    renderMain(`<div class="chat-empty">
-      ${aiAvatarHtml("idle", 64)}
-      <div class="chat-empty-mark">FCode</div>
-      <p>开始一段对话。对话只回答，不执行工具；需要读写文件或运行命令时，用「委托运行」。</p>
-    </div>`, { mode: "chat" });
-    return;
-  }
-  const stick = forceBottom || nearMainBottom();
-  renderMain(
-    `<div class="chat-thread" aria-live="polite">${thread.messages
-      .map(message => chatMessageHtml(withRunStatus(message), chat.editing, chatCardHtml(message)))
-      .join("")}</div>`,
-    { mode: "chat" },
-  );
-  if (stick) requestAnimationFrame(scrollMainBottom);
-}
-
-/* 轻量 Markdown：标题 / 列表 / 引用 / 代码围栏 / 行内代码 / 粗斜体 / 链接。
-   先转义再应用行内规则；未知语法按纯文本处理。 */
-function renderChatAttachChips() {
-  const slot = document.getElementById("chat-attach-chips");
-  if (!slot) return;
-  slot.hidden = !chat.attachments.length;
-  slot.innerHTML = chat.attachments.map((file, index) =>
-    `<span class="chat-file">${esc(file.name)}<button class="chat-file-x" type="button" data-chat-attach-remove="${index}" title="移除">×</button></span>`
-  ).join("");
-}
-
-async function handleChatFiles(event) {
-  const files = [...(event.target.files || [])];
-  for (const file of files) {
-    if (chat.attachments.length >= 3) { toast("最多 3 个附件"); break; }
-    if (file.size > 64 * 1024) { toast(`${file.name} 超过 64 KiB`); continue; }
-    let text;
-    try { text = await file.text(); } catch { toast(`${file.name} 读取失败`); continue; }
-    if (text.includes("\u0000")) { toast(`${file.name} 不是纯文本文件`); continue; }
-    chat.attachments.push({ name: file.name, text });
-  }
-  event.target.value = "";
-  renderChatAttachChips();
-  paintSendState();
-}
-
-function paintSendState() {
-  const btn = document.getElementById("send");
-  if (!btn) return;
-  if (!chat.active) return; // 运行/委托态由各自的函数管理
-  if (chat.streaming) {
-    btn.disabled = false;
-    btn.classList.add("stop");
-    btn.title = "停止生成";
-    btn.innerHTML = `<span class="stop-glyph"></span>`;
-    return;
-  }
-  btn.classList.remove("stop");
-  btn.title = "发送消息";
-  btn.innerHTML = `<span data-doodle="arrow-up"></span>`;
-  hydrateDoodles(btn);
-  const ta = document.getElementById("composer-ta");
-  const hasText = !!(ta && ta.value.trim());
-  btn.disabled = !(health && health.live) || (!hasText && !chat.attachments.length);
-}
-
-function restoreSendButton() {
-  const btn = document.getElementById("send");
-  if (!btn) return;
-  btn.classList.remove("stop");
-  btn.title = "发送任务";
-  btn.innerHTML = `<span data-doodle="arrow-up"></span>`;
-  hydrateDoodles(btn);
-  btn.disabled = !(health && health.live);
-}
-
-function setChatStreaming(on) {
-  chat.streaming = on;
-  if (on) {
-    const chip = document.getElementById("run-chip");
-    if (chip) chip.hidden = true;
-  }
-  paintSendState();
-}
-
-function stopChat() {
-  if (!chat.streaming || !chat.abort) return;
-  try { chat.abort.abort(); } catch { /* already settled */ }
-}
-
-function scheduleChatPaint(assistant) {
-  chat.paintAssistant = assistant;
-  if (chat.paintTimer) return;
-  chat.paintTimer = setTimeout(() => {
-    chat.paintTimer = null;
-    paintStreamingAssistant(chat.paintAssistant);
-  }, 70);
-}
-
-function paintStreamingAssistant(assistant) {
-  if (!assistant || !chat.current) return;
-  const node = document.querySelector(`.chat-msg[data-msg-id="${String(assistant.id)}"]`);
-  if (!node) { renderChat(); return; }
-  const stick = nearMainBottom();
-  const body = node.querySelector(".chat-md");
-  if (body) body.innerHTML = renderMarkdown(assistant.text);
-  const typing = node.querySelector(".chat-typing");
-  if (typing && assistant.text) typing.remove();
-  let wait = node.querySelector(".chat-wait");
-  if (assistant.waiting) {
-    if (!wait) {
-      wait = document.createElement("div");
-      wait.className = "chat-wait";
-      const actions = node.querySelector(".chat-msg-actions");
-      node.insertBefore(wait, actions || null);
-    }
-    wait.textContent = `等待 ${assistant.waiting} 秒额度窗口…`;
-  } else if (wait) {
-    wait.remove();
-  }
-  if (stick) scrollMainBottom();
-}
-
-async function sendChatFromComposer() {
-  if (chat.streaming) return;
-  if (!health || !health.live) { toast("回放模式：启动 server.py 后才能对话"); return; }
-  const ta = document.getElementById("composer-ta");
-  const text = (ta.value || "").trim();
-  const attachments = chat.attachments.map(file => ({ name: file.name, text: file.text }));
-  if (!text && !attachments.length) return;
-  ta.value = "";
-  autosize(ta);
-  chat.attachments = [];
-  renderChatAttachChips();
-  const threadId = chat.current && chat.current.id ? chat.current.id : null;
-  const model = chatModelChoice.key || "mock";
-  if (!chat.current) {
-    chat.current = { id: null, title: (text || attachments[0].name || "新对话").slice(0, 30), messages: [] };
-  }
-  if (!chat.current.messages) chat.current.messages = [];
-  chat.current.messages.push({
-    id: "pending-user-" + Date.now(),
-    role: "user",
-    text,
-    attachments: attachments.map(file => ({ name: file.name, bytes: file.text.length })),
-    status: "ok",
-  });
-  chat.current.messages.push({
-    id: "pending-assistant",
-    role: "assistant",
-    text: "",
-    reasoning: "",
-    status: "streaming",
-    usage: {},
-    error: {},
-  });
-  renderChatHead();
-  renderChat({ forceBottom: true });
-  setChatStreaming(true);
-  await streamChat("/api/chat/send", { threadId, text, attachments, model });
-}
-
-async function streamChat(url, payload) {
-  const threadRef = chat.current;
-  const assistant = threadRef && threadRef.messages
-    ? threadRef.messages[threadRef.messages.length - 1]
-    : null;
-  if (!assistant || assistant.role !== "assistant") { setChatStreaming(false); return; }
-  const controller = new AbortController();
-  chat.abort = controller;
-  let aborted = false;
-  try {
-    const response = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-      signal: controller.signal,
-    });
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({}));
-      throw new Error(error.error || `HTTP ${response.status}`);
-    }
-    if (!response.body) throw new Error("浏览器没有拿到流式响应");
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      let boundary;
-      while ((boundary = buffer.indexOf("\n\n")) >= 0) {
-        const frame = buffer.slice(0, boundary);
-        buffer = buffer.slice(boundary + 2);
-        const event = parseSseFrame(frame);
-        if (event && chat.current === threadRef) handleChatEvent(event, assistant, threadRef);
-      }
-    }
-  } catch (error) {
-    if (error.name === "AbortError") {
-      aborted = true;
-      assistant.status = "cancelled";
-      if (!assistant.text) assistant.text = "";
-    } else {
-      assistant.status = "error";
-      assistant.error = { code: "CHAT_FAILED", message: error.message };
-      toast("对话失败：" + error.message);
-    }
-  } finally {
-    const belongs = chat.active && chat.current === threadRef;
-    if (belongs) {
-      if (chat.paintTimer) { clearTimeout(chat.paintTimer); chat.paintTimer = null; }
-      setChatStreaming(false);
-      if (chat.abort === controller) chat.abort = null;
-      if (assistant.status === "streaming") {
-        assistant.status = "error";
-        assistant.error = { code: "CHAT_STREAM_ENDED", message: "连接在回答完成前结束" };
-      }
-      if (aborted) await new Promise(resolve => setTimeout(resolve, 250));
-      if (threadRef.id) {
-        try {
-          const response = await fetch(`/api/chat/threads/${encodeURIComponent(threadRef.id)}`, { cache: "no-store" });
-          if (response.ok) {
-            const thread = await response.json();
-            if (thread && Array.isArray(thread.messages) && chat.current === threadRef) chat.current = thread;
-          }
-        } catch { /* keep the optimistic view */ }
-      }
-      renderChat();
-      renderChatHead();
-    } else if (chat.abort === controller) {
-      chat.abort = null;
-    }
-    await loadChatThreads();
-  }
-}
-
-function handleChatEvent(event, assistant, threadRef) {
-  if (!threadRef || chat.current !== threadRef) return;
-  switch (event.type) {
-    case "start":
-      if (event.thread_id) {
-        threadRef.id = event.thread_id;
-        if (event.thread_title) threadRef.title = event.thread_title;
-        if (event.user) {
-          const pending = [...threadRef.messages].reverse()
-            .find(message => message.role === "user" && String(message.id).startsWith("pending-user-"));
-          if (pending) Object.assign(pending, event.user);
-        }
-        if (event.assistant_id) assistant.id = event.assistant_id;
-        renderChatHead();
-        renderChat();
-      }
-      break;
-    case "wait":
-      assistant.waiting = Number(event.seconds) || 0;
-      scheduleChatPaint(assistant);
-      break;
-    case "reasoning":
-      assistant.reasoning = (assistant.reasoning || "") + String(event.text || "");
-      scheduleChatPaint(assistant);
-      break;
-    case "delta":
-      assistant.text = (assistant.text || "") + String(event.text || "");
-      scheduleChatPaint(assistant);
-      break;
-    case "done":
-      if (event.message) {
-        assistant.id = event.message.id || assistant.id;
-        assistant.text = event.message.text || assistant.text;
-        assistant.reasoning = event.message.reasoning || assistant.reasoning;
-        assistant.usage = event.message.usage || {};
-        assistant.receipt_ref = event.message.receipt_ref || "";
-        assistant.status = "ok";
-      }
-      assistant.waiting = 0;
-      renderChat();
-      break;
-    case "error":
-      if (event.thread_id && !threadRef.id) threadRef.id = event.thread_id;
-      assistant.status = "error";
-      assistant.error = { code: event.code || "CHAT_FAILED", message: event.message || "对话失败" };
-      if (event.partial) assistant.text = event.partial;
-      renderChat();
-      break;
-    case "stopped":
-      assistant.status = "cancelled";
-      renderChat();
-      break;
-    default:
-      break;
-  }
-}
-
-function beginChatEdit(messageId) {
-  chat.editing = messageId;
-  renderChat();
-  requestAnimationFrame(() => document.getElementById("chat-edit-input")?.focus());
-}
-
-function cancelChatEdit() {
-  chat.editing = null;
-  renderChat();
-}
-
-function saveChatEdit(messageId) {
-  if (!chat.current || !chat.current.id) return;
-  const input = document.getElementById("chat-edit-input");
-  const text = (input && input.value || "").trim();
-  if (!text) { toast("消息不能为空"); return; }
-  const index = chat.current.messages.findIndex(message => message.id === messageId);
-  if (index < 0) return;
-  chat.editing = null;
-  chat.current.messages = chat.current.messages.slice(0, index);
-  chat.current.messages.push({
-    id: "pending-user-" + Date.now(),
-    role: "user",
-    text,
-    attachments: [],
-    status: "ok",
-  });
-  chat.current.messages.push({
-    id: "pending-assistant",
-    role: "assistant",
-    text: "",
-    reasoning: "",
-    status: "streaming",
-    usage: {},
-    error: {},
-  });
-  renderChat({ forceBottom: true });
-  setChatStreaming(true);
-  streamChat(`/api/chat/threads/${encodeURIComponent(chat.current.id)}/edit`, {
-    messageId, text, model: chatModelChoice.key || "mock",
-  });
-}
-
-function regenerateChat(messageId) {
-  if (!chat.current || !chat.current.id) return;
-  const index = chat.current.messages.findIndex(message => message.id === messageId);
-  if (index < 0) return;
-  chat.current.messages = chat.current.messages.slice(0, index);
-  chat.current.messages.push({
-    id: "pending-assistant",
-    role: "assistant",
-    text: "",
-    reasoning: "",
-    status: "streaming",
-    usage: {},
-    error: {},
-  });
-  renderChat({ forceBottom: true });
-  setChatStreaming(true);
-  streamChat(`/api/chat/threads/${encodeURIComponent(chat.current.id)}/regenerate`, {
-    messageId, model: chatModelChoice.key || "mock",
-  });
-}
-
-function copyChatMessage(messageId) {
-  if (!chat.current) return;
-  const message = chat.current.messages.find(item => item.id === messageId);
-  if (!message) return;
-  copyText(message.text).then(ok => toast(ok ? "已复制回答" : "复制失败"));
-}
-
-function delegateChatMessage(messageId) {
-  if (!chat.current) return;
-  const message = chat.current.messages.find(item => item.id === messageId);
-  if (!message || message.role !== "user") return;
-  startIntake(message.text, { origin: threadOrigin(chat.current) });
-}
+const {
+  loadChatThreads, renderChats, handleChatDelete, leaveChat, paintChatChrome, renderChatHead,
+  detachChatChrome, openWorkHome, switchToChat, setUiMode, newChat, openChat, renderChat,
+  renderChatAttachChips, handleChatFiles, paintSendState, restoreSendButton, setChatStreaming,
+  stopChat, sendChatFromComposer, streamChat, beginChatEdit, cancelChatEdit, saveChatEdit,
+  regenerateChat, copyChatMessage, delegateChatMessage,
+} = createChatUI({
+  chat, chatModelChoice, esc, chatSectionHtml, chatRowsHtml, isChatPinned, toast, intake,
+  store, activeSession, detachLive, setChromeState, closeIntake, closeSettingsPage,
+  renderNav, renderMain, stageEmptyHtml, autosize, paintSections, modeChrome, selectRun,
+  prepareCardRuns: (...args) => prepareCardRuns(...args),
+  aiAvatarHtml, chatMessageHtml,
+  withRunStatus: (...args) => withRunStatus(...args),
+  chatCardHtml: (...args) => chatCardHtml(...args),
+  nearMainBottom, scrollMainBottom, hydrateDoodles, parseSseFrame, renderMarkdown,
+  copyText, startIntake, threadOrigin, adoptDefaultChatModel, loadChatModels,
+  WORK_STAGE_NOTE, WORK_PLACEHOLDER,
+  getHealth: () => health,
+  getChatThreads: () => chatThreads,
+  setChatThreads: value => { chatThreads = value; },
+  getChatConfig: () => chatConfig,
+  getSettingsOpen: () => settingsOpen,
+  setLedgerOpen: value => { ledgerOpen = value; },
+  getUiMode: () => uiMode,
+  setUiModeValue: value => { uiMode = value; },
+  setSidebarMode: value => { sidebarMode = value; },
+});
 
 /* 对话上下文随委托一起走：本轮目标是 message.text，但“周三/当天/到了后”
    指代的是本线程前文。取尾部 24 条（越近越相关），每条截断 600 字，
@@ -6719,326 +4867,15 @@ function threadOrigin(thread) {
    由运行流水线创建一次受治理的运行。卡片之后的进度不是前端猜的——它订阅运行
    自己的 SSE，与 Work 视图读同一份签名轨迹。 */
 
-const cssEscape = value => (window.CSS && window.CSS.escape
-  ? window.CSS.escape(String(value))
-  : String(value).replace(/["\\]/g, "\\$&"));
-
-function chatCardHtml(message) {
-  if (!message.action) return "";
-  const state = chat.cards.get(message.id) || {};
-  if (message.run) {
-    return runMirrorHtml(message, mirrorView(message), { run: message.run });
-  }
-  if (state.dismissed) {
-    return `<div class="run-card dismissed" data-card="${esc(message.id)}" data-run-card="${esc(message.id)}">
-      <span class="run-card-hint">已忽略这个提案</span>
-      <span class="grow"></span>
-      <button type="button" class="run-act" data-run-reconsider="${esc(message.id)}">重新考虑</button>
-    </div>`;
-  }
-  return actionCardHtml(message, {
-    draft: state.draft,
-    mode: state.mode,
-    sources: state.sources,
-    busy: state.busy,
-    error: state.error,
-    approval: approvalMode,
-  });
-}
-
-function cardState(messageId) {
-  if (!chat.cards.has(messageId)) chat.cards.set(messageId, {});
-  return chat.cards.get(messageId);
-}
-
-/* 输入框不触发重绘，光标就不会丢；结构性变化（切方式/提交中）之前先把
-   用户已经敲进 DOM 的内容读回状态。 */
-function readCardDraft(messageId) {
-  const node = document.querySelector(`[data-run-card="${cssEscape(messageId)}"]`);
-  if (!node) return;
-  const state = cardState(messageId);
-  const goal = node.querySelector("[data-run-goal]");
-  const sources = node.querySelector("[data-run-sources]");
-  if (goal) state.draft = goal.value;
-  if (sources) state.sources = sources.value;
-}
-
-function paintCard(messageId) {
-  const message = chatMessageById(messageId);
-  if (!message) return;
-  const node = document.querySelector(`[data-run-card="${cssEscape(messageId)}"]`);
-  if (!node) { renderChat(); return; }
-  const holder = document.createElement("div");
-  holder.innerHTML = chatCardHtml(message);
-  const next = holder.firstElementChild;
-  if (next) node.replaceWith(next);
-}
-
-function chatMessageById(messageId) {
-  const thread = chat.current;
-  if (!thread || !thread.messages) return null;
-  return thread.messages.find(item => item.id === messageId) || null;
-}
-
-function parseSourceLines(text) {
-  return String(text || "")
-    .split(/[\n,，\s]+/)
-    .map(item => item.trim())
-    .filter(Boolean);
-}
-
-async function startCardRun(messageId) {
-  const message = chatMessageById(messageId);
-  if (!message || !message.action || message.run) return;
-  readCardDraft(messageId);
-  const state = cardState(messageId);
-  if (state.busy) return;
-  const goal = String(state.draft !== undefined ? state.draft : message.action.goal || "").trim();
-  const mode = state.mode || message.action.mode || "script";
-  const sources = mode === "research"
-    ? parseSourceLines(state.sources !== undefined ? state.sources : (message.action.sources || []).join("\n"))
-    : [];
-  /* 本地先按同一套规则拦一遍，错误直接落在卡片上；服务端仍会独立复核。 */
-  if (goal.length < 5 || goal.length > 600) {
-    state.error = "目标需要 5 到 600 个字";
-    paintCard(messageId);
-    return;
-  }
-  if (mode === "research" && (sources.length < 1 || sources.length > 5)) {
-    state.error = "研究方式需要 1 到 5 个 http(s) 来源";
-    paintCard(messageId);
-    return;
-  }
-  state.busy = true;
-  state.error = "";
-  paintCard(messageId);
-  try {
-    const response = await fetch(
-      `/api/chat/threads/${encodeURIComponent(chat.current.id)}/confirm`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          messageId, goal, mode, sources,
-          approval: approvalMode,
-          // 这次调用创建的是**委托运行**，模型必须来自 Work 侧的目录。
-          // 以前送的是对话侧的 key：委托目录里没有它，确认必然 400。
-          model: modelChoice.key || "mock",
-          effort: modelChoice.effort || "",
-        }),
-      },
-    );
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(payload.error || `HTTP ${response.status}`);
-    const run = payload.run || {};
-    message.run = { id: run.id, goal, mode, at: new Date().toISOString() };
-    chat.cards.delete(messageId);
-    seedMirror(messageId, run);
-    paintCard(messageId);
-    loadChatThreads();
-    toast(`已开始运行 ${run.id}`);
-  } catch (error) {
-    state.busy = false;
-    state.error = error.message;
-    paintCard(messageId);
-  }
-}
-
-function dismissCard(messageId) {
-  const state = cardState(messageId);
-  state.dismissed = true;
-  paintCard(messageId);
-}
-
-function reconsiderCard(messageId) {
-  const state = cardState(messageId);
-  state.dismissed = false;
-  paintCard(messageId);
-}
-
-/* ------------------------------------------------------------- 运行镜像 */
-
-/* 头像要看运行的真实状态：消息投影里只有 run 的 id/goal/mode（服务端的链上
-   事实），状态在前端自己的镜像里（trace + SSE）。只借来渲染这一条，不改消息。 */
-function withRunStatus(message) {
-  if (!message.run || !message.run.id) return message;
-  const view = mirrorView(message);
-  if (!view.status) return message;
-  return Object.assign({}, message, {
-    run: Object.assign({}, message.run, { status: view.status }),
-  });
-}
-
-function mirrorView(message) {
-  const state = chat.mirrors.get(message.id);
-  const run = message.run || {};
-  const live = Object.assign(
-    { finished: ["succeeded", "failed", "stopped"].includes(run.status) },
-    state ? state.live : {},
-  );
-  return mirrorFrom(state ? state.trace : null, live, rowDescription);
-}
-
-const rowDescription = observation => stripTags((describe(observation) || [])[0] || "");
-const TERMINAL_STATUS = ["succeeded", "failed", "stopped"];
-
-/* 进入一段对话时，先把锚定的运行读一遍：卡片第一次出现就是事实，
-   不是「等待中」的占位。随后 SSE 接管。 */
-async function prepareCardRuns(thread) {
-  const anchored = (thread.messages || []).filter(message => message.run && message.run.id);
-  await Promise.all(anchored.map(async message => {
-    if (chat.mirrors.has(message.id)) return;
-    let run = null;
-    try {
-      const response = await fetch(`/api/runs/${encodeURIComponent(message.run.id)}`, { cache: "no-store" });
-      if (response.ok) run = await response.json();
-    } catch { /* the card falls back to whatever the anchor recorded */ }
-    if (chat.current !== thread) return;
-    seedMirror(message.id, run || { id: message.run.id });
-  }));
-}
-
-function seedMirror(messageId, run) {
-  const entry = chat.mirrors.get(messageId) || { runId: run.id, trace: null, live: {}, es: null };
-  entry.runId = run.id;
-  entry.live = Object.assign({}, entry.live, {
-    status: run.status || entry.live.status || "",
-    error: run.error || entry.live.error || "",
-    cost: run.cost || entry.live.cost || null,
-    finished: TERMINAL_STATUS.includes(run.status) || entry.live.finished,
-  });
-  chat.mirrors.set(messageId, entry);
-  attachMirror(messageId, entry);
-  return entry;
-}
-
-function attachMirror(messageId, entry) {
-  if (!entry || entry.es || !entry.runId) return;
-  const es = new EventSource(`/api/runs/${encodeURIComponent(entry.runId)}/stream`);
-  entry.es = es;
-  const absorb = payload => {
-    if (payload.snapshot) entry.trace = payload.snapshot;
-    entry.live = Object.assign({}, entry.live, {
-      status: payload.status || entry.live.status,
-      error: payload.error || "",
-      pending: payload.pending || null,
-      cost: payload.cost || entry.live.cost || null,
-      finished: !!payload.finished,
-    });
-    /* The server is the authority on what is still pending: once the gate we
-       submitted for is gone, the submitted state is gone with it. */
-    const deciding = entry.live.deciding;
-    if (deciding && (!entry.live.pending || entry.live.pending.id !== deciding.pendingId)) {
-      entry.live.deciding = null;
-    }
-    paintCard(messageId);
-  };
-  es.addEventListener("snapshot", event => {
-    let data;
-    try { data = JSON.parse(event.data); } catch { return; }
-    absorb(data);
-    if (data.finished) closeMirror(entry, data);
-  });
-  es.addEventListener("append", event => {
-    let delta;
-    try { delta = JSON.parse(event.data); } catch { return; }
-    if (entry.trace) applyDelta(entry.trace, delta);
-    absorb({
-      status: delta.status,
-      error: delta.error,
-      pending: delta.pending,
-      finished: !!delta.finished,
-    });
-    if (delta.finished) closeMirror(entry, delta);
-  });
-  es.addEventListener("done", event => {
-    let data = {};
-    try { data = JSON.parse(event.data); } catch { /* empty */ }
-    absorb(Object.assign({}, entry.live, { status: data.status, error: data.error, finished: true }));
-    closeMirror(entry, data);
-  });
-  es.addEventListener("failed", event => {
-    let data = {};
-    try { data = JSON.parse(event.data); } catch { /* empty */ }
-    if (!TERMINAL_STATUS.includes(entry.live.status)) {
-      entry.live.error = data.error || "运行未留下可读快照";
-    }
-    entry.live.finished = true;
-    closeMirror(entry, data);
-  });
-}
-
-function closeMirror(entry, data) {
-  if (entry.es) {
-    entry.es.close();
-    entry.es = null;
-  }
-  entry.live.finished = true;
-  if (data && data.status) entry.live.status = data.status;
-  paintCardFor(entry);
-}
-
-/* 卡片可能已经被重绘或换到别处；按 run id 找到它当前的主人。 */
-function paintCardFor(entry) {
-  for (const [messageId, candidate] of chat.mirrors) {
-    if (candidate === entry) paintCard(messageId);
-  }
-}
-
-async function decideFromCard(messageId, pendingId, allow) {
-  const message = chatMessageById(messageId);
-  const entry = chat.mirrors.get(messageId);
-  if (!message || !message.run || !entry || entry.live.deciding) return;
-  entry.live.deciding = { allow, pendingId };
-  paintCard(messageId);
-  try {
-    const response = await fetch(`/api/runs/${encodeURIComponent(message.run.id)}/decision`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ approvalId: pendingId, allow, remember: false }),
-    });
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({}));
-      throw new Error(error.error || `HTTP ${response.status}`);
-    }
-    toast(allow ? "已允许 · 运行继续" : "已拒绝 · 运行将终止");
-  } catch (error) {
-    entry.live.deciding = null;
-    entry.live.error = error.message;
-    paintCard(messageId);
-    toast("决定未送达：" + error.message);
-  }
-}
-
-async function stopFromCard(runId) {
-  try {
-    const response = await fetch(`/api/runs/${encodeURIComponent(runId)}/stop`, { method: "POST" });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    toast("已在轮次边界请求停止");
-  } catch (error) {
-    toast("停止请求未送达：" + error.message);
-  }
-}
-
-async function openRunFromCard(runId) {
-  /* 先切到工作模式：侧栏、顶栏与输入框都跟着换，然后是这次运行的证据视图。
-     顺序不能反——工作模式的切换在会话未激活时会打开工作首页。 */
-  const known = runHistory.find(run => run.id === runId);
-  if (known) {
-    setUiMode("work");
-    openLive(known.id, known.objective, known.template);
-    return;
-  }
-  try {
-    const response = await fetch(`/api/runs/${encodeURIComponent(runId)}`, { cache: "no-store" });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const run = await response.json();
-    setUiMode("work");
-    openLive(run.id, run.objective, run.template);
-  } catch (error) {
-    toast("打开运行失败：" + error.message);
-  }
-}
+const {
+  chatCardHtml, cardState, readCardDraft, paintCard, startCardRun, dismissCard, reconsiderCard,
+  withRunStatus, prepareCardRuns, decideFromCard, stopFromCard, openRunFromCard,
+} = createChatRuns({
+  esc, actionCardHtml, runMirrorHtml, mirrorFrom, stripTags, describe, chat, modelChoice,
+  getApprovalMode: () => approvalMode,
+  getRunHistory: () => runHistory,
+  renderChat, loadChatThreads, toast, applyDelta, setUiMode, openLive,
+});
 
 function bindChatAttachments() {
   const attach = document.getElementById("chat-attach");
@@ -7054,6 +4891,15 @@ function bind() {
   applyMotion();
   bindSettings();
   bindChatAttachments();
+  bindComposer();
+  bindGlobalActions();
+  bindNavigation();
+  bindEvidence();
+  bindMainInteractions();
+  bindShell();
+}
+
+function bindComposer() {
   document.getElementById("pick").addEventListener("change", event => {
     if (event.target.files[0]) fromFile(event.target.files[0]);
   });
@@ -7185,6 +5031,11 @@ function bind() {
     if (event.target.closest("[data-attach-budget]")) readAttachBudgetInputs();
     const sourceInput = event.target.closest("[data-attach-source-input]");
     if (sourceInput) attach.sourcesDraft = sourceInput.value;
+    const projectPath = event.target.closest("[data-project-path]");
+    if (projectPath) attach.project.path = projectPath.value;
+    const verification = event.target.closest("[data-project-verification]");
+    if (verification) attach.project.verification = verification.value;
+    if (projectPath || verification) saveProjectContext();
   });
   attachPanel.addEventListener("keydown", event => {
     if (event.key !== "Enter") return;
@@ -7200,6 +5051,40 @@ function bind() {
     attach.sourcesDraft = "";
     renderAttachPanel();
   });
+  const projectComposer = document.getElementById("project-composer");
+  projectComposer.addEventListener("click", event => {
+    event.stopPropagation();
+    if (event.target.closest("[data-project-context-edit]")) {
+      attach.projectEditing = true;
+      renderProjectComposer();
+      projectComposer.querySelector("[data-project-path]")?.focus();
+      return;
+    }
+    if (event.target.closest("[data-project-context-done]")) {
+      attach.projectEditing = false;
+      saveProjectContext();
+      renderProjectComposer();
+      document.getElementById("composer-ta")?.focus();
+    }
+  });
+  projectComposer.addEventListener("input", event => {
+    if (event.target.matches("[data-project-path]")) attach.project.path = event.target.value;
+    if (event.target.matches("[data-project-verification]")) attach.project.verification = event.target.value;
+    saveProjectContext();
+  });
+  projectComposer.addEventListener("keydown", event => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      attach.projectEditing = false;
+      saveProjectContext();
+      renderProjectComposer();
+      document.getElementById("composer-ta")?.focus();
+    }
+    if (event.key === "Escape") {
+      attach.projectEditing = false;
+      renderProjectComposer();
+    }
+  });
   modelBtn.addEventListener("click", event => {
     event.stopPropagation();
     if (modelBtn.classList.contains("readonly")) {
@@ -7207,6 +5092,7 @@ function bind() {
       return;
     }
     apvMenu.hidden = true;
+    if (attach.projectEditing) { attach.projectEditing = false; renderProjectComposer(); }
     if (modelMenu.hidden) {
       if (chat.active) {
         renderChatModelMenu();
@@ -7239,6 +5125,7 @@ function bind() {
     const pick = event.target.closest("[data-model-pick]");
     if (pick && !pick.disabled) {
       modelChoice.key = pick.dataset.modelPick;
+      modelChoice.touched = true;
       saveModelChoice();
       modelBudget.models = null;
       attach.budget = null;
@@ -7251,6 +5138,7 @@ function bind() {
     if (effort) {
       modelChoice.key = "kimi";
       modelChoice.effort = effort.dataset.effortPick;
+      modelChoice.touched = true;
       saveModelChoice();
       modelBudget.models = null;
       attach.budget = null;
@@ -7258,12 +5146,26 @@ function bind() {
       paintModelBadge();
     }
   });
+}
+
+function bindGlobalActions() {
+  const apvBtn = document.getElementById("approval-btn");
+  const apvMenu = document.getElementById("approval-menu");
+  const modelBtn = document.getElementById("model-btn");
+  const modelMenu = document.getElementById("model-menu");
+  const plusBtn = document.getElementById("composer-open");
+  const attachPanel = document.getElementById("attach-panel");
   document.addEventListener("click", event => {
     if (!apvMenu.hidden && !apvBtn.contains(event.target) && !apvMenu.contains(event.target)) apvMenu.hidden = true;
     if (!modelMenu.hidden && !modelBtn.contains(event.target) && !modelMenu.contains(event.target)) modelMenu.hidden = true;
     if (attach.open && !plusBtn.contains(event.target) && !attachPanel.contains(event.target)) {
       attach.open = false;
       renderAttachPanel();
+    }
+    const projectComposer = document.getElementById("project-composer");
+    if (attach.projectEditing && projectComposer && !projectComposer.contains(event.target)) {
+      attach.projectEditing = false;
+      renderProjectComposer();
     }
     const slashMenu = document.getElementById("slash-menu");
     const composerBox = document.getElementById("composer-box");
@@ -7406,6 +5308,9 @@ function bind() {
     if (!holder) return;
     readCardDraft(holder.dataset.runCard);
   });
+}
+
+function bindNavigation() {
   const palInput = document.getElementById("palette-input");
   palInput.addEventListener("input", () => { palActive = 0; renderPalette(); });
   palInput.addEventListener("keydown", event => {
@@ -7523,6 +5428,9 @@ function bind() {
     const s = sessions.get(id);
     if (s) openLive(id, s.objective, s.template);
   });
+}
+
+function bindEvidence() {
   document.getElementById("rail-tabs").addEventListener("click", event => {
     const button = event.target.closest("[data-tab]");
     if (!button) return;
@@ -7570,7 +5478,59 @@ function bind() {
       if (trace) renderRail(trace, store.check || { ok: false, reason: "" });
     }
   });
+}
+
+function bindMainInteractions() {
   document.getElementById("main").addEventListener("click", async event => {
+    const workTab = event.target.closest("[data-work-tab]");
+    if (workTab) {
+      const tab = workTab.dataset.workTab;
+      const s = activeSession();
+      if (s) s.workTab = tab; else store.workTab = tab;
+      const layout = workTab.closest("[data-project-work]");
+      layout?.querySelectorAll("[data-work-pane]").forEach(pane => { pane.hidden = pane.dataset.workPane !== tab; });
+      layout?.querySelectorAll("[data-work-tab]").forEach(button => {
+        const selected = button.dataset.workTab === tab;
+        button.classList.toggle("active", selected);
+        button.setAttribute("aria-selected", String(selected));
+      });
+      if (tab === "files" && shownTrace()) loadProjectWorkspace(shownTrace());
+      return;
+    }
+    const patchButton = event.target.closest("[data-project-patch]");
+    if (patchButton) {
+      const trace = shownTrace();
+      const patch = trace?.project?.patch;
+      if (!patch) return;
+      const url = URL.createObjectURL(new Blob([patch], { type: "text/x-diff;charset=utf-8" }));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "changes.patch";
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      return;
+    }
+    const projectFile = event.target.closest("[data-project-file]");
+    if (projectFile) {
+      const scope = projectFile.closest("[data-work-pane], .project-result");
+      const preview = scope?.querySelector("[data-project-file-content]");
+      const owner = projectFile.closest("[data-project-result], [data-project-work]");
+      const taskId = owner?.dataset.projectResult || owner?.dataset.projectWork || "";
+      const runId = taskId.startsWith("task-") ? taskId.slice(5) : projectRunId(shownTrace());
+      if (!runId || !preview) return;
+      const path = projectFile.dataset.projectFile;
+      scope.querySelectorAll("[data-project-file]").forEach(button => button.classList.toggle("selected", button === projectFile));
+      preview.hidden = false;
+      preview.dataset.file = path;
+      preview.textContent = "读取文件中…";
+      try {
+        const response = await fetch(`/api/runs/${encodeURIComponent(runId)}/workspace/${encodeURIComponent(path)}`, { cache: "no-store" });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+        if (preview.dataset.file === path) preview.textContent = `${path}\n\n${data.content || ""}`;
+      } catch (error) { if (preview.dataset.file === path) preview.textContent = `读取失败：${error.message}`; }
+      return;
+    }
     const railOpenButton = event.target.closest("[data-rail-open]");
     if (railOpenButton) { setChromeState({ rail: true }); return; }
     const railCloseButton = event.target.closest("[data-rail-close]");
@@ -7588,7 +5548,13 @@ function bind() {
       const key = stageChip.dataset.stageChip;
       setTemplate(key);
       const template = (templates || []).find(t => t.key === key);
-      startIntake((template && template.objective) || "");
+      const objective = (template && template.objective) || "";
+      if (sidebarMode === "work") {
+        const ta = document.getElementById("composer-ta");
+        ta.value = objective;
+        autosize(ta);
+        focusComposer();
+      } else startIntake(objective);
       return;
     }
     const intakeChoice = event.target.closest("[data-intake-choice]");
@@ -7735,10 +5701,21 @@ function bind() {
     if (event.key === "Enter") { event.preventDefault(); saveQueueEdit(s, msg); }
     else if (event.key === "Escape") { event.preventDefault(); s.queueEditingId = null; paintQueuedMsgs(); }
   });
+}
+
+function bindShell() {
   const app = document.getElementById("app");
   setChromeState({ rail: railOpen });
+  bindWorkspaceNavigation({ openPalette, setMobileNavigation });
+  bindLatestScroll();
   document.getElementById("sidebar-toggle").addEventListener("click", () => {
-    setChromeState({ sidebar: !app.classList.contains("side-collapsed") });
+    if (innerWidth <= 900) setMobileNavigation(false);
+    else setChromeState({ sidebar: !app.classList.contains("side-collapsed") });
+  });
+  document.querySelector(".sidebar").addEventListener("click", event => {
+    if (innerWidth <= 900 && event.target.closest("[data-run], [data-chat-id], [data-open], #new-run, #mode-work, #mode-chat")) {
+      setMobileNavigation(false);
+    }
   });
   const userBtn = document.getElementById("user-btn");
   const footMenu = document.getElementById("foot-menu");
@@ -7844,6 +5821,7 @@ function bind() {
       }
     }
     if (e.key === "Escape") {
+      if (app.classList.contains("mobile-nav-open")) { setMobileNavigation(false); return; }
       const reportLayer = document.getElementById("report-layer");
       if (reportLayer && !reportLayer.hidden) { closeReport(); return; }
       const palette = document.getElementById("palette");
@@ -7933,3 +5911,97 @@ document.addEventListener("DOMContentLoaded", async () => {
     setUiMode(uiMode);
   }
 });
+
+/* ================================================================= 侧栏复刻 · 第二批接线
+   Kimi 3.2.20 侧栏里三样我们此前没有的交互，逐条对应它的实现：
+   拖拽调宽（.sidebar-resizer）、滚动遮罩淡入（.sidebar-scroll-top-mask.is-visible）、
+   长标题跑马灯（conversation-title-marquee）。全部只碰侧栏，不碰页面与事件契约。 */
+
+/* 1. 拖拽调宽。Kimi 的命中区 4px、指示条 1px 跟随指针、拖拽时高度 400→360。
+   我们多两件它没有明说的：记忆宽度（fa.sidebarW）与双击回到 240。 */
+const SIDEBAR_W_KEY = "fa.sidebarW";
+const SIDEBAR_W_MIN = 200;
+const SIDEBAR_W_MAX = 420;
+
+function applySidebarW(px) {
+  const w = Math.max(SIDEBAR_W_MIN, Math.min(SIDEBAR_W_MAX, Math.round(px)));
+  document.documentElement.style.setProperty("--sidebar-w", w + "px");
+  return w;
+}
+function rememberSidebarW(px) {
+  try { localStorage.setItem(SIDEBAR_W_KEY, String(px)); } catch { /* quota */ }
+}
+(function initSidebarResizer() {
+  try {
+    const saved = Number(localStorage.getItem(SIDEBAR_W_KEY));
+    if (saved) applySidebarW(saved);
+  } catch { /* quota */ }
+  const handle = document.getElementById("side-resizer");
+  const frame = document.querySelector(".sidebar-frame");
+  if (!handle || !frame) return;
+  let dragging = false;
+  handle.addEventListener("pointerdown", event => {
+    dragging = true;
+    handle.classList.add("dragging");
+    try { handle.setPointerCapture(event.pointerId); } catch { /* 老浏览器 */ }
+    event.preventDefault();
+  });
+  handle.addEventListener("pointermove", event => {
+    const box = frame.getBoundingClientRect();
+    handle.style.setProperty("--sidebar-indicator-y", (event.clientY - box.top) + "px");
+    if (dragging) applySidebarW(event.clientX - box.left);
+  });
+  const stop = () => {
+    if (!dragging) return;
+    dragging = false;
+    handle.classList.remove("dragging");
+    const current = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--sidebar-w"));
+    rememberSidebarW(Number.isFinite(current) ? current : 240);
+  };
+  handle.addEventListener("pointerup", stop);
+  handle.addEventListener("pointercancel", stop);
+  handle.addEventListener("pointerleave", () => {
+    if (!dragging) handle.style.removeProperty("--sidebar-indicator-y");
+  });
+  handle.addEventListener("dblclick", () => { applySidebarW(240); rememberSidebarW(240); });
+})();
+
+/* 2. 滚动遮罩淡入。Kimi 的顶部遮罩是个 height:0 的元素，滚了才 .is-visible；
+   底部那条挂在 .side-foot::before 上，常亮（它不需要判断）。 */
+function paintScrollMasks() {
+  for (const list of document.querySelectorAll(".side-list")) {
+    const mask = list.querySelector(".side-scroll-top-mask");
+    if (mask) mask.classList.toggle("is-visible", list.scrollTop > 1);
+  }
+}
+(function initScrollMasks() {
+  const sidebar = document.querySelector(".sidebar");
+  if (!sidebar) return;
+  // scroll 不冒泡，用捕获阶段一次性覆盖两个 pane
+  sidebar.addEventListener("scroll", paintScrollMasks, true);
+  paintScrollMasks();
+})();
+
+/* 3. 长标题跑马灯。只在真的溢出时挂 data-marquee（量出滚动距离写进变量），
+   悬停才播——Kimi 的 conversation-title-marquee 就是这个变量驱动的。
+   距离必须在**悬停态**下量：悬停时行尾的时间戳让位给 ⋯ 按钮，标签会变宽
+   （实测 142 → 185），所以未悬停时算出的 154px 不是它播放时的值；悬停态下
+   scrollWidth(296) - clientWidth(185) = 111px，正好露出尾巴。每次进入都重量，
+   这样拖动改宽之后也不会留着旧值。 */
+(function initTitleMarquee() {
+  const sidebar = document.querySelector(".sidebar");
+  if (!sidebar) return;
+  sidebar.addEventListener("mouseover", event => {
+    const label = event.target.closest && event.target.closest(".slabel");
+    if (!label) return;
+    const overflow = label.scrollWidth - label.clientWidth;
+    if (overflow > 4) {
+      label.style.setProperty("--k-marquee-distance", overflow + "px");
+      if (label.dataset.marquee !== "1") label.dataset.marquee = "1";
+    } else if (label.dataset.marquee === "1") {
+      // 宽度被拖大之后不再溢出，就别留着动画
+      label.dataset.marquee = "0";
+      label.style.removeProperty("--k-marquee-distance");
+    }
+  });
+})();

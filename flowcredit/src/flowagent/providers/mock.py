@@ -33,9 +33,11 @@ class MockProvider:
     name = "offline-mock"
     model = "offline-deterministic-mock-v1"
 
-    #: Synthetic accounting so the demo can show a budget being consumed.
-    TOKENS_PER_CALL = 880
-    COST_PER_CALL_MICROUSD = 420
+    #: Exact synthetic accounting matches the runtime's established mock
+    #: reservation. Real providers settle their reported usage; keeping these
+    #: equal preserves the frozen finance prompt and case-projection contract.
+    TOKENS_PER_CALL = 1_000
+    COST_PER_CALL_MICROUSD = 500
 
     def __init__(
         self,

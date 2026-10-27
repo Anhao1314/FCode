@@ -129,6 +129,12 @@ class WorkingMemory:
     #: read-only kernel wording (the v10 prompt was frozen against it); a
     #: domain that writes files or runs commands says so instead.
     instruction: str | None = None
+    #: Which system-prompt profile this run is bound by (see
+    #: :mod:`flowagent.providers.prompt`). ``None`` emits no key at all, so the
+    #: contexts of a domain that did not select a profile are byte-identical to
+    #: the ones the SFT golden hash was computed over. Only a domain whose
+    #: behaviour contract differs from the default names one here.
+    prompt_profile: str | None = None
     #: Proposals the gate refused for their *shape* (an argument that does not
     #: fit the tool's schema), with the error that refused them. Written by the
     #: loop so the next proposal can be corrected instead of the run ending —
@@ -240,6 +246,11 @@ class WorkingMemory:
             "budget": budget_snapshot,
             "instruction": self.instruction or DEFAULT_INSTRUCTION,
         }
+        if self.prompt_profile:
+            # Emitted only when a domain selected one. See the field docstring:
+            # the absent key is what keeps every finance context — and the SFT
+            # golden hash computed over them — unchanged.
+            context["prompt_profile"] = self.prompt_profile
         if index_rows:
             context["observation_index"] = index_rows
         if self.conversation:

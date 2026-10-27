@@ -58,7 +58,12 @@ class Budget:
     def snapshot(self) -> dict[str, Any]:
         """Return used, remaining and limits for display and for the trace."""
         row = self._store.budget_row(self._scope)
-        return {
+        over_limit = []
+        if row["cost_used"] > self._limits.max_cost_microusd:
+            over_limit.append("cost")
+        if row["tokens_used"] > self._limits.max_tokens:
+            over_limit.append("tokens")
+        snapshot = {
             "calls_used": row["calls_used"],
             "reads_used": row["reads_used"],
             "cost_used_microusd": row["cost_used"],
@@ -68,6 +73,15 @@ class Budget:
             "cost_remaining_microusd": max(0, self._limits.max_cost_microusd - row["cost_used"]),
             "limits": self._limits.to_dict(),
         }
+        # Keep the established prompt/trace shape byte-identical in the normal
+        # case; overrun diagnostics appear only when there is something to say.
+        if over_limit:
+            snapshot.update({
+                "cost_over_limit_microusd": max(0, row["cost_used"] - self._limits.max_cost_microusd),
+                "tokens_over_limit": max(0, row["tokens_used"] - self._limits.max_tokens),
+                "over_limit": over_limit,
+            })
+        return snapshot
 
     def charge_call(self, *, tokens: int, cost_microusd: int) -> None:
         """Reserve and immediately consume one model call.
@@ -96,6 +110,34 @@ class Budget:
                     details={"dimension": "tokens"},
                 )
             self._store.budget_add(self._scope, calls=1, cost=cost_microusd, tokens=tokens)
+
+    def settle_call(
+        self,
+        *,
+        reserved_tokens: int,
+        reserved_cost_microusd: int,
+        actual_tokens: int,
+        actual_cost_microusd: int,
+    ) -> None:
+        """Replace one answered call's reservation with its reported usage.
+
+        An unknown call has no actual response and is never settled, so its
+        reservation remains consumed. An answered call may exceed the original
+        ceiling; record that overrun honestly and let the next charge refuse
+        further work instead of pretending an already-sent call can be undone.
+        """
+        values = (reserved_tokens, reserved_cost_microusd, actual_tokens, actual_cost_microusd)
+        if any(isinstance(value, bool) or not isinstance(value, int) or value < 0 for value in values):
+            raise AgentError(
+                "PROVIDER_USAGE_INVALID",
+                "reserved and actual token/cost usage must be non-negative integers",
+            )
+        with self._store.transaction():
+            self._store.budget_add(
+                self._scope,
+                cost=actual_cost_microusd - reserved_cost_microusd,
+                tokens=actual_tokens - reserved_tokens,
+            )
 
     def charge_read(self) -> None:
         """Reserve one tool read before the tool is executed."""

@@ -85,28 +85,64 @@ class McpStdioClient:
             self._drain.start()
 
         deadline = timeout if timeout is not None else self.config.timeout
-        reply = self._request("initialize", {
-            "protocolVersion": PROTOCOL_VERSION,
-            "capabilities": {},
-            "clientInfo": {"name": "fcode-runtime", "version": "1"},
-        }, timeout=deadline)
-        self._notify("notifications/initialized", {})
+        try:
+            reply = self._request("initialize", {
+                "protocolVersion": PROTOCOL_VERSION,
+                "capabilities": {},
+                "clientInfo": {"name": "fcode-runtime", "version": "1"},
+            }, timeout=deadline)
+            self._notify("notifications/initialized", {})
+        except Exception:
+            # The bridge only retains clients after start() succeeds. A failed
+            # handshake must therefore clean up its own partially launched
+            # process rather than relying on a later disconnect().
+            self.stop()
+            raise
         self._server_info = reply.get("serverInfo") or {}
 
     def stop(self) -> None:
+        """Stop and reap the child, close all pipes and join both readers.
+
+        Detach the references first so concurrent liveness checks immediately
+        report unavailable and repeated stop() calls are harmless. Even an
+        already-dead child still owns three parent-side pipe handles and must
+        be waited for; process death is not a reason to skip cleanup.
+        """
         with self._lock:
             process = self._process
+            reader = self._reader
+            drain = self._drain
             self._process = None
-        if process is None or process.poll() is not None:
+            self._reader = None
+            self._drain = None
+        if process is None:
             return
         try:
-            process.terminate()
+            if process.poll() is None:
+                process.terminate()
             process.wait(timeout=5)
-        except Exception:  # noqa: BLE001 — shutdown must never raise
+        except subprocess.TimeoutExpired:
             try:
                 process.kill()
-            except Exception:  # pragma: no cover
+            except OSError:  # pragma: no cover - exited between poll and kill
                 pass
+            try:
+                process.wait(timeout=5)
+            except (OSError, subprocess.TimeoutExpired):  # pragma: no cover
+                pass
+        except OSError:  # pragma: no cover - already reaped by a racing owner
+            pass
+        finally:
+            for pipe in (process.stdin, process.stdout, process.stderr):
+                if pipe is not None:
+                    try:
+                        pipe.close()
+                    except OSError:  # pragma: no cover - shutdown is best effort
+                        pass
+        current = threading.current_thread()
+        for thread in (reader, drain):
+            if thread is not None and thread is not current:
+                thread.join(timeout=5)
 
     def alive(self) -> bool:
         process = self._process

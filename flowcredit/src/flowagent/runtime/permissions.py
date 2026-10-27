@@ -8,9 +8,18 @@ the reason for it. Three independent scopes must all agree:
 2. the task must list it in ``allowed_tools``,
 3. the current grant must list it too.
 
-Checking three times looks redundant until you remember that the grant is
-re-read from the host on every round: a permission revoked mid-task must stop
-the very next call, which is impossible if only the task body is consulted.
+**What re-checking the third scope buys — accurately.** It buys *revalidation*,
+not *revocation*: this gate is rebuilt from the task's stored authorization on
+every dispatch, so nothing can be smuggled in between rounds, and if the
+registry the gate reads changes, the next dispatch sees the change. What it
+does **not** buy is a way to withdraw a grant mid-task. ``allowed_tools`` and
+``model_grant`` are immutable in the task body (see
+``TaskStore._assert_legal_change``), and no supported interface mutates them
+after creation, so "a permission revoked mid-task stops the very next call" is
+**not** a capability this runtime currently has. Enforcing it would mean adding
+a revocation interface and relaxing a deliberately immutable task field — a
+change to the Task/persistence contract, which is out of scope here and is
+recorded as a separate design task rather than implied by this docstring.
 """
 
 from __future__ import annotations

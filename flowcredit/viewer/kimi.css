@@ -930,6 +930,27 @@ html.desktop-app .side-user { height: 32px; padding: 4px 8px; }
   --k-label-2: rgba(0, 0, 0, .6);
   --k-label-3: rgba(0, 0, 0, .45);
   --k-flavor: #1783ff;
+  /* 交互阶梯：Kimi 的令牌是「基础 + hover + active」三档一族，我们此前只有基础档。
+     下面的值逐条来自它自己的样式表（common-BXvnPQrD.css / gateway-setup-2OBDiPrP.css），
+     不是调出来的。名字沿用本地 --k-* 前缀（见文件头：改名要动五份 CSS）。 */
+  --k-accent-hover: #167ff7;              /* Colors-KMBlue-hover */
+  --k-accent-active: #167cf2;             /* Colors-KMBlue-active */
+  --k-canvas-hover: #f3f3f2;              /* Bg-GroundPC-hover */
+  --k-canvas-active: #eeeeed;             /* Bg-GroundPC-active */
+  --k-label-1-hover: #0e0e0ee7;           /* Labels-Primary-hover */
+  --k-label-2-hover: #0000009c;           /* Labels-Secondary-hover */
+  --k-label-2-active: #0000009e;
+  --k-label-3-hover: #0007;               /* Labels-Tertiary-hover */
+  --k-label-3-active: #0000007a;
+  --k-fill-1-hover: #0000000f;            /* Fills-F1-hover */
+  --k-fill-1-active: #00000014;
+  --k-fill-1-invert: rgba(255, 255, 255, .05);  /* Fills-F1-Invert */
+  --k-fill-2-hover: #00000014;            /* Fills-F2-hover */
+  --k-fill-2-active: #00000019;
+  --k-white: #fff;                        /* Always-White 四级：深色底/浮层用 */
+  --k-white-2: #ffffffd6;
+  --k-white-3: #ffffff8f;
+  --k-white-4: #ffffff6b;
 }
 
 .sidebar,
@@ -946,8 +967,10 @@ html.desktop-app .side-head {
 .brand-mark { width: 32px; height: 32px; border-radius: 8px; }
 .side-flavor {
   height: 18px; padding: 0 6px; border-radius: 5px;
-  background: var(--k-flavor); color: #FFFFFF;
-  font: 600 11px/18px var(--font-ui); letter-spacing: .02em;
+  background: var(--k-flavor); color: var(--k-white);
+  /* Kimi 的 .sidebar-flavor-badge：11/600、行高 18、字距 .06em、强制大写。
+     此前缺 text-transform、字距写成 .02em——中文标签看不出，但数值不是它的。 */
+  font: 600 11px/18px var(--font-ui); letter-spacing: .06em; text-transform: uppercase;
 }
 .side-head .kbtn { color: var(--k-label-3); }
 .side-head .kbtn:hover { background: var(--k-fill-1); color: var(--text-1); }
@@ -1004,11 +1027,11 @@ html.desktop-app .side-section {
 /* 滚动区上下各 24px 渐隐（桌面端那两条渐变遮罩）。
    负外边距那条不抄：在 Kimi 里它属于"包住 padding 的外层"，而我们的 .side-list
    本身就是带 padding 的那一层，抄过来会把每行撑宽 8px。 */
+/* 滚动淡出改由两个独立遮罩元素承担（见文件末尾第二批的 ③），
+   所以这里不再给容器挂 mask-image——两套同时开会叠成双层淡出。
+   原来那条 mask 的 24px 数值保留在那两个元素上。 */
 .side-list,
-html.desktop-app .side-list {
-  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 24px, #000 calc(100% - 24px), transparent 100%);
-  mask-image: linear-gradient(to bottom, transparent 0, #000 24px, #000 calc(100% - 24px), transparent 100%);
-}
+html.desktop-app .side-list { position: relative; }
 
 /* 底部：padding 8、满幅、gap 6（用户行在它内部） */
 .side-foot,
@@ -1076,14 +1099,32 @@ html.desktop-app .section-action:hover { background: var(--k-fill-1); color: var
 .side-section .side-count,
 html.desktop-app .side-section .side-count { font-size: 12px; line-height: 18px; color: var(--k-label-3); }
 
-/* 段落折叠（Kimi 的 NextSidebarSection collapsible）：折叠后只留标题行 */
-body[data-hide~="projects"] [data-proj-nav],
-html.desktop-app body[data-hide~="projects"] [data-proj-nav],
-body[data-hide~="projects"] [data-proj-nav] ~ .section-empty { display: none; }
-body[data-hide~="tasks"] #pane-work #run-nav { display: none; }
-body[data-hide~="chats"] #pane-chat #chat-nav,
-html.desktop-app body[data-hide~="chats"] #pane-chat #chat-nav { display: none; }
-body[data-hide~="pinned"] [data-pin-nav] { display: none; }
+/* 段落折叠（Kimi 的 NextSidebarSection collapsible）：折叠后只留标题行。
+   实现换成 Kimi 自己的手法——grid 行 1fr→0fr + 透明度，不是 display:none：
+   display:none 无法补间，折叠是硬切；Kimi 的 .sidebar-reveal 用 grid-template-rows
+   过渡（.16s cubic-bezier(.2,0,0,1) / opacity .12s ease-out），收起来能看见高度在动。
+   结构同构：.side-block-inner 就是 .sidebar-reveal-content。
+   关键：**段标题必须在折叠区之外**。第一版把标题一起包了进去，折叠后标题被裁掉，
+   `[data-section-toggle]` 点不到 → 该段再也展不开（浏览器验收抓到的真 bug）。
+   所以折叠区只包"行"，用 :has() 认领各自的列表。状态载体仍是 body[data-hide]，
+   JS 契约一行未改。 */
+.side-block-inner,
+html.desktop-app .side-block-inner {
+  display: grid; grid-template-rows: 1fr;
+  transition: grid-template-rows .16s cubic-bezier(.2, 0, 0, 1), opacity .12s ease-out;
+}
+.side-block-inner > *,
+html.desktop-app .side-block-inner > * { min-height: 0; overflow: hidden; }
+body[data-hide~="tasks"] .side-block-inner:has(#run-nav),
+html.desktop-app body[data-hide~="tasks"] .side-block-inner:has(#run-nav),
+body[data-hide~="chats"] .side-block-inner:has(#chat-nav),
+html.desktop-app body[data-hide~="chats"] .side-block-inner:has(#chat-nav),
+body[data-hide~="projects"] .side-block-inner:has([data-proj-nav]),
+html.desktop-app body[data-hide~="projects"] .side-block-inner:has([data-proj-nav]),
+body[data-hide~="pinned"] .side-block-inner:has([data-pin-nav]),
+html.desktop-app body[data-hide~="pinned"] .side-block-inner:has([data-pin-nav]) {
+  grid-template-rows: 0fr; opacity: 0;
+}
 
 /* 空态：比分组标题再淡一级，12/18、左侧对齐到行内文案 */
 .section-empty,
@@ -1168,3 +1209,256 @@ html.desktop-app .quickstart-task-title {
 html.desktop-app .quickstart-task .smeta { flex: 0 0 auto; }
 .quickstart-header .smeta,
 html.desktop-app .quickstart-header .smeta { flex: 0 0 auto; }
+
+/* =============================================== 侧栏复刻 · 第二批（本次实测补齐）
+   同样取自 Kimi 3.2.20 的渲染层样式表。上面那条块（915 起）覆盖了几何与基础色号；
+   这一批补三件它漏掉的东西：① Kimi 自己的交互结构（可拖拽调宽、独立滚动遮罩、
+   toggle 的 tooltip + keycap）；② 它的动画符号；③ 我们此前被早期文件压掉的三条规则。
+   照旧每条写两遍选择器。 */
+
+/* ---------- ① 修：三条此前实际没生效的规则 ----------
+   不是"微调了一下"：kimi.css 里写了，但被更早的文件以更高优先级压住了。
+   这里用同序或更高序的选择器重述，靠"最后加载"取胜。 */
+
+/* app.css 的 .app.side-collapsed .sidebar 把纵向内边距写成 10px；
+   Kimi 的 .sidebar 恒为 9px 8px 8px，折叠只是宽度归零。 */
+.app.side-collapsed .sidebar { padding: 9px 0 8px; }
+
+/* desktop.css 的 html.desktop-app .side-list 把 2px 右留白抹成了 0；
+   Kimi 的 .sidebar-scroll 有 padding-right: 2px，滚动条不贴字。 */
+html.desktop-app .side-list { padding: 0 2px; }
+
+/* design.css 直接在 <svg> 元素上写了 color: var(--text-3)，压过这里给 span 写的规则
+   （图标 stroke=currentColor，谁定 svg 的 color 谁赢）。Kimi 的 .nav-item 是
+   Labels-Primary(.9)，且 .active 只换背景、不改文字色。
+   只修工作侧：对话侧的浅色对应 Kimi 网页版 chat，没有实测值可改。 */
+#pane-work .nav-item svg,
+#pane-work .nav-item .d-icon,
+#pane-work .nav-item.active svg,
+#pane-work .nav-item.active .d-icon { color: var(--text-1); }
+#pane-work .nav-item:hover svg,
+#pane-work .nav-item:hover .d-icon { color: var(--text-1); }
+
+/* ---------- ② 可拖拽调宽（Kimi 的 .sidebar-resizer） ----------
+   4px 命中区贴住侧栏右缘；:after 是 1px 的 KMBlue 渐变竖条：hover / 拖拽时
+   opacity .5，高度 400px，拖拽中收到 360px，竖直位置跟随指针（--sidebar-indicator-y）。 */
+.side-resizer {
+  position: absolute; top: 0; bottom: 0; right: -2px; z-index: 6;
+  width: 4px; cursor: col-resize; touch-action: none;
+}
+.side-resizer::after {
+  content: ""; position: absolute; left: 0; top: var(--sidebar-indicator-y, 50%);
+  width: 1px; height: 400px; opacity: 0; transform: translateY(-50%);
+  background: linear-gradient(to top, transparent 0%, var(--k-flavor) 50%, transparent 100%);
+}
+.side-resizer:hover::after,
+.side-resizer.dragging::after { opacity: .5; }
+.side-resizer.dragging::after { height: 360px; }
+
+/* ---------- ③ 滚动遮罩（Kimi 的 .sidebar-scroll-top-mask + .sidebar-footer::before）
+   它是两个独立元素而不是给容器加 mask：顶部那个 height:0、flex-basis 0，靠 .is-visible
+   淡入（opacity .16s cubic-bezier(.23,1,.32,1)），底部那条挂在 footer 的 ::before 上。
+   换成独立元素是为了那个"滚动了才淡入"的动画——mask-image 只能常亮。 */
+.side-scroll-top-mask {
+  position: relative; z-index: 2; height: 0; opacity: 0; pointer-events: none;
+  transition: opacity .16s cubic-bezier(.23, 1, .32, 1);
+}
+.side-scroll-top-mask::after {
+  content: ""; position: absolute; top: 0; left: 1px; right: 1px; height: 24px;
+  background: linear-gradient(to bottom, var(--canvas) 0%, transparent 100%);
+}
+.side-scroll-top-mask.is-visible { opacity: 1; }
+.side-foot::before {
+  content: ""; position: absolute; bottom: 100%; left: 1px; right: 1px; height: 24px;
+  background: linear-gradient(transparent, var(--canvas)); pointer-events: none;
+}
+
+/* ---------- ④ toggle 的 tooltip + keycap chip（Kimi 的 .sidebar-toggle-tooltip/-shortcut）
+   Kimi 把它做成带快捷键帽的浮层；我们此前只有原生 title。
+   --keycap-chips-gap 也照抄（4px）。 */
+.side-fold { position: relative; }   /* tooltip 的定位祖先必须是按钮本身，
+   否则它会按 .sidebar（absolute）定位，落到视口外（浏览器验收抓到的） */
+.side-tip {
+  position: absolute; top: calc(100% + 8px); left: 0; z-index: 140;
+  display: inline-flex; align-items: center; gap: 8px; white-space: nowrap;
+  padding: 6px 8px; border-radius: 8px;
+  background: var(--k-label-1-hover); color: var(--k-white);
+  font: 400 12px/18px var(--font-ui);
+  opacity: 0; transform: translateY(-2px); pointer-events: none;
+  transition: opacity .12s ease-out, transform .12s ease-out;
+}
+.side-fold:hover .side-tip,
+.side-fold:focus-visible .side-tip { opacity: 1; transform: none; }
+.side-tip-key {
+  --keycap-chips-gap: 4px;
+  display: inline-flex; align-items: center; height: 16px; padding: 0 4px;
+  border-radius: 4px; background: var(--k-fill-1-invert);
+  font: 500 11px/16px var(--font-mono);
+}
+
+/* ---------- ⑤ 动画符号（Kimi 的 keyframes，名字与节奏照抄） ---------- */
+@keyframes kimi-spin { to { transform: rotate(360deg); } }
+@keyframes quickstart-dismiss { to { transform: scale(.804); opacity: 0; } }
+@keyframes kimi-shimmer-sweep { 0% { background-position: 0% 0; } to { background-position: -200% 0; } }
+@keyframes kimi-title-marquee { 0% { transform: translate(0); } to { transform: translate(calc(-1 * var(--k-marquee-distance, 0px))); } }
+@keyframes kimi-pill-in { 0% { opacity: 0; transform: scale(1.12); } to { opacity: 1; transform: none; } }
+
+/* 运行中：Kimi 的行左侧是转动的环，不是字形。字形让位给 border 环。 */
+.run-row .smark.live { position: relative; font-size: 0; }
+.run-row .smark.live::before {
+  content: ""; position: absolute; inset: 0; border-radius: 50%;
+  border: 1.5px solid var(--k-fill-2-active); border-top-color: var(--k-flavor);
+  animation: kimi-spin 1s linear infinite;
+}
+
+/* 快速开始卡退场（Kimi 的 quickstart-dismiss：scale .804 + 淡出） */
+.sidebar-quickstart.dismissing { animation: quickstart-dismiss .16s cubic-bezier(.2, 0, 0, 1) forwards; }
+
+/* 悬停长标题：跑马灯。overflow 时才挂 data-marquee（由 app.js 量出距离写进变量）。 */
+.session .slabel[data-marquee="1"]:hover {
+  animation: kimi-title-marquee 1.6s linear infinite alternate;
+}
+
+/* 刚出现的行：Kimi 的 wc-pill-in 同款（新内容不是硬闪进来） */
+.side-block-inner > .nav > .session { animation: kimi-pill-in .18s cubic-bezier(.2, 0, 0, 1); }
+
+/* 减少动效：新增的这几条也一并关掉 */
+body.reduce-motion .run-row .smark.live::before,
+body.reduce-motion .sidebar-quickstart.dismissing,
+body.reduce-motion .session .slabel[data-marquee="1"]:hover,
+body.reduce-motion .side-block-inner > .nav > .session {
+  animation: none !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  .run-row .smark.live::before,
+  .sidebar-quickstart.dismissing,
+  .session .slabel[data-marquee="1"]:hover,
+  .side-block-inner > .nav > .session { animation: none !important; }
+}
+
+/* 预留槽位行（Kimi Work 的 4 个未实现槽位）。它们仍可点开——点开是标注过的预留页，
+   所以不是 Kimi 的 :disabled（那是点不动、opacity .5）。这里用次级文字色 + 一个安静的
+   「预留」小标，形状与 Kimi 的 .nav-item 完全一致。 */
+.nav-item--reserved,
+html.desktop-app .nav-item--reserved { color: var(--k-label-2); }
+#pane-work .nav-item--reserved svg,
+#pane-work .nav-item--reserved .d-icon { color: var(--k-label-2); }
+.nav-item--reserved .nav-reserved,
+html.desktop-app .nav-item--reserved .nav-reserved {
+  margin-left: auto; flex: 0 0 auto; height: 16px; padding: 0 5px; border-radius: 4px;
+  background: var(--k-fill-1); color: var(--k-label-3);
+  font: 400 10px/16px var(--font-ui); letter-spacing: .02em;
+}
+.nav-item--reserved:hover .nav-reserved { background: var(--k-fill-1-hover); }
+
+/* ================================================================ Work 任务体验
+   首页、执行页与输入区共用 Kimi 的阅读宽度和灰阶层级。项目设置、模型与附件
+   都是浮层；执行、变更、文件共享一个任务上下文，不再混入需求确认与审计卡片。 */
+.mode-work .stage-foot { display: none; }
+.mode-work .chain-pill { display: none; }
+html.desktop-app .mode-work .statusline { display: none; }
+
+.project-composer { position: static; padding: 4px 12px 0; }
+.project-context-button {
+  width: auto; max-width: 100%; min-height: 28px; padding: 3px 7px; gap: 6px;
+  border-radius: 8px; color: var(--text-2);
+}
+.project-context-icon { width: 18px; height: 18px; background: transparent; color: var(--text-2); }
+.project-context-icon svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.6; }
+.project-context-name { max-width: 220px; font-size: 12px; font-weight: 450; color: var(--text-2); }
+.project-context-mode { flex: none; font-size: 11px; color: var(--text-3); }
+.project-context-chevron { font-size: 11px; }
+.project-quick-edit {
+  position: absolute; left: 12px; right: 12px; bottom: calc(100% + 8px); z-index: 90;
+  box-sizing: border-box; gap: 12px; padding: 16px;
+  border: 1px solid rgba(0, 0, 0, .09); border-radius: 16px;
+  background: #FFFFFF; box-shadow: 0 16px 48px rgba(0, 0, 0, .12), 0 2px 8px rgba(0, 0, 0, .05);
+}
+.project-quick-head { align-items: center; }
+.project-quick-head b { font-size: 14px; font-weight: 560; }
+.project-quick-head span, .project-quick-foot { font-size: 12px; }
+.project-quick-edit label { gap: 6px; font-size: 12px; }
+.project-quick-edit input { padding: 9px 10px; background: #FFFFFF; font: 13px/20px var(--font-ui); }
+.project-quick-foot .a-btn { min-height: 30px; padding: 4px 14px; border-radius: 8px; }
+
+.project-work-layout { padding-top: 4px; }
+.project-work-layout .work-view-tabs {
+  max-width: min(768px, calc(100% - 48px)); gap: 24px; margin-bottom: 12px;
+  padding: 0; border-bottom-color: var(--line-soft); background: rgba(251, 250, 249, .96);
+  backdrop-filter: blur(12px);
+}
+.project-work-layout .work-view-tab { padding: 10px 0; font-size: 13px; font-weight: 400; }
+.project-work-layout .work-view-tab.active { font-weight: 500; }
+.project-work-layout .work-view-tab.active::after { height: 1.5px; }
+.project-work-layout .objective,
+.project-work-layout .project-context,
+.project-work-layout .live-note,
+.project-work-layout .process-details,
+.project-work-layout .turns,
+.project-work-layout #result-slot {
+  box-sizing: border-box; max-width: min(768px, calc(100% - 48px));
+}
+.project-work-layout .objective { margin-top: 12px; margin-bottom: 8px; }
+.project-work-layout .turns { margin-top: 8px; }
+.project-work-layout .process-details {
+  margin-top: 8px; margin-bottom: 8px; border: 0; border-radius: 0; background: transparent;
+}
+.project-work-layout .process-head { min-height: 34px; padding: 4px 0; color: var(--text-3); font-size: 12px; }
+.project-work-layout .process-body { padding: 4px 0 8px; border: 0; }
+.project-work-layout .live-note { margin-top: 8px; margin-bottom: 8px; color: var(--text-3); font-size: 12px; }
+.project-context {
+  display: flex; gap: 7px; margin: 0 auto 10px; padding: 0 2px;
+  border: 0; border-radius: 0; background: transparent; color: var(--text-3); font-size: 12px;
+}
+.project-context-mark { display: inline-flex; width: 16px; height: 20px; background: none; color: var(--text-3); }
+.project-context-mark svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.5; }
+.project-context b { flex: none; color: var(--text-2); font-size: 12px; font-weight: 450; }
+.project-context-path { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-3); }
+.project-context code { flex: none; max-width: 180px; color: var(--text-3); font: 11px/20px var(--font-mono); }
+.project-context .project-isolated { padding: 0; border: 0; color: var(--text-3); font-size: 11px; }
+
+.project-outcome {
+  display: grid; grid-template-columns: 28px minmax(0, 1fr); gap: 10px 12px;
+  margin: 24px 0 32px; padding: 18px;
+  border: 1px solid var(--line-soft); border-radius: 16px; background: #FFFFFF;
+}
+.project-outcome-icon {
+  display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%;
+  background: var(--ok-soft); color: var(--ok-ink); font-size: 14px; font-weight: 600;
+}
+.project-outcome.failed .project-outcome-icon { background: var(--bad-soft); color: var(--bad-ink); }
+.project-outcome-copy h2 { margin: 1px 0 4px; font-size: 15px; line-height: 22px; font-weight: 560; }
+.project-outcome-copy p { margin: 0; color: var(--text-2); font-size: 13px; line-height: 21px; }
+.project-outcome-actions { grid-column: 2; display: flex; gap: 8px; }
+.project-outcome-actions button {
+  min-height: 32px; padding: 5px 12px; border: 1px solid var(--line); border-radius: 8px;
+  background: #FFFFFF; color: var(--text-1); font: 13px/20px var(--font-ui); cursor: pointer;
+}
+.project-outcome-actions button:hover { background: #F5F5F5; }
+
+.project-result, .project-files {
+  border-color: var(--line-soft); border-radius: 14px; background: #FFFFFF; box-shadow: none;
+}
+.project-result-head { padding-top: 18px; }
+.project-result-head .eyebrow { font: 11px/16px var(--font-ui); letter-spacing: 0; }
+.project-files-head { padding: 16px 18px; }
+.project-files-head b { font-size: 14px; font-weight: 560; }
+.project-file-list button { border-radius: 7px; font-size: 12px; }
+.project-file-list button.selected { background: rgba(0, 0, 0, .055); }
+.project-diff { font-size: 12px; }
+
+@media (max-width: 720px) {
+  .project-context-mode, .project-context-path, .project-context code { display: none; }
+  .project-context-name { max-width: min(220px, calc(100vw - 150px)); }
+  .project-work-layout .work-view-tabs,
+  .project-work-layout .objective,
+  .project-work-layout .project-context,
+  .project-work-layout .live-note,
+  .project-work-layout .process-details,
+  .project-work-layout .turns,
+  .project-work-layout #result-slot { max-width: calc(100% - 28px); }
+  .project-quick-edit { left: 4px; right: 4px; padding: 14px; }
+  .project-quick-head { align-items: flex-start; flex-direction: column; gap: 3px; }
+  .project-outcome { padding: 15px; }
+  .project-outcome-actions { flex-wrap: wrap; }
+}

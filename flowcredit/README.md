@@ -87,11 +87,11 @@ python viewer/server.py --repo ..   # 打开 http://127.0.0.1:8642/
 ## 测试
 
 ```sh
-python -m unittest discover -s tests -v            # 506 项 Python
-node --test viewer/tests/*.test.js                 # 58 项前端纯函数
+python -m unittest discover -s tests -v            # 642 项 Python
+node --test viewer/tests/*.test.js                 # 71 项前端纯函数
 ```
 
-506 项 Python 覆盖计划层与权限门控（未注册 / 越权 / 超 grant / 参数非法）、预算三个维度、
+642 项 Python 覆盖计划层与权限门控（未注册 / 越权 / 超 grant / 参数非法）、预算三个维度、
 状态机非法迁移、并发写 CAS、事件篡改、收据伪造、独立重算拒绝伪造观测、trace 篡改、
 审批放行与拒绝、计划跳过 / 提前、预算追加、失败续跑、运行中操作员消息入链、
 Kimi/DeepSeek/local provider 纪律，以及八个场景的端到端断言（其中崩溃场景用真实 SIGKILL，
@@ -127,7 +127,7 @@ src/flowagent/
 viewer/        实时控制台 + Trace 回放（零依赖零构建）
   server.py / console_manager.py / console_runtime.py / console_common.py
   core/        前端纯函数层（markdown、SSE、运行卡片、回合折叠、侧栏、AI 头像）
-tests/         506 项 unittest（含 server_harness 起的两个子进程边界测试）
+tests/         642 项 unittest（含 server_harness 起的两个子进程边界测试）
 ```
 
 ## 现在还没有的

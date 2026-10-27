@@ -29,6 +29,7 @@ from ..tools.base import Observation
 from .policy import PacketProvider, compile_packet
 from .control import Control, Denial
 from .harness import Harness, TraceObserver
+from .plan_extension import validate_additions
 
 #: Denials the model can fix by reading the error: the tool exists and is
 #: allowed, the proposal simply did not fit its schema. Everything else —
@@ -69,6 +70,8 @@ class Loop:
         memory_summarizers: Any = None,
         memory_state_fn: Any = None,
         memory_instruction: str | None = None,
+        memory_prompt_profile: str | None = None,
+        plan_extension: bool | None = None,
     ) -> None:
         self.harness = harness
         self.planner = planner
@@ -98,6 +101,19 @@ class Loop:
         self.memory_instruction = (
             memory_instruction if memory_instruction is not None else harness.instruction
         )
+        #: Which system-prompt profile this run renders against. Threaded to
+        #: working memory the same way the instruction is, so the profile is a
+        #: property of the *domain the run belongs to* — never of the text the
+        #: user typed. ``None`` keeps the default profile and emits no selector.
+        self.memory_prompt_profile = (
+            memory_prompt_profile if memory_prompt_profile is not None
+            else harness.prompt_profile
+        )
+        #: Whether the model may propose additional plan todos. Comes from the
+        #: domain module through the harness; see the loop's plan-addition path.
+        self.plan_extension = (
+            plan_extension if plan_extension is not None else harness.plan_extension
+        )
 
     def run(self, task_id: str) -> Task:
         task = self.harness.store.load(task_id)
@@ -123,7 +139,14 @@ class Loop:
                 if plan.is_blocked():
                     return self._stop(task, plan, "PLAN_BLOCKED")
                 if plan.is_complete() or plan.next_open() is None:
-                    return self._stop(task, plan, "PLAN_EXHAUSTED")
+                    # A plan the domain opened to the model is not finished just
+                    # because the steps it currently holds are: the model may
+                    # still propose the next one in this same round. It ends by
+                    # proposing report_blocked, which is a gated action like any
+                    # other. A domain that kept its plan closed has nothing left
+                    # to add, so it stops here exactly as before.
+                    if not self.plan_extension:
+                        return self._stop(task, plan, "PLAN_EXHAUSTED")
                 if self._decisions(task) >= self.max_rounds:
                     return self._abort(task_id, AgentError("ROUND_LIMIT", f"no verified result after {self.max_rounds} rounds"))
 
@@ -214,6 +237,11 @@ class Loop:
                         self.observer.terminal(task, None)
                         return task
                     self.observer.proposal(round_no, proposal)
+                    # A proposal may ask to extend the plan. The host judges it
+                    # before the step runs, and the plan only changes once the
+                    # accepted todos are on the chain — so this round's action
+                    # and every later round both see the same durable plan.
+                    task, plan = self._extend_plan(task, plan, round_no, memory)
                     step = proposal.plan["steps"][0]
 
             if memory.pending_compaction is not None:
@@ -285,9 +313,329 @@ class Loop:
             if observation.tool in self.result_tools and plan.is_complete():
                 try:
                     verified = self._verify_result_set(task.id, plan)
+                    sources = self._check_evidence(task, verified, round_no)
+                    task, obligation = self._verify_obligation(task, verified, plan, round_no)
                 except AgentError as error:
                     return self._abort(task.id, error)
-                return self._succeed(task, verified, plan)
+                return self._succeed(task, verified, plan, obligation, sources)
+
+    # ----------------------------------------------------------- plan extension
+
+    def _extend_plan(
+        self,
+        task: Task,
+        plan: Plan,
+        round_no: int,
+        memory: WorkingMemory,
+    ) -> tuple[Task, Plan]:
+        """Judge a proposal's plan-extension request, and apply it if accepted.
+
+        The host decides — registration, task scope, host grant, effect class and
+        the tool's argument schema, all through the same ``Permissions`` gate the
+        step itself will face. A refusal is an *event, not a failure*: the action
+        proposed alongside is still gated and executed on its own merits, and the
+        reason reaches the next round's context (``rejected_proposals``) so the
+        model can correct the request rather than repeat it.
+
+        Accepted todos are recorded through the existing ``plan_steered`` path
+        *before* they can drive anything, which is also what makes
+        :meth:`rebuild_plan` reconstruct them on resume: the replay already takes
+        the latest ``plan_steered`` payload as its base. A refusal is recorded as
+        ``control_rejected`` with ``by="model"`` — the same event the operator's
+        refused plan commands use, because it is the same fact: a plan
+        instruction the host declined, with a reason.
+        """
+        additions = (task.model.proposal or {}).get("additions") or []
+        extension = validate_additions(
+            additions,
+            plan=plan,
+            registry=self.harness.registry,
+            permissions=self.harness.permissions(task),
+            enabled=self.plan_extension,
+            result_tools=self.result_tools,
+        )
+        if not extension.present:
+            return task, plan
+
+        if not extension.ok:
+            task = self.harness.record(task, "control_rejected", {
+                "round": round_no,
+                "kind": "plan_extension",
+                "by": "model",
+                "reason": extension.reason[:200],
+                "rejected": [dict(item) for item in extension.rejected],
+                "plan_revision": plan.revision,
+            })
+            memory.rejected_proposals = list(memory.rejected_proposals or []) + [
+                {
+                    "tool": str(item.get("tool") or "additions"),
+                    "code": str(item.get("code") or "PLAN_ADDITION_INVALID"),
+                    "message": str(item.get("message") or extension.reason),
+                }
+                for item in extension.rejected
+            ][-3:]
+            return task, plan
+
+        # Addition only: nothing is dropped here, so ``revise``'s ``reason``
+        # (which explains an abandonment) has nothing to describe.
+        revised = plan.revise(add=tuple(extension.accepted))
+        task.plan_state = revised.to_dict()
+        task = self.harness.record(task, "plan_steered", {
+            "round": round_no,
+            "action": "extend",
+            "by": "model",
+            "todo_id": extension.accepted[0].id,
+            "added": extension.added_ids(),
+            "note": "模型提议新增步骤",
+            "plan": revised.to_dict(),
+        })
+        return task, revised
+
+    # ------------------------------------------------------- result obligations
+
+    def _check_evidence(
+        self,
+        task: Task,
+        verified: dict[str, Any],
+        round_no: int,
+    ) -> dict[str, Any]:
+        """Resolve the artifact's declared source references against the chain.
+
+        What this establishes, precisely: each cited reading **exists** as a
+        durable observation, for that tool, of that path, with that content
+        digest. What it does not, and cannot: that the claim it is attached to
+        actually follows from the source. That is why the verdict is reported as
+        ``semantic_truth: "not-verified"`` rather than dressed up — matching a
+        hash to a citation is not reading comprehension, and pretending
+        otherwise would just move the false confidence one level down.
+
+        A citation that cannot be resolved is different from a claim with no
+        citation. The first asserts support that is not there and fails the run;
+        the second is merely unverified, and is labelled as such.
+        """
+        references = list((task.model.proposal or {}).get("evidence") or [])
+        if not references:
+            return {
+                "status": "not-declared",
+                "references": [],
+                "semantic_truth": "not-verified",
+                "note": (
+                    "the artifact's contents were hashed, not read for truth: no source "
+                    "references were declared, so no claim is corroborated"
+                ),
+            }
+        chain = self.harness.store.events(task.id)
+        resolved: list[dict[str, Any]] = []
+        unresolved: list[dict[str, Any]] = []
+        for reference in references:
+            source = self._resolve_reference(chain, reference)
+            if source is None:
+                unresolved.append({
+                    "claim": reference["claim"],
+                    "tool": reference["tool"],
+                    "path": reference["path"],
+                    "sha256": reference["sha256"],
+                })
+            else:
+                resolved.append({
+                    "claim": reference["claim"],
+                    "tool": reference["tool"],
+                    "path": reference["path"],
+                    "sha256": reference["sha256"],
+                    "observed_round": source.get("round"),
+                    "observed_at": source.get("at"),
+                })
+        task = self.harness.record(task, "evidence_checked", {
+            "round": round_no,
+            "artifact": self._artifact_state(verified) or {},
+            "resolved": len(resolved),
+            "unresolved": unresolved,
+            "semantic_truth": "not-verified",
+        })
+        if unresolved:
+            raise AgentError(
+                "EVIDENCE_REFERENCE_UNRESOLVED",
+                "the artifact cites sources that are not in the durable history: "
+                + "; ".join(f"{item['path']} ({item['tool']})" for item in unresolved),
+            )
+        return {
+            "status": "resolved",
+            "references": resolved,
+            "semantic_truth": "not-verified",
+            "note": (
+                "every cited reading exists on the chain with the recordable digest; "
+                "whether each claim follows from its source is not something hashes decide"
+            ),
+        }
+
+    @staticmethod
+    def _resolve_reference(chain: list[dict[str, Any]], reference: dict[str, Any]) -> dict[str, Any] | None:
+        """Find the committed observation a citation points at, if it exists.
+
+        Matches on tool, path and the content digest the observation recorded.
+        The digest is accepted from ``sha256`` (a read) or ``sha256_after`` (a
+        write or an edit), because both are "the content digest the runtime
+        recorded for that path at that moment" — the only difference is which
+        side of the change it describes.
+        """
+        for event in chain:
+            if event["type"] != "tool_succeeded":
+                continue
+            detail = event["payload"].get("detail") or {}
+            if detail.get("tool") != reference["tool"]:
+                continue
+            result = detail.get("result") or {}
+            if str(result.get("path")) != reference["path"]:
+                continue
+            digests = {str(result.get("sha256") or ""), str(result.get("sha256_after") or "")}
+            if reference["sha256"] not in digests:
+                continue
+            return {"round": detail.get("round"), "at": event.get("at", "")}
+        return None
+
+    def _verify_obligation(
+        self,
+        task: Task,
+        verified: dict[str, Any],
+        plan: Plan,
+        round_no: int,
+    ) -> tuple[Task, dict[str, Any] | None]:
+        """Re-run the declared result obligation, and judge what comes back.
+
+        This is the difference between a truthful log and a correct result. The
+        command that decides success comes from the *delegation* — validated
+        when the run was created and frozen in the task binding — never from a
+        proposal, so naming an easier command is not available to the model. The
+        runtime then dispatches it through the ordinary gate, budget and event
+        path, which is what makes authorization, pre-charging, durability and
+        unknown-result semantics apply to verification exactly as they do to
+        work.
+
+        The recorded result of the same command during task execution is
+        deliberately *not* what is checked: only this fresh run is. A task that
+        declares nothing gets ``None`` back, and the terminal result then says
+        plainly that only file state was verified.
+        """
+        scope = self.harness.verification
+        if scope is None:
+            return task, None
+        obligation = scope.obligation
+
+        artifact = self._artifact_state(verified)
+        try:
+            snapshot = scope.prepare(artifact)
+        except AgentError:
+            task = self._record_verification_rejected(
+                task, obligation, round_no, "the workspace could not be frozen",
+            )
+            raise
+        try:
+            task = self.harness.record(task, "verification_obligation", {
+                "round": round_no,
+                "name": obligation.name,
+                "tool": obligation.tool,
+                "arguments": dict(obligation.arguments),
+                "expect": dict(obligation.expect),
+                # Where the criterion came from. The whole point of the field is
+                # that a reader can see it was the host's, not the model's.
+                "source": obligation.source,
+                "artifact": dict(artifact or {}),
+                "snapshot": dict(snapshot),
+                "plan_revision": plan.revision,
+            })
+
+            step = obligation.step()
+            decision = self.harness.gate(task, step)
+            self.observer.gate(round_no, decision)
+            if not decision.allowed:
+                # Refused *before* execution: no dispatch, no read charged, and
+                # the record names the gate's own code.
+                task = self._record_verification_rejected(
+                    task, obligation, round_no, decision.code,
+                )
+                raise AgentError(
+                    "VERIFICATION_NOT_AUTHORIZED",
+                    f"the declared obligation {obligation.name!r} is not authorized: {decision.reason}",
+                )
+            # A timeout or an unknown outcome fails the task closed on the
+            # ordinary path before it raises, so the chain already carries
+            # `tool_unknown` and `task_failed` with the cause — and nothing is
+            # ever re-dispatched. A second refusal record here would only
+            # restate it, against a sequence that path has already advanced.
+            task, observation = self.harness.execute(task, step, round_no=round_no)
+            try:
+                item = self.harness.verify(observation)
+            except AgentError as error:
+                # The domain refused the result: the declared check did not
+                # pass. Recorded before the run dies, because a refusal that
+                # leaves no trace is indistinguishable from a pass.
+                task = self._record_verification_rejected(
+                    task, obligation, round_no, error.message,
+                )
+                raise
+            if not item.get("verified"):  # pragma: no cover - verifiers raise instead
+                task = self._record_verification_rejected(
+                    task, obligation, round_no, "the verifier returned no verdict",
+                )
+                raise AgentError(
+                    "RESULT_VERIFICATION_FAILED",
+                    f"the declared obligation {obligation.name!r} was not verified",
+                )
+        finally:
+            scope.release()
+
+        outcome = dict(item["result"])
+        outcome["snapshot_sha256"] = snapshot.get("sha256")
+        outcome["artifact_matched"] = (snapshot.get("artifact") or {}).get("matched")
+        task = self.harness.record(task, "verification_result", {
+            "round": round_no,
+            "name": obligation.name,
+            "verified": True,
+            "verification": item.get("verification"),
+            "exit_code": outcome.get("exit_code"),
+            "expect_exit_code": outcome.get("expect_exit_code"),
+            "result_hash": outcome.get("result_hash"),
+            "snapshot_sha256": snapshot.get("sha256"),
+        })
+        return task, outcome
+
+    def _record_verification_rejected(
+        self,
+        task: Task,
+        obligation: Any,
+        round_no: int,
+        reason: str,
+    ) -> Task:
+        """Write down a verification that did not happen, and why.
+
+        A refusal that leaves no trace is indistinguishable from a check that
+        passed, which is the failure mode this whole phase exists to remove.
+        """
+        return self.harness.record(task, "verification_result", {
+            "round": round_no,
+            "name": obligation.name,
+            "verified": False,
+            "reason": str(reason)[:200],
+            "expect": dict(obligation.expect),
+            "source": obligation.source,
+        })
+
+    @staticmethod
+    def _artifact_state(verified: dict[str, Any]) -> dict[str, Any] | None:
+        """The artifact the verifier just accepted, as (path, sha256).
+
+        The single-result shape carries its fields under ``result``; the
+        multi-result shape is already a list of those inner dicts.
+        """
+        if "results" in verified:
+            for item in verified["results"]:
+                if item.get("path"):
+                    return {"path": item.get("path"), "sha256": item.get("sha256")}
+            return None
+        item = verified.get("result") or {}
+        if item.get("path"):
+            return {"path": item.get("path"), "sha256": item.get("sha256")}
+        return None
 
     # -------------------------------------------------------------- resumption
 
@@ -357,6 +705,7 @@ class Loop:
             state_fn=self.memory_state_fn,
             conversation=conversation,
             instruction=self.memory_instruction,
+            prompt_profile=self.memory_prompt_profile,
         )
         for event in self.harness.store.events(task.id):
             if event["type"] == "memory_recalled":
@@ -576,7 +925,14 @@ class Loop:
             )
         return observations
 
-    def _succeed(self, task: Task, verified: dict[str, Any], plan: Plan) -> Task:
+    def _succeed(
+        self,
+        task: Task,
+        verified: dict[str, Any],
+        plan: Plan,
+        obligation: dict[str, Any] | None = None,
+        sources: dict[str, Any] | None = None,
+    ) -> Task:
         if "results" in verified:
             result = {
                 "verified": True,
@@ -587,6 +943,23 @@ class Loop:
             result = dict(verified["result"])
             result["verification"] = verified["verification"]
         result["plan"] = plan.progress()
+        # What was independent here, and what was not, kept separate so a reader
+        # never has to infer it. ``file_state`` is the artifact recompute; the
+        # declared obligation (when there is one) is a re-executed *result*;
+        # and no amount of hashing establishes that prose is true.
+        result["file_state"] = verified.get("verification", "runtime-recomputed")
+        result["obligations"] = [dict(obligation)] if obligation else []
+        # Three separate questions, kept separate, because conflating them is
+        # exactly how "the file was written" became "the work was correct".
+        result["source_links"] = (sources or {}).get("status", "not-declared")
+        result["sources"] = list((sources or {}).get("references") or [])
+        result["semantic_truth"] = (sources or {}).get("semantic_truth", "not-verified")
+        if sources and sources.get("note"):
+            result["truth_note"] = sources["note"]
+        if obligation:
+            result["result_truth"] = "runtime-recomputed-command-result"
+        else:
+            result["result_truth"] = "no-result-obligation-declared"
         task = self.harness.finalize(task, "verifying", result=None, event="verification_started")
         task = self.harness.finalize(task, "succeeded", result=result, event="task_succeeded")
         self.observer.terminal(task, result)

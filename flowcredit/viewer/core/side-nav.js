@@ -27,11 +27,37 @@
 import { esc, num } from "./format.js";
 
 /* 工作侧栏的平坦导航：Kimi Work 把工作页排成一列，不做折叠。
-   对话侧栏把二级入口收进 More（next-sidebar__more-list），顶部只留主入口。 */
+   对话侧栏把二级入口收进 More（next-sidebar__more-list），顶部只留主入口。
+
+   Kimi Work 自己的 5 个槽位是 canvas / plugins / cron / remoteControl / apps(Beta)
+   （从商品包 kimi-agent-*.js 的路由表读出：chat / cron / remoteControl / pluginsHub /
+   pluginDetail / canvas）。FCode 只有 3 个真页面，另外 4 个能力不存在，所以：
+
+   - 3 条真页面（ledger / reviews / scheduled）在前 —— 与 Kimi 的顺序不同（它是
+     canvas 打头），这是有意的：第一眼能点开的应该是真页面；
+   - 4 条 reserved 在后，各自带 kimi 出处与 needs（落地需要什么），点开是**明确标注
+     的预留槽位页**，不是伪装成可用的空页。行上带一个安静的「预留」标记。
+   每条都记 kimi 字段：预留页要把"它对应 Kimi 的什么"直接印出来，单一来源。 */
 export const WORK_NAV = [
-  { open: "ledger", label: "看板 · 账本", icon: "layout-grid", title: "委托汇总与成本账本" },
-  { open: "reviews", label: "判断记录", icon: "clipboard-list", title: "你在判断面里做过的选择" },
-  { open: "scheduled", label: "定时任务", icon: "calendar", title: "把重复的委托排上日程" },
+  { open: "ledger", label: "看板 · 账本", icon: "layout-grid",
+    title: "委托汇总与成本账本", kimi: "FCode 自有（Kimi 无对应槽位）" },
+  { open: "reviews", label: "判断记录", icon: "clipboard-list",
+    title: "你在判断面里做过的选择", kimi: "FCode 自有（Kimi 无对应槽位）" },
+  { open: "scheduled", label: "定时任务", icon: "calendar",
+    title: "把重复的委托排上日程", kimi: "cron（Kimi Work 的 Scheduled）" },
+  { open: "canvas", label: "Canvas", icon: "cube", reserved: true,
+    title: "预留槽位：对应 Kimi Work 的 canvas，FCode 尚未实现",
+    kimi: "canvas", needs: "一个可读写的画布对象模型 + 与工作区文件的双向同步" },
+  { open: "plugins", label: "插件", icon: "tool", reserved: true,
+    title: "预留槽位：对应 Kimi Work 的 plugins，FCode 尚未实现",
+    kimi: "pluginsHub / pluginDetail",
+    needs: "插件清单、权限声明与安装通道（现有 MCP 桥只覆盖工具导入）" },
+  { open: "remoteControl", label: "远程控制", icon: "link", reserved: true,
+    title: "预留槽位：对应 Kimi Work 的 remoteControl，FCode 尚未实现",
+    kimi: "remoteControl", needs: "远程序列与隧道；当前运行全部绑在本机 loopback" },
+  { open: "apps", label: "Apps", icon: "book-open", reserved: true,
+    title: "预留槽位：对应 Kimi Work 的 apps(Beta)，FCode 尚未实现",
+    kimi: "apps（Beta）", needs: "第三方应用目录与 OAuth；目前只有本地模板与 MCP" },
 ];
 
 export const CHAT_NAV = [
@@ -42,6 +68,16 @@ export const CHAT_NAV = [
 export const CHAT_MORE_NAV = [
   { open: "ledger", label: "看板 · 账本", icon: "layout-grid", title: "委托汇总与成本账本" },
 ];
+
+/* 预留槽位的索引：open 键 → 条目。页面用它在预留页上印出"对应 Kimi 的什么、
+   落地需要什么"，避免那两句在各处重复。 */
+export function reservedSlots() {
+  const out = {};
+  for (const item of [...WORK_NAV, ...CHAT_NAV, ...CHAT_MORE_NAV]) {
+    if (item.reserved) out[item.open] = item;
+  }
+  return out;
+}
 
 /* 行状态点：Kimi 的任务行左侧是状态点（running 转动 / 完成 / 失败）。
    FCode 保留同一位置与语义，颜色走治理事实（PASS/DENIED/UNKNOWN）。 */
@@ -68,6 +104,12 @@ function pinnedChatRowHtml(item, options) {
     + "</button>";
 }
 
+/* 可折叠的"行"区：Kimi 的 .sidebar-reveal-content。标题必须留在它外面，
+   否则折叠后标题被裁掉，段标题按钮点不到 → 该段再也展不开。 */
+function revealHtml(inner) {
+  return '<div class="side-block-inner">' + inner + "</div>";
+}
+
 /* 置顶分组：Kimi 只在真的置顶过东西时才渲染这一段（pinned-list 为空即不出现）。 */
 function sectionHeadHtml(label, extra, count) {
   return '<div class="side-section">'
@@ -86,7 +128,7 @@ export function pinnedSectionHtml(pins, options) {
       : pinnedRunRowHtml(item, opts.rowHtml);
   }).join("");
   return sectionHeadHtml("置顶", { key: "pinned" }, pins.length)
-    + '<nav class="nav" data-pin-nav>' + rows + "</nav>";
+    + revealHtml('<nav class="nav" data-pin-nav>' + rows + "</nav>");
 }
 
 /* Projects 分组：标题 + “＋”动作（Kimi 的 workspace-add-pop：从零开始 / 用已有文件夹）。
@@ -103,7 +145,7 @@ export function projectSectionHtml(projects, options) {
   }).join("");
   const add = '<button class="section-action" data-proj-add type="button" aria-label="新建项目" title="新建项目">＋</button>';
   return sectionHeadHtml("Projects", { key: "projects", action: add }, (projects || []).length)
-    + '<nav class="nav" data-proj-nav>' + rows + "</nav>"
+    + revealHtml('<nav class="nav" data-proj-nav>' + rows + "</nav>")
     + (rows ? "" : '<div class="section-empty">还没有项目——用「＋」建一个，把任务归到一起</div>');
 }
 
@@ -185,7 +227,8 @@ export function panelHeadHtml(count, label) {
 }
 
 /* 导航条目：Kimi 的 nav-item = 图标(18) + 标签 +（可选）计数/警示。
-   打开哪个页面用 data-open 表达，两侧栏可以各放一份而不打架。 */
+   打开哪个页面用 data-open 表达，两侧栏可以各放一份而不打架。
+   预留槽位仍是可点的按钮（点开是标注过的预留页），只是多一个「预留」标记。 */
 export function navItemsHtml(items, counts) {
   const seen = counts || {};
   return (items || []).map(function (item) {
@@ -193,10 +236,14 @@ export function navItemsHtml(items, counts) {
     const tail = count
       ? '<span class="side-count">' + num(count) + "</span>"
       : (item.badge ? '<span class="nav-warn" aria-hidden="true">!</span>' : "");
-    return '<button class="nav-item" type="button" data-open="' + esc(item.open) + '"'
+    const mark = item.reserved
+      ? '<span class="nav-reserved" aria-hidden="true">预留</span>'
+      : "";
+    return '<button class="nav-item' + (item.reserved ? " nav-item--reserved" : "") + '" type="button" data-open="' + esc(item.open) + '"'
+      + (item.reserved ? ' data-reserved="1"' : "")
       + (item.title ? ' title="' + esc(item.title) + '"' : "") + ">"
       + '<span data-doodle="' + esc(item.icon) + '"></span>'
-      + "<span>" + esc(item.label) + "</span>" + tail + "</button>";
+      + "<span>" + esc(item.label) + "</span>" + mark + tail + "</button>";
   }).join("");
 }
 

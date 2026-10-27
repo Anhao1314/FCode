@@ -85,7 +85,25 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--serve", action="store_true", help="serve the viewer on 127.0.0.1 and open it")
     parser.add_argument("--port", type=int, default=0, help="port for --serve (default: pick a free one)")
     parser.add_argument("--list", action="store_true", dest="list_scenarios", help="list scenarios and exit")
+    parser.add_argument(
+        "--provider-status", action="store_true",
+        help="show redacted provider availability, price dates and config path",
+    )
     return parser
+
+
+def _print_provider_status() -> None:
+    """Print configuration provenance without ever printing credentials."""
+    from ..chat_config import default_chat_config_path
+    from ..providers.catalog import provider_catalog, resolved_provider_env
+
+    print(f"config={default_chat_config_path()} (environment > user config > defaults)")
+    for entry in provider_catalog(env=resolved_provider_env()):
+        status = "available" if entry["available"] else f"unavailable: {entry['reason']}"
+        details = ""
+        if entry.get("priceAsOf"):
+            details = f"，price_as_of={entry['priceAsOf']}，price_source={entry.get('priceSource') or 'unset'}"
+        print(f"{entry['key']}: {status}，model={entry['model']}{details}")
 
 
 def _provider_options(args: argparse.Namespace) -> dict[str, object]:
@@ -174,6 +192,10 @@ def main(argv: list[str] | None = None) -> int:
         print("scenarios:")
         for key, scenario in SCENARIOS.items():
             print(f"  {key:<12} {scenario.title}  [{scenario.module}]")
+        return 0
+
+    if args.provider_status:
+        _print_provider_status()
         return 0
 
     if args.serve:

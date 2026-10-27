@@ -1,4 +1,4 @@
-"""Chat provider configuration: settings > environment > defaults.
+"""Chat provider configuration: environment > user settings > defaults.
 
 This module owns the resolution rules and the local settings file. It never
 imports the service or the transport, so it is safe to use from the console,
@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -16,6 +17,20 @@ from typing import Any
 from .core.contracts import AgentError
 
 CHAT_CONFIG_VERSION = "fcode.chat-config/v1"
+
+
+def default_chat_config_path() -> Path:
+    """The shared user-scoped provider config used by CLI and console."""
+    override = os.environ.get("FCODE_CONFIG_DIR", "").strip()
+    if override:
+        base = Path(override).expanduser()
+    elif sys.platform == "darwin":
+        base = Path.home() / "Library" / "Application Support" / "FCode"
+    elif os.name == "nt":
+        base = Path(os.environ.get("APPDATA") or (Path.home() / "AppData" / "Roaming")) / "FCode"
+    else:
+        base = Path(os.environ.get("XDG_CONFIG_HOME") or (Path.home() / ".config")) / "fcode"
+    return base / "chat-config.json"
 #: Providers a settings page may configure. ``mock`` needs nothing.
 CONFIGURABLE_PROVIDERS = ("kimi", "deepseek", "local")
 CHAT_PROVIDER_KEYS = ("mock",) + CONFIGURABLE_PROVIDERS
@@ -136,51 +151,49 @@ def _remote_config(
     price_as_of_env: str = "",
     price_source_env: str = "",
 ) -> ChatProviderConfig:
-    """Resolve one remote provider: settings override > environment > default.
+    """Resolve one remote provider: environment > user settings > default.
 
     Nothing is ever silently free: if neither settings nor env provide the key
     or both prices, the provider stays unavailable with the exact missing list.
     """
-    override_api = _ov_str(overrides, "api_key")
-    api_key = override_api or os.environ.get(api_env, "").strip()
-    model = _ov_str(overrides, "model") or os.environ.get(model_env, "").strip() or model_default
-    base_url = _ov_str(overrides, "base_url") or os.environ.get(base_env, "").strip() or base_default
+    api_key = os.environ.get(api_env, "").strip() or _ov_str(overrides, "api_key")
+    model = os.environ.get(model_env, "").strip() or _ov_str(overrides, "model") or model_default
+    base_url = os.environ.get(base_env, "").strip() or _ov_str(overrides, "base_url") or base_default
 
     missing: list[str] = []
     if not api_key:
         missing.append(api_env)
 
-    input_price = _ov_int(overrides, "input_price_microusd_per_mtok")
-    if input_price is None:
-        raw = os.environ.get(in_price_env, "").strip()
-        if raw:
-            try:
-                input_price = int(raw)
-            except ValueError:
-                raise AgentError("CHAT_CONFIG_INVALID", f"{in_price_env} must be an integer")
-        else:
-            input_price = None
+    raw_input = os.environ.get(in_price_env, "").strip()
+    if raw_input:
+        try:
+            input_price = int(raw_input)
+        except ValueError:
+            raise AgentError("CHAT_CONFIG_INVALID", f"{in_price_env} must be an integer")
+    else:
+        input_price = _ov_int(overrides, "input_price_microusd_per_mtok")
+        if input_price is None:
             missing.append(in_price_env)
-    elif input_price <= 0:
+    if input_price is not None and input_price <= 0:
         raise AgentError("CHAT_CONFIG_INVALID", "input price must be positive")
-    output_price = _ov_int(overrides, "output_price_microusd_per_mtok")
-    if output_price is None:
-        raw = os.environ.get(out_price_env, "").strip()
-        if raw:
-            try:
-                output_price = int(raw)
-            except ValueError:
-                raise AgentError("CHAT_CONFIG_INVALID", f"{out_price_env} must be an integer")
-        else:
-            output_price = None
+
+    raw_output = os.environ.get(out_price_env, "").strip()
+    if raw_output:
+        try:
+            output_price = int(raw_output)
+        except ValueError:
+            raise AgentError("CHAT_CONFIG_INVALID", f"{out_price_env} must be an integer")
+    else:
+        output_price = _ov_int(overrides, "output_price_microusd_per_mtok")
+        if output_price is None:
             missing.append(out_price_env)
-    elif output_price <= 0:
+    if output_price is not None and output_price <= 0:
         raise AgentError("CHAT_CONFIG_INVALID", "output price must be positive")
     # Prices are only half the fact: the date they were read makes them
     # auditable, and the delegation side already refuses to guess it.
-    price_as_of = _ov_str(overrides, "price_as_of") or (
+    price_as_of = (
         os.environ.get(price_as_of_env, "").strip() if price_as_of_env else ""
-    )
+    ) or _ov_str(overrides, "price_as_of")
     if not price_as_of and price_as_of_env:
         missing.append(f"{price_as_of_env}（价格日期）")
     if missing:
@@ -189,9 +202,10 @@ def _remote_config(
             f"{label} 未配置：缺少 " + "、".join(missing),
         )
 
-    interval = _ov_float(overrides, "min_interval_seconds")
+    raw_interval = os.environ.get(interval_env, "").strip()
+    interval = _env_float(interval_env, 0.0) if raw_interval else _ov_float(overrides, "min_interval_seconds")
     if interval is None:
-        interval = _env_float(interval_env, 0.0)
+        interval = 0.0
     max_completion = _ov_int(overrides, "max_completion_tokens")
     if max_completion is None:
         max_completion = _env_int("CHAT_MAX_COMPLETION_TOKENS", DEFAULT_MAX_COMPLETION)
@@ -210,8 +224,8 @@ def _remote_config(
         max_completion_tokens=max_completion,
         completion_field="max_completion_tokens" if key == "kimi" else "max_tokens",
         price_as_of=price_as_of,
-        price_source=_ov_str(overrides, "price_source")
-        or (os.environ.get(price_source_env, "").strip() if price_source_env else ""),
+        price_source=(os.environ.get(price_source_env, "").strip() if price_source_env else "")
+        or _ov_str(overrides, "price_source"),
     )
 
 
@@ -252,7 +266,7 @@ def _deepseek_config(overrides: dict[str, Any]) -> ChatProviderConfig:
 
 
 def _local_config(overrides: dict[str, Any]) -> ChatProviderConfig:
-    endpoint = _ov_str(overrides, "base_url") or os.environ.get("FCODE_LOCAL_ENDPOINT", "").strip()
+    endpoint = os.environ.get("FCODE_LOCAL_ENDPOINT", "").strip() or _ov_str(overrides, "base_url")
     if not endpoint:
         raise AgentError("CHAT_PROVIDER_UNAVAILABLE", "本地模型未配置：缺少 FCODE_LOCAL_ENDPOINT")
     max_completion = _ov_int(overrides, "max_completion_tokens")
@@ -263,9 +277,9 @@ def _local_config(overrides: dict[str, Any]) -> ChatProviderConfig:
     return ChatProviderConfig(
         key="local",
         label="本地模型",
-        model=_ov_str(overrides, "model") or os.environ.get("FCODE_LOCAL_MODEL", "").strip() or "fcode-qwen3-4b",
+        model=os.environ.get("FCODE_LOCAL_MODEL", "").strip() or _ov_str(overrides, "model") or "fcode-qwen3-4b",
         base_url=endpoint,
-        api_key=_ov_str(overrides, "api_key") or os.environ.get("FCODE_LOCAL_API_KEY", "").strip(),
+        api_key=os.environ.get("FCODE_LOCAL_API_KEY", "").strip() or _ov_str(overrides, "api_key"),
         timeout_seconds=_env_float("CHAT_STREAM_TIMEOUT_SECONDS", 120.0),
         max_completion_tokens=max_completion,
     )
@@ -274,11 +288,11 @@ def _local_config(overrides: dict[str, Any]) -> ChatProviderConfig:
 def _peek_model(key: str, overrides: dict[str, Any]) -> str:
     """The model name to display even when the provider is unavailable."""
     if key == "kimi":
-        return _ov_str(overrides, "model") or os.environ.get("KIMI_MODEL", "").strip() or "kimi-k2.6"
+        return os.environ.get("KIMI_MODEL", "").strip() or _ov_str(overrides, "model") or "kimi-k2.6"
     if key == "deepseek":
-        return _ov_str(overrides, "model") or os.environ.get("DEEPSEEK_MODEL", "").strip() or "deepseek-chat"
+        return os.environ.get("DEEPSEEK_MODEL", "").strip() or _ov_str(overrides, "model") or "deepseek-chat"
     if key == "local":
-        return _ov_str(overrides, "model") or os.environ.get("FCODE_LOCAL_MODEL", "").strip() or "fcode-qwen3-4b"
+        return os.environ.get("FCODE_LOCAL_MODEL", "").strip() or _ov_str(overrides, "model") or "fcode-qwen3-4b"
     return "offline-chat-mock-v1"
 
 

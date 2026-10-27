@@ -26,7 +26,12 @@ from typing import Any
 
 from ..core.contracts import AgentError, PLAN_VERSION
 from .base import Proposal
-from .prompt import PROMPT_VERSION, parse_proposal_text, render_prompt
+from .prompt import (
+    build_proposal_plan,
+    parse_proposal_text,
+    prompt_profile_for,
+    render_prompt,
+)
 
 __all__ = ["OracleFileProvider"]
 
@@ -72,6 +77,7 @@ class OracleFileProvider:
 
     def propose(self, context: dict[str, Any]) -> Proposal:
         started = time.monotonic()
+        profile = prompt_profile_for(context)
         system, user = render_prompt(context)
         round_no = int(context.get("round") or 0)
         stem = f"round-{round_no:02d}"
@@ -82,7 +88,7 @@ class OracleFileProvider:
 
         self._write(request_path, {
             "round": round_no,
-            "prompt_version": PROMPT_VERSION,
+            "prompt_version": profile.version,
             "system": system,
             "user": user,
             "context": context,
@@ -106,7 +112,7 @@ class OracleFileProvider:
         latency_ms = int((time.monotonic() - started) * 1000)
         tokens = max(1, (len(system) + len(user) + len(content)) // 4)
         return Proposal(
-            plan={"version": PLAN_VERSION, "steps": data["steps"]},
+            plan=build_proposal_plan(data),
             provider=self.name,
             model=self.model,
             tokens=tokens,
@@ -114,7 +120,7 @@ class OracleFileProvider:
             latency_ms=latency_ms,
             todo_id=data.get("todo_id"),
             metadata={
-                "prompt_version": PROMPT_VERSION,
+                "prompt_version": profile.version,
                 "oracle": True,
                 "billing": "not-billed",
                 "exchange": str(request_path),

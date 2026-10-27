@@ -133,28 +133,31 @@ class ProviderFactoryTests(unittest.TestCase):
     def test_kimi_missing_price_fails_before_request(self) -> None:
         scenario = get_scenario("full")
         with tempfile.TemporaryDirectory() as tmp, \
-                mock.patch.dict(os.environ, {"KIMI_API_KEY": "sk-not-real"}, clear=True):
+                mock.patch.dict(os.environ, {
+                    "KIMI_API_KEY": "sk-not-real", "FCODE_CONFIG_DIR": tmp,
+                }, clear=True):
             with self.assertRaisesRegex(ValueError, "KIMI_INPUT_PRICE"):
                 build_provider("kimi", scenario=scenario, receipts=self._receipts(tmp))
 
     def test_cli_rejects_missing_kimi_config_without_network(self) -> None:
         output = io.StringIO()
-        environment = {
-            "KIMI_INPUT_PRICE_MICROUSD_PER_MTOK": "1000000",
-            "KIMI_OUTPUT_PRICE_MICROUSD_PER_MTOK": "2000000",
-            "KIMI_PRICE_AS_OF": "2026-10-24",
-        }
-        with tempfile.TemporaryDirectory() as tmp, \
-                mock.patch.dict(os.environ, environment, clear=True), \
-                contextlib.redirect_stdout(output):
-            code = demo_cli.main(
-                [
-                    "--provider", "kimi",
-                    "--workdir", tmp,
-                    "full",
-                    "--fast",
-                ]
-            )
+        with tempfile.TemporaryDirectory() as tmp:
+            environment = {
+                "KIMI_INPUT_PRICE_MICROUSD_PER_MTOK": "1000000",
+                "KIMI_OUTPUT_PRICE_MICROUSD_PER_MTOK": "2000000",
+                "KIMI_PRICE_AS_OF": "2026-10-24",
+                "FCODE_CONFIG_DIR": tmp,
+            }
+            with mock.patch.dict(os.environ, environment, clear=True), \
+                    contextlib.redirect_stdout(output):
+                code = demo_cli.main(
+                    [
+                        "--provider", "kimi",
+                        "--workdir", tmp,
+                        "full",
+                        "--fast",
+                    ]
+                )
         self.assertEqual(code, 2)
         self.assertIn("PROVIDER_CONFIG_INVALID", output.getvalue())
         self.assertIn("KIMI_API_KEY", output.getvalue())

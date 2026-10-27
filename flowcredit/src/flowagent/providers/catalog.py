@@ -13,8 +13,10 @@ nothing hides one that failed to load.
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from typing import Any, Mapping
 
+from ..chat_config import default_chat_config_path, load_chat_config
 from .deepseek_config import load_deepseek_settings
 from .kimi import load_kimi_settings
 from .openai_compat import (
@@ -29,6 +31,7 @@ __all__ = [
     "compat_settings_for",
     "merged_env",
     "provider_catalog",
+    "resolved_provider_env",
     "settings_as_env",
 ]
 
@@ -84,19 +87,38 @@ def merged_env(
     *,
     env: Mapping[str, str] | None = None,
 ) -> dict[str, str]:
-    """Environment with settings values laid over it — the console's order.
+    """Resolve environment → user settings → preset defaults.
 
-    Precedence is settings → environment → preset defaults, the same rule the
-    conversation side documents: what the operator typed in the app wins over
-    the shell the process was started from. Blank settings never erase a
-    configured environment.
+    Explicit host environment values are authoritative. Blank environment
+    values fall through to the user config instead of erasing it.
     """
-    base = dict(os.environ if env is None else env)
-    for name, value in (settings_env or {}).items():
+    source = os.environ if env is None else env
+    base = {
+        name: str(value).strip()
+        for name, value in (settings_env or {}).items()
+        if str(value).strip()
+    }
+    for name, value in source.items():
         text = str(value).strip()
         if text:
             base[name] = text
     return base
+
+
+def resolved_provider_env(
+    *,
+    config_path: Path | None = None,
+    env: Mapping[str, str] | None = None,
+) -> dict[str, str]:
+    """CLI's default resolution path: the same user config as the console.
+
+    Tests and embedders that pass an explicit ``env`` get an isolated view and
+    do not implicitly read the developer's real credentials.
+    """
+    source = os.environ if env is None else env
+    path = config_path or default_chat_config_path()
+    config = load_chat_config(path)
+    return merged_env(settings_as_env(config.get("providers")), env=source)
 
 
 def _entry_from_settings(key: str, label: str, settings: CompatSettings) -> dict[str, Any]:
@@ -111,6 +133,8 @@ def _entry_from_settings(key: str, label: str, settings: CompatSettings) -> dict
             "inputMicrousdPerMtok": settings.price.input_microusd_per_mtok,
             "outputMicrousdPerMtok": settings.price.output_microusd_per_mtok,
         },
+        "priceAsOf": settings.price.as_of,
+        "priceSource": settings.price.source,
         "maxCompletionTokens": settings.max_completion_tokens,
     }
 
@@ -156,8 +180,8 @@ def provider_catalog(
     """Enumerate every provider the host has (or tried to) configure.
 
     ``settings_env`` carries the values the operator saved in the app (see
-    ``settings_as_env``); they win over the environment, so a key typed in the
-    settings page is enough to run a delegation. ``local_probe`` is an optional
+    ``settings_as_env``); explicit environment values win, and otherwise a key
+    typed in the settings page is enough to run a delegation. ``local_probe`` is an optional
     callable the console supplies for the Ollama-style endpoint health check;
     offline callers pass ``None`` and the local entry reports its reason
     without touching the network.

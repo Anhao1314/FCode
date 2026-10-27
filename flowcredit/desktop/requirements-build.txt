@@ -1,0 +1,3 @@
+# Desktop build-only dependencies. The flowagent runtime remains stdlib-only.
+pyinstaller>=6.10,<7
+pywebview>=5.4,<7

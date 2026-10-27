@@ -28,7 +28,12 @@ from typing import Any
 
 from ..core.contracts import AgentError, PLAN_VERSION
 from .base import Proposal
-from .prompt import PROMPT_VERSION, parse_proposal_text, render_prompt
+from .prompt import (
+    build_proposal_plan,
+    parse_proposal_text,
+    prompt_profile_for,
+    render_prompt,
+)
 
 __all__ = ["LocalProvider"]
 
@@ -127,6 +132,7 @@ class LocalProvider:
 
     def propose(self, context: dict[str, Any]) -> Proposal:
         started = time.monotonic()
+        profile = prompt_profile_for(context)
         system, user = render_prompt(context)
         payload = self._chat(system, user)
         latency_ms = int((time.monotonic() - started) * 1000)
@@ -143,12 +149,12 @@ class LocalProvider:
         usage = payload.get("usage") or {}
         tokens = int(usage.get("total_tokens") or usage.get("completion_tokens") or 0)
         return Proposal(
-            plan={"version": PLAN_VERSION, "steps": data["steps"]},
+            plan=build_proposal_plan(data),
             provider=self.name,
             model=self.model,
             tokens=tokens,
             cost_microusd=0,
             latency_ms=latency_ms,
             todo_id=data.get("todo_id"),
-            metadata={"prompt_version": PROMPT_VERSION, "local": True, "billing": "not-billed"},
+            metadata={"prompt_version": profile.version, "local": True, "billing": "not-billed"},
         )

@@ -79,6 +79,45 @@ _GIT_SUBCOMMANDS = {
 #: git global flags rejected before the subcommand is even looked at.
 _GIT_GLOBAL_FLAGS = {"-C", "--git-dir", "--work-tree", "-c", "--exec-path", "--namespace"}
 
+#: Options are allowlisted per utility. An option that consumes a value is
+#: parsed with its value kind: ``path`` goes through the workspace jail,
+#: ``number`` must be numeric and ``text``/``pattern`` is opaque data. Unknown
+#: options are refused rather than assumed to be readonly.
+_UTILITY_FLAGS = {
+    "ls": {"-1", "-a", "-al", "-h", "-l", "-la", "-R"},
+    "cat": {"-b", "-e", "-n", "-t", "-v"},
+    "find": {"-print"},
+    "wc": {"-L", "-c", "-l", "-lw", "-m", "-w", "-wc"},
+    "diff": {"-N", "-c", "-q", "-r", "-u", "--brief", "--recursive", "--unified"},
+    "grep": {"-E", "-F", "-R", "-c", "-i", "-l", "-n", "-r", "-v", "-w", "-x"},
+}
+_UTILITY_VALUE_OPTIONS = {
+    "find": {"-iname": "pattern", "-maxdepth": "number", "-name": "pattern", "-type": "text"},
+    "grep": {
+        "-A": "number", "-B": "number", "-C": "number", "-e": "pattern",
+        "-f": "path", "-m": "number",
+    },
+}
+_GIT_OPTIONS = {
+    "status": (
+        {"-b", "-s", "--branch", "--porcelain", "--short"},
+        {},
+        {"--untracked-files="},
+    ),
+    "diff": (
+        {"--cached", "--exit-code", "--name-only", "--name-status", "--no-color", "--quiet", "--stat", "--staged"},
+        {},
+        set(),
+    ),
+    "log": (
+        {"--all", "--decorate", "--graph", "--no-color", "--oneline"},
+        {"-n": "number", "--max-count": "number"},
+        {"--format=", "--max-count="},
+    ),
+    "add": ({"-A", "-u", "--all", "--update"}, {}, set()),
+    "commit": ({"--allow-empty"}, {"-m": "text", "--message": "text"}, {"--message="}),
+}
+
 
 @dataclass(frozen=True)
 class CommandRule:
@@ -129,26 +168,24 @@ class CommandPolicy:
             for rule in self._rules.values()
         ]
 
-    def classify(self, command: str, args: list[str]) -> bool | None:
-        """The console's per-command approval classification.
+    def classify(self, command: str, args: list[str], sandbox=None) -> bool | None:
+        """Classify the exact argv, using the same parser as execution.
 
-        True = consequential (needs approval), False = pure read, None = the
-        program is not registered (the gate will refuse it; treat as
-        consequential until then). ``git`` is special-cased by subcommand:
-        status/diff/log read, add/commit write.
+        True = consequential, False = provably readonly under the host's
+        allowlist, None = unregistered. Invalid or unrecognised arguments fail
+        closed to consequential; they are never exempted from approval.
         """
         rule = self._rules.get(str(command or ""))
         if rule is None:
             return None
+        try:
+            self.resolve(command, list(args or []), sandbox)
+        except AgentError:
+            return True
         if rule.readonly:
             return False
         if rule.program == "git":
-            sub = ""
-            for arg in args or []:
-                if not arg.startswith("-"):
-                    sub = arg
-                    break
-            return sub not in ("status", "diff", "log")
+            return bool(not args or args[0] not in ("status", "diff", "log"))
         return True
 
     def resolve(self, program: str, args: list[str], sandbox) -> tuple[CommandRule, list[str]]:
@@ -189,7 +226,7 @@ class CommandPolicy:
         elif rule.arg_policy == "git":
             checked = self._check_git(args, sandbox)
         elif rule.arg_policy == "paths":
-            checked = self._check_paths(args, sandbox)
+            checked = self._check_paths(program, args, sandbox)
         elif rule.arg_policy == "grep":
             checked = self._check_grep(args, sandbox)
         else:
@@ -227,14 +264,20 @@ class CommandPolicy:
                 "COMMAND_DENIED",
                 f"{script!r} is not a script file; {program} runs .py/.js files from the workspace",
             )
-        sandbox.resolve(script)  # jail check: refuses .., absolute, symlink escapes
+        if sandbox is not None:
+            sandbox.resolve(script)  # jail check: refuses .., absolute, symlink escapes
         return list(args)
 
     @staticmethod
+    def _jail(value: str, sandbox) -> None:
+        if sandbox is not None:
+            sandbox.resolve(value)
+
+    @staticmethod
     def _check_git(args: list[str], sandbox) -> list[str]:
-        """`git <allowed-subcommand> [pathspecs…]`, no global flags."""
+        """Parse an allowlisted git subcommand and its exact option grammar."""
         for arg in args:
-            if arg in _GIT_GLOBAL_FLAGS:
+            if arg.split("=", 1)[0] in _GIT_GLOBAL_FLAGS:
                 raise AgentError(
                     "COMMAND_GIT_FLAG_REFUSED",
                     f"git {arg} could retarget the repository; it is not allowed",
@@ -250,40 +293,102 @@ class CommandPolicy:
                 "COMMAND_GIT_SUBCOMMAND_REFUSED",
                 f"git {subcommand!r} is not whitelisted; allowed: {sorted(_GIT_SUBCOMMANDS)}",
             )
+        flags, value_options, attached_options = _GIT_OPTIONS[subcommand]
         checked = [subcommand]
-        for arg in args[1:]:
-            if arg.startswith("-"):
+        index = 1
+        options = True
+        while index < len(args):
+            arg = args[index]
+            if options and arg == "--":
                 checked.append(arg)
+                options = False
+                index += 1
                 continue
-            if arg == "--":
+            if options and arg in value_options:
+                if index + 1 >= len(args):
+                    raise AgentError("COMMAND_GIT_FLAG_REFUSED", f"git {arg} needs a value")
+                value = args[index + 1]
+                if value_options[arg] == "number" and not value.isdigit():
+                    raise AgentError("COMMAND_GIT_FLAG_REFUSED", f"git {arg} needs a numeric value")
+                checked.extend([arg, value])
+                index += 2
+                continue
+            if options and any(arg.startswith(prefix) for prefix in attached_options):
+                value = arg.split("=", 1)[1]
+                if not value or (arg.startswith("--max-count=") and not value.isdigit()):
+                    raise AgentError("COMMAND_GIT_FLAG_REFUSED", f"invalid git option {arg!r}")
                 checked.append(arg)
+                index += 1
                 continue
-            # pathspec arguments are jailed like every other path
-            sandbox.resolve(arg)
+            if options and arg.startswith("-"):
+                if arg not in flags:
+                    raise AgentError(
+                        "COMMAND_GIT_FLAG_REFUSED",
+                        f"flag {arg!r} is not allowed for git {subcommand}",
+                    )
+                checked.append(arg)
+                index += 1
+                continue
+            CommandPolicy._jail(arg, sandbox)
             checked.append(arg)
+            index += 1
         return checked
 
     @staticmethod
-    def _check_paths(args: list[str], sandbox) -> list[str]:
-        """Non-flag arguments are paths inside the workspace."""
-        for arg in args:
-            if arg.startswith("-") or arg == "--":
-                continue
-            sandbox.resolve(arg)
-        return list(args)
+    def _check_paths(program: str, args: list[str], sandbox) -> list[str]:
+        return CommandPolicy._check_utility(program, args, sandbox)
 
     @staticmethod
     def _check_grep(args: list[str], sandbox) -> list[str]:
-        """grep: the first non-flag argument is the pattern; the rest are paths."""
+        return CommandPolicy._check_utility("grep", args, sandbox)
+
+    @staticmethod
+    def _check_utility(program: str, args: list[str], sandbox) -> list[str]:
+        """Parse utility options, including values that are themselves paths."""
+        flags = _UTILITY_FLAGS.get(program, set())
+        value_options = _UTILITY_VALUE_OPTIONS.get(program, {})
+        checked: list[str] = []
+        index = 0
+        options = True
         seen_pattern = False
-        for arg in args:
-            if arg.startswith("-"):
+        while index < len(args):
+            arg = args[index]
+            if options and arg == "--":
+                checked.append(arg)
+                options = False
+                index += 1
                 continue
-            if not seen_pattern:
-                seen_pattern = True  # the pattern is data, not a path
+            if options and arg in value_options:
+                if index + 1 >= len(args):
+                    raise AgentError("COMMAND_FLAG_REFUSED", f"{program} {arg} needs a value")
+                value = args[index + 1]
+                kind = value_options[arg]
+                if kind == "number" and not value.isdigit():
+                    raise AgentError("COMMAND_FLAG_REFUSED", f"{program} {arg} needs a numeric value")
+                if kind == "path":
+                    CommandPolicy._jail(value, sandbox)
+                    seen_pattern = True
+                elif kind == "pattern":
+                    seen_pattern = True
+                checked.extend([arg, value])
+                index += 2
                 continue
-            sandbox.resolve(arg)
-        return list(args)
+            if options and arg.startswith("-"):
+                if arg not in flags:
+                    raise AgentError(
+                        "COMMAND_FLAG_REFUSED",
+                        f"flag {arg!r} is not allowed for {program}",
+                    )
+                checked.append(arg)
+                index += 1
+                continue
+            if program == "grep" and not seen_pattern:
+                seen_pattern = True
+            else:
+                CommandPolicy._jail(arg, sandbox)
+            checked.append(arg)
+            index += 1
+        return checked
 
 
 class CommandRunner:
@@ -395,6 +500,10 @@ class CommandRunner:
                     truncated = True  # keep draining; stop retaining
         finally:
             selector.close()
+            # Popen owns this handle, but its destructor is not a lifecycle
+            # strategy. Close it on EOF, timeout and read errors alike so every
+            # completed command releases the fd deterministically.
+            process.stdout.close()
         return b"".join(chunks).decode("utf-8", errors="replace"), truncated, finished
 
     @staticmethod

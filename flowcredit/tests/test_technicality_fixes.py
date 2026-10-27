@@ -228,7 +228,11 @@ class RepairRoundTests(HarnessFixture):
         task, harness, sandbox, provider = self.run_script([
             self.blueprint()[0],
             # Not a registered tool at all — the model invented a name.
-            {"id": "t9", "tool": "report_blocked", "arguments": {"reason": "insufficient_evidence"}},
+            # (This case used to be spelled `report_blocked`, which counted as
+            # "invented" only because the general domain failed to register it.
+            # The tool IS registered now and stops the run honestly, so the
+            # never-registered example has to be a name nothing registers.)
+            {"id": "t9", "tool": "write_document", "arguments": {"doc_id": "doc_fy2024"}},
         ])
         self.assertEqual(task.status, "denied")
         self.assertEqual(task.failure["code"], "TOOL_NOT_REGISTERED")

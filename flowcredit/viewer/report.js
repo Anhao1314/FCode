@@ -148,7 +148,10 @@ window.FCReport = (function () {
       if (e.type === "operator_message") note = d.text || "";
       else if (e.type === "approval_granted" || e.type === "approval_denied" || e.type === "approval_requested") note = `${d.tool || ""} · ${d.by || ""}${d.remember ? " · 本运行免询" : ""}`;
       else if (e.type === "budget_adjusted") note = `calls ${(d.before || {}).max_calls}→${(d.after || {}).max_calls}`;
-      else if (e.type === "plan_steered") note = `${d.action || ""} ${d.todo_id || ""}`;
+      else if (e.type === "plan_steered") {
+        const added = Array.isArray(d.added) && d.added.length ? d.added.join(", ") : d.todo_id || "";
+        note = `${d.action || ""} ${added}${d.by === "model" ? " · 模型提议" : ""}`.trim();
+      }
       else if (e.type === "task_resumed") note = `by ${d.by || "operator"}`;
       else note = d.reason || d.code || "";
       return `<div class="human"><span class="htag">${esc(HUMAN_LABELS[e.type])}</span> ${esc(note)}</div>`;
@@ -217,7 +220,10 @@ window.FCReport = (function () {
         else if (e.type === "approval_denied") note = `拒绝 ${d.tool || ""} · ${d.code || ""}`;
         else if (e.type === "approval_requested") note = `${d.tool || ""} 等待授权`;
         else if (e.type === "budget_adjusted") note = `calls ${(d.before || {}).max_calls}→${(d.after || {}).max_calls}`;
-        else if (e.type === "plan_steered") note = `${d.action || ""} ${d.todo_id || ""}`;
+        else if (e.type === "plan_steered") {
+          const added = Array.isArray(d.added) && d.added.length ? d.added.join(", ") : d.todo_id || "";
+          note = `${d.action || ""} ${added}${d.by === "model" ? " · 模型提议" : ""}`.trim();
+        }
         else note = d.reason || d.code || "";
         return `<tr><td>${esc(e.sequence)}</td><td>${esc(HUMAN_LABELS[e.type])}</td><td>${esc(note)}</td></tr>`;
       }).join("")}

@@ -102,6 +102,19 @@ def summarize_ask_operator(result: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def summarize_report_blocked(result: dict[str, Any]) -> dict[str, Any]:
+    """The stop reason is the whole point of the observation, so it stays.
+
+    A later round (and the operator reading the trace) must be able to see *why*
+    the run gave up without opening the raw payload. The reason is already
+    bounded by the tool's argument schema.
+    """
+    return {
+        "reason": str(result.get("reason") or ""),
+        "acknowledged": bool(result.get("acknowledged")),
+    }
+
+
 GENERAL_SUMMARIZERS: dict[str, Any] = {
     "ask_operator": summarize_ask_operator,
     "ls_workspace": summarize_ls_workspace,
@@ -110,4 +123,5 @@ GENERAL_SUMMARIZERS: dict[str, Any] = {
     "edit_file": summarize_edit_file,
     "run_command": summarize_run_command,
     "fetch_url": summarize_fetch_url,
+    "report_blocked": summarize_report_blocked,
 }

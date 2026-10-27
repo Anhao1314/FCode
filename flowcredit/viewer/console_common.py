@@ -156,23 +156,33 @@ def _probe_local_endpoint(endpoint: str) -> bool:
 
 
 def _scaled_budget_for_prices(limits, price, max_completion_tokens: int) -> dict:
-    """外部计费模型的价格天花板（创建与恢复共用一套算法）。
+    """在操作者给定的硬上限内适配真实价格（创建与恢复共用）。
 
-    scenario 的成本顶按 mock 免费价拟定；换成真实价格后一次预留就会击穿。
-    按 provider 声明的价格快照重算成本顶与 token 顶（调用 / 读取次数沿用
-    场景草案）。上限是天花板不是目标：实际计费仍以收据为准并逐轮展示。
+    成本和 token 顶都只能保持或收紧，绝不因 provider 的实际价格而抬高。
+    调低调用次数以容纳一次完整预留；连一次都容纳不了时，在发起任何付费
+    调用之前拒绝启动，并报告所需最低预算。
     """
     est_prompt_tokens = 6_000
+    per_call_tokens = est_prompt_tokens + max_completion_tokens
     per_call_microusd = (
         est_prompt_tokens * price.input_microusd_per_mtok
         + max_completion_tokens * price.output_microusd_per_mtok
         + 999_999
     ) // 1_000_000
+    affordable_calls = min(
+        limits.max_cost_microusd // per_call_microusd,
+        limits.max_tokens // per_call_tokens,
+    )
+    if affordable_calls < 1:
+        raise ValueError(
+            "预算不足以容纳一次模型调用："
+            f"至少需要 {per_call_microusd} µUSD 和 {per_call_tokens} tokens"
+        )
     return {
-        "max_calls": limits.max_calls,
+        "max_calls": min(limits.max_calls, affordable_calls),
         "max_reads": limits.max_reads,
-        "max_cost_microusd": max(limits.max_cost_microusd, per_call_microusd * limits.max_calls),
-        "max_tokens": max(limits.max_tokens, (est_prompt_tokens + max_completion_tokens) * limits.max_calls),
+        "max_cost_microusd": limits.max_cost_microusd,
+        "max_tokens": limits.max_tokens,
     }
 
 
@@ -197,7 +207,7 @@ def settings_provider_env() -> dict[str, str]:
 
 
 def merged_provider_env(settings_env: dict | None = None) -> dict:
-    """``os.environ`` with the settings page's provider values laid over it.
+    """Environment and user settings with explicit environment taking priority.
 
     The import stays inside the function: the viewer must still start in
     *static* mode, where the flowagent package is not on the path at all.
@@ -217,7 +227,7 @@ def model_catalog(local_endpoint: str | None, settings_env: dict | None = None) 
     The menu's single source of truth is the provider catalog: the offline
     mock, the local endpoint probe, the built-in presets (kimi, deepseek) and
     every prefix declared in FCODE_OPENAI_COMPAT_PROVIDERS, plus whatever the
-    settings page saved (settings > environment > defaults). An endpoint
+    settings page saved (environment > user settings > defaults). An endpoint
     appears the moment its configuration is complete; an incomplete one
     appears with the exact reason it is unavailable, naming the surface that
     has to be fixed. Creation re-checks the same facts and fails closed.

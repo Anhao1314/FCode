@@ -35,32 +35,8 @@ from console_common import (
     model_catalog,
     settings_provider_env,
 )
-from console_runtime import (
-    LiveObserver,
-    Run,
-    RunControl,
-    Runtime,
-    ScopedPlanner,
-    StopRequested,
-    _run_crash,
-    _watch,
-)
-
-def _budget_summary(trace: dict) -> dict | None:
-    """Final budget snapshot for the ledger: what the run actually cost."""
-    for round_ in reversed(trace.get("rounds") or []):
-        b = round_.get("budget_after")
-        if b and b.get("calls_used") is not None:
-            lim = b.get("limits") or {}
-            return {
-                "calls": b.get("calls_used"),
-                "reads": b.get("reads_used"),
-                "costMicrousd": b.get("cost_used_microusd"),
-                "tokens": b.get("tokens_used"),
-                "maxCalls": lim.get("max_calls"),
-                "maxCostMicrousd": lim.get("max_cost_microusd"),
-            }
-    return None
+from console_run_budget import budget_summary as _budget_summary
+from console_runtime import Run, Runtime
 
 
 class RunManager:
@@ -233,8 +209,10 @@ class RunManager:
         general = scenario.module != DOMAIN_KEY
         if general:
             mode = str(spec.get("mode") or "research")
-            if mode not in ("research", "script"):
-                raise ValueError("mode must be research or script")
+            if mode not in ("research", "script", "open"):
+                # ``open`` is the delegation whose plan the model extends; the
+                # other two are blueprints and stay closed.
+                raise ValueError("mode must be research, script or open")
             script_path = spec.get("scriptPath")
             if script_path is not None and (
                 not isinstance(script_path, str)
@@ -243,6 +221,27 @@ class RunManager:
                 or script_path.startswith(".")
             ):
                 raise ValueError("scriptPath must be a bare workspace filename")
+            # The declared engineering-result obligation, if any. Validated here as
+            # well as at world construction so an operator typo is refused when
+            # the run is created rather than after the work is done.
+            if self.runtime is not None:
+                try:
+                    self.runtime.build_obligation(spec.get("verification"))
+                except self.runtime.AgentError as error:
+                    raise ValueError(f"{error.code}: {error.message}") from error
+            project = spec.get("project")
+            if project is not None:
+                if mode != "open":
+                    raise ValueError("a project delegation must use open mode")
+                if self.runtime is None:
+                    raise ValueError("live mode is unavailable")
+                try:
+                    spec["project"] = self.runtime.validate_project_spec(project)
+                except ValueError as error:
+                    raise ValueError(str(error)) from error
+                if spec.get("verification") is None:
+                    raise ValueError("a project delegation needs an independent verification command")
+                spec.setdefault("reportPath", self.runtime.PROJECT_REPORT_PATH)
             sources = spec.get("sources")
             if sources is not None:
                 if not isinstance(sources, list) or not all(isinstance(item, str) for item in sources):
@@ -289,6 +288,8 @@ class RunManager:
                     {"role": item["role"], "text": item["text"][:600]} for item in messages
                 ]
         else:
+            if spec.get("project") is not None:
+                raise ValueError("a project delegation requires a general-work template")
             scope = spec.get("scope")
             if scope is not None:
                 if not isinstance(scope, list) or not all(isinstance(item, str) for item in scope):
@@ -345,17 +346,26 @@ class RunManager:
         price = m.get("price")
         if not m.get("available") or not price:
             return None
-        # 任何带价格快照的 provider（预设或主机声明）都按其单价重算预算顶：
-        # 创建与恢复共用这一条路径，菜单里的数字与运行时一致。
+        # 价格只收紧调用容量，不抬高操作者的成本 / token 硬上限。
+        # 菜单与创建、恢复共用这条路径；无法容纳一次预留时如实展示原因。
         from types import SimpleNamespace
 
         snapshot = SimpleNamespace(
             input_microusd_per_mtok=price["inputMicrousdPerMtok"],
             output_microusd_per_mtok=price["outputMicrousdPerMtok"],
         )
-        return _scaled_budget_for_prices(
-            limits, snapshot, int(m.get("maxCompletionTokens") or 512)
-        )
+        try:
+            return _scaled_budget_for_prices(
+                limits, snapshot, int(m.get("maxCompletionTokens") or 512)
+            )
+        except ValueError as error:
+            return {
+                "max_calls": 0,
+                "max_reads": limits.max_reads,
+                "max_cost_microusd": limits.max_cost_microusd,
+                "max_tokens": limits.max_tokens,
+                "error": str(error),
+            }
 
     # ------------------------------------------------------------- persistence
 
@@ -725,353 +735,9 @@ class RunManager:
         )
 
     def _run_thread(self, run: Run, *, resume_limits: dict | None = None, extra_rounds: int = 6) -> None:
-        rt = self.runtime
-        assert rt is not None
-        store = None
-        watcher = None
-        try:
-            scenario = rt.get_scenario(run.template)
-            run_dir = self.runs_dir / run.id
-            db = run_dir / "task.sqlite"
-            store = rt.TaskStore(db)
-            module = rt.get_domain(scenario.module)
-            general = module.key != DOMAIN_KEY
-            # The general module keeps its workspace sandbox inside the run
-            # directory, next to the chain it feeds; files survive restarts.
-            # commands.json lives next to mcp.json (repo root): the host's
-            # extension of the terminal whitelist, injected here.
-            world_kwargs = {}
-            sandbox = None
-            if general:
-                sandbox = rt.WorkspaceSandbox(run_dir / "workspace")
-                world_kwargs = {
-                    "sandbox": sandbox,
-                    "command_config": os.environ.get("FCODE_COMMANDS_CONFIG")
-                    or str(rt.repo / "commands.json"),
-                }
-                # The operator channel is the console's: the tool waits in the
-                # run's control, exactly where approvals wait. The control is
-                # built *after* the world (it needs the harness, which needs the
-                # world), so the binding is a late lookup rather than a captured
-                # value — by the time a tool can call it, the run exists. An
-                # assembly with no control answers honestly instead of hanging.
-                ask_holder: dict[str, Any] = {}
+        from console_run_driver import RunDriver
 
-                def _ask_channel(**kwargs: Any) -> dict[str, Any]:
-                    control_now = ask_holder.get("control")
-                    if control_now is None:
-                        return {"answered": False, "reason": "this deployment has no operator channel"}
-                    return control_now.ask(**kwargs)
-
-                ask_holder_ready = ask_holder
-                world_kwargs["ask_operator"] = _ask_channel
-            world = module.create_world(
-                partial=scenario.partial_corpus, spec=run.spec or {}, **world_kwargs,
-            )
-            # 委托 scope：world 与计划同宽。列表、读取和派生工具都只能看到
-            # 所选文档；缺资料导致的阻塞由域工具如实报告，不静默放宽。
-            scope = list(((run.spec or {}).get("scope") or []))
-            if scope and hasattr(world, "documents"):
-                selected = set(scope)
-                unknown = selected - set(world.documents)
-                if unknown:
-                    raise ValueError(f"scope contains unknown documents: {', '.join(sorted(unknown))}")
-                world.documents = {doc_id: world.documents[doc_id] for doc_id in selected}
-            native_tools = module.build_tools(
-                world, cases=self.case_index, facts=self.fact_store,
-            )
-            # MCP 导入是"进注册表"，不是绕过注册表：只有通用域委托把导入
-            # 工具并入 allowed_tools 与 grant（主机决策，随 binding 入链）。
-            mcp_bridge = self.mcp.get("bridge") if general else None
-            mcp_specs = mcp_bridge.specs() if mcp_bridge else []
-            extra_allowed: list[str] = [spec.name for spec in mcp_specs]
-            registry = rt.ToolRegistry(native_tools + mcp_specs)
-            receipts = rt.ReceiptStore(store)
-            issued: dict[str, str] = {}
-
-            limits = scenario.limits
-            budget_override = (run.spec or {}).get("budget") if not resume_limits else None
-            if budget_override:
-                # 操作者微调后的治理顶：创建时生效，随任务 binding 入链。
-                # 上调是显式放宽（UI 提示），下调立即收紧；实际计费仍以收据为准。
-                limits = rt.BudgetLimits(
-                    max_calls=int(budget_override["maxCalls"]),
-                    max_reads=int(budget_override["maxReads"]),
-                    max_cost_microusd=int(budget_override["maxCostMicrousd"]),
-                    max_tokens=scenario.limits.max_tokens,
-                )
-            if resume_limits:
-                limits = rt.BudgetLimits(
-                    max_calls=int(resume_limits["maxCalls"]),
-                    max_reads=int(resume_limits["maxReads"]),
-                    max_cost_microusd=int(resume_limits["maxCostMicrousd"]),
-                    max_tokens=int(resume_limits.get("maxTokens") or scenario.limits.max_tokens),
-                )
-
-            def issue(**kwargs):
-                ref = receipts.issue(**kwargs)
-                issued["ref"] = ref
-                return ref
-
-            provider = self._build_provider(rt, run, scenario, receipts, issue)
-            if run.model != "mock":
-                # scenario 的成本顶按 mock 免费价拟定；外部计费模型换真实价格后
-                # 一次预留就会击穿。创建与恢复都按 provider 声明的价格快照重算
-                # 成本顶与 token 顶（调用 / 读取次数沿用当前草案）——恢复路径
-                # 显式重算，而不是靠“上限只升不降”的旧值兜底。
-                price = getattr(provider, "price", None)
-                max_completion = int(getattr(provider, "max_completion_tokens", 512) or 512)
-                if price is not None:
-                    scaled = _scaled_budget_for_prices(limits, price, max_completion)
-                    limits = rt.BudgetLimits(**scaled)
-            harness = rt.Harness(
-                store=store,
-                registry=registry,
-                provider=provider,
-                world=world,
-                limits=limits,
-                receipts=receipts,
-                verifier=lambda observation: module.verify(world, observation),
-                state_fn=module.summarize_state,
-                instruction=module.instruction,
-            )
-            recorder = rt.TraceRecorder(
-                store, provider_name=provider.name, model_name=provider.model
-            )
-            if resume_limits:
-                previous = run_dir / "trace.json"
-                if previous.exists():
-                    try:
-                        recorder.seed(json.loads(previous.read_text(encoding="utf-8")).get("rounds") or [])
-                    except Exception:  # noqa: BLE001 — a damaged old trace must not block resume
-                        pass
-            approval_tools = tuple(scenario.approval_tools)
-            if mcp_bridge is not None:
-                # 导入工具默认 consequential：只有主机在 mcp.json 标了
-                # readonly 的才免审批。分类权在主机，不在 server 自述。
-                approval_tools += tuple(mcp_bridge.approval_names())
-
-            def _approval_preview(tool: str, arguments: dict) -> dict | None:
-                """主机在执行前算好的审批预览：write_file/edit_file 的真实
-                diff、run_command 的完整命令行。预览与执行共用同一套沙箱
-                校验——预览被沙箱拒绝的，执行也会被拒绝，且原因如实上屏。"""
-                if sandbox is None:
-                    return None
-                if tool == "write_file":
-                    path = str(arguments.get("path") or "")
-                    content = str(arguments.get("content") or "")
-                    if not path or not content:
-                        return None
-                    try:
-                        return sandbox.diff_preview(path, content)
-                    except Exception as error:  # noqa: BLE001 — 审批预览必须先于执行；沙箱拒绝也要如实上屏
-                        return {"path": path, "created": True, "additions": 0,
-                                "removals": 0, "truncated": False, "diff": "",
-                                "error": f"{getattr(error, 'code', type(error).__name__)}: {error}"}
-                if tool == "edit_file":
-                    path = str(arguments.get("path") or "")
-                    old_text = str(arguments.get("old_text") or "")
-                    if not path or not old_text:
-                        return None
-                    try:
-                        return sandbox.edit_preview(path, old_text, str(arguments.get("new_text") or ""))
-                    except Exception as error:  # noqa: BLE001
-                        return {"path": path, "created": False, "additions": 0,
-                                "removals": 0, "truncated": False, "diff": "",
-                                "error": f"{getattr(error, 'code', type(error).__name__)}: {error}"}
-                if tool == "run_command":
-                    command = str(arguments.get("command") or "")
-                    if not command:
-                        return None
-                    argv = [command, *(arguments.get("args") or [])]
-                    return {
-                        "command": " ".join(argv),
-                        "timeout": arguments.get("timeout_seconds") or 30,
-                        "note": "白名单内命令；无 shell、参数逐个校验；超时记 unknown 不重跑",
-                    }
-                return None
-
-            def _classify_consequential(tool: str, arguments: dict) -> bool:
-                """run_command 的命令级分类：注册表标 readonly 的纯读命令
-                （ls/cat/grep/find/wc/diff/git status|diff|log）免审批——与
-                read_document 同等待遇；其余命令一律过审批。分类权在主机
-                的命令注册表，不在模型提议。"""
-                if tool != "run_command" or world is None:
-                    return True
-                runner = getattr(world, "command_runner", None)
-                if runner is None:
-                    return True
-                verdict = runner.policy.classify(
-                    str(arguments.get("command") or ""),
-                    list(arguments.get("args") or []),
-                )
-                return True if verdict is None else verdict
-
-            control = RunControl(
-                run, harness, rt, approval_tools, self.approval_timeout,
-                preview=_approval_preview if sandbox is not None else None,
-                classify_consequential=_classify_consequential,
-            )
-            run.controller = control
-            if general:
-                # The world's ask tool resolves the channel here, once there is
-                # a control to ask through.
-                ask_holder_ready["control"] = control
-            if resume_limits:
-                task = store.load(run.task_id)
-                task = harness.resume(
-                    task,
-                    detail={"by": "operator", "reason": "budget topped up", "limits": limits.to_dict()},
-                )
-                max_rounds = max(scenario.max_rounds, task.model.attempts + extra_rounds)
-            else:
-                binding = {
-                    "scenario": scenario.key,
-                    "module": module.key,
-                    "source": "viewer-live",
-                    **({"spec": run.spec} if run.spec else {}),
-                }
-                if general:
-                    binding["workspace"] = "workspace"
-                if extra_allowed:
-                    binding["mcp_imports"] = extra_allowed
-                grant = dict(scenario.grant)
-                if extra_allowed:
-                    grant["allowed_tools"] = list(grant.get("allowed_tools") or []) + extra_allowed
-                task = harness.create(
-                    task_id=f"task-{run.id}",
-                    objective=run.objective,
-                    principal="console-operator",
-                    binding=binding,
-                    allowed_tools=list(scenario.allowed_tools) + extra_allowed,
-                    grant=grant,
-                )
-                if self.case_index is not None:
-                    try:
-                        hits = self.case_index.search(run.objective, limit=3)
-                        task = harness.record_recall(task, hits)
-                    except Exception:  # noqa: BLE001 — memory must never kill a run
-                        traceback.print_exc()
-                max_rounds = scenario.max_rounds
-            run.task_id = task.id
-            observer = LiveObserver(run, recorder, store, task.id)
-            watcher = threading.Thread(
-                target=_watch, args=(run, recorder, store, db, task.id), name=f"watch:{run.id}", daemon=True
-            )
-            watcher.start()
-
-            base_planner = module.make_planner(world)
-            planner = (
-                ScopedPlanner(rt, base_planner, set(scope))
-                if scope else base_planner
-            )
-            loop = rt.Loop(
-                harness,
-                planner=planner,
-                max_rounds=max_rounds,
-                observer=observer,
-                control=control,
-                result_tools=module.result_tools,
-            )
-            if resume_limits:
-                # The world is in-memory; the event log is not. Rebuild the
-                # "already read" flags before the loop so a resumed run does
-                # not read or charge for the same documents twice.
-                world.apply_state(loop.restore(task).state())
-
-            try:
-                if scenario.crash_at:
-                    task = _run_crash(rt, harness, store, world, scenario, task, observer, db)
-                else:
-                    task = loop.run(task.id)
-
-                if scenario.reconcile and task.status == "recovery_required":
-                    # Mirrors demo/runner.py: an unknown model result is never
-                    # retried; it waits for an explicit, signed reconciliation.
-                    try:
-                        harness.reconcile(task, "0" * 64)
-                    except rt.AgentError:
-                        pass
-                    task = harness.reconcile(task, issued.get("ref", ""))
-                    task = rt.Loop(
-                        harness,
-                        planner=planner,
-                        max_rounds=max_rounds,
-                        observer=observer,
-                        control=control,
-                        result_tools=module.result_tools,
-                    ).run(task.id)
-                status = task.status
-            except StopRequested:
-                task = store.load(task.id)
-                if task.status not in TERMINAL_STATUS:
-                    task = harness.finalize(
-                        task,
-                        "failed",
-                        failure={
-                            "code": "STOPPED_BY_OPERATOR",
-                            "message": "操作员在轮次边界停止了这次运行",
-                            "retryable": False,
-                        },
-                        event="task_failed",
-                        detail={"code": "STOPPED_BY_OPERATOR"},
-                    )
-                observer.terminal(task, None)
-                status = "stopped"
-            except Exception as exc:  # noqa: BLE001 — surface, never swallow
-                traceback.print_exc()
-                run.error = f"{type(exc).__name__}: {exc}"
-                task = store.load(task.id)
-                if task.status not in TERMINAL_STATUS:
-                    task = harness.finalize(
-                        task,
-                        "failed",
-                        failure={"code": "VIEWER_RUNNER_ERROR", "message": str(exc)[:300], "retryable": False},
-                        event="task_failed",
-                        detail={"code": "VIEWER_RUNNER_ERROR"},
-                    )
-                observer.terminal(task, None)
-                status = "error"
-
-            final = recorder.build(store.load(task.id))
-            self._ingest_memory(rt, run, final)
-            trace_path = run_dir / "trace.json"
-            rt.export_trace(final, trace_path)
-            try:
-                verification = rt.verify_trace(final)
-                verified = bool(verification.get("ok", verification.get("valid", True)))
-            except Exception:  # verification must never kill a finished run
-                verified = False
-
-            with run.lock:
-                run.snapshot = final
-                run.status = status
-                run.rounds = len(final["rounds"])
-                run.event_count = len(final["events"])
-                run.trace_path = f"runs/{run.id}/trace.json"
-                run.trace_verified = verified
-                run.cost = _budget_summary(final)
-                run.finished = True
-                run.bump()
-        except Exception as exc:  # noqa: BLE001 — setup failure
-            traceback.print_exc()
-            with run.lock:
-                run.status = "error"
-                run.error = f"{type(exc).__name__}: {exc}"
-                run.finished = True
-                run.bump()
-        finally:
-            with run.lock:
-                if run.pending is not None:
-                    run.pending = None
-                    run.bump()
-                run.controller = None
-            self._write_meta(run)
-            if store is not None:
-                try:
-                    store.close()
-                except Exception:  # noqa: BLE001
-                    pass
+        RunDriver(self, run, resume_limits=resume_limits, extra_rounds=extra_rounds).execute()
 
 
 # -------------------------------------------------------------------- observer

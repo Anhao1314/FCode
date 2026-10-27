@@ -51,7 +51,12 @@ from typing import Any, Callable, Mapping
 from ..core.contracts import PLAN_VERSION, AgentError
 from ..pacing import pace_key, reserve_slot
 from .base import Proposal
-from .prompt import PROMPT_VERSION, parse_proposal_text, render_prompt
+from .prompt import (
+    build_proposal_plan,
+    parse_proposal_text,
+    prompt_profile_for,
+    render_prompt,
+)
 
 __all__ = [
     "PriceSnapshot",
@@ -719,6 +724,7 @@ class OpenAICompatProvider:
             time.sleep(wait)
 
     def propose(self, context: dict[str, Any]) -> Proposal:
+        profile = prompt_profile_for(context)
         system, user = render_prompt(context)
         chars = len(system) + len(user)
         reserved_prompt_tokens = self.calibration.estimate(system, user)
@@ -749,10 +755,10 @@ class OpenAICompatProvider:
             ) from error
 
         prompt_tokens, _, total_tokens = _usage_tokens(usage)
-        plan = {"version": PLAN_VERSION, "steps": data["steps"]}
+        plan = build_proposal_plan(data)
 
         metadata: dict[str, Any] = {
-            "prompt_version": PROMPT_VERSION,
+            "prompt_version": profile.version,
             "billing": "external",
             "provider_request_id": request_id,
             "price_as_of": self.price.as_of,

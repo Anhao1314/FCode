@@ -28,6 +28,7 @@ __all__ = [
     "Task",
     "exact_keys",
     "validate_plan",
+    "validate_addition_shapes",
 ]
 
 PLAN_VERSION = "flowagent.plan/v1"
@@ -91,6 +92,38 @@ _TOOL_NAME = re.compile(r"^[a-z][a-z0-9_.]{0,63}$")
 #: bound is re-bounded — not removed — at 96 KiB. The tool schema still caps
 #: any single content parameter far below this (see Param.max_length).
 _MAX_STEP_ARGUMENT_BYTES = 96 * 1024
+
+#: The proposal envelope. ``version`` and ``steps`` are required; ``additions``
+#: is optional and is the only key a Phase A proposal may add. It carries the
+#: model's request for extra plan steps — a *request*, validated by the host
+#: before anything is persisted (see :mod:`flowagent.runtime.plan_extension`).
+_PLAN_REQUIRED_KEYS = ("version", "steps")
+_PLAN_ENVELOPE_KEYS = ("version", "steps", "additions", "evidence")
+
+#: What one evidence reference may cite: a claim, and the reading that supports
+#: it. The digest is the content hash the observation recorded for that path —
+#: a value the model can see in its own compressed context, and one the runtime
+#: can look for on the chain. A citation is checked against durable history, not
+#: taken on trust; nothing here is checked against the claim's *meaning*.
+_EVIDENCE_KEYS = ("claim", "tool", "path", "sha256")
+_EVIDENCE_REQUIRED_KEYS = ("claim", "tool", "path", "sha256")
+MAX_EVIDENCE_REFS_PER_PROPOSAL = 8
+MAX_EVIDENCE_CLAIM_CHARS = 200
+MAX_EVIDENCE_PATH_CHARS = 200
+
+#: The fields one proposed todo may carry — the plan contract's own identity
+#: plus its predicate. ``status``, ``evidence``, ``required`` and ``reason`` are
+#: deliberately absent: those are how a proposal would mark itself done, and the
+#: host decides them. A proposal that names one is refused rather than quietly
+#: stripped, so the attempt stays visible in the trace.
+_ADDITION_KEYS = ("id", "text", "tool", "done_when", "arguments")
+_ADDITION_REQUIRED_KEYS = ("id", "text", "tool", "done_when")
+
+#: Bounds on one proposal's additions. Still deliberately small, but enough
+#: for a real repair's inspect → edit → test sequence (five steps plus report).
+MAX_PLAN_ADDITIONS_PER_PROPOSAL = 8
+MAX_PLAN_ADDITION_TEXT_CHARS = 400
+MAX_PLAN_ADDITION_DONE_WHEN_CHARS = 200
 
 
 class AgentError(Exception):
@@ -174,19 +207,41 @@ class Step:
 
 @dataclass(frozen=True)
 class Plan:
-    """A validated proposal: one to six ordered steps."""
+    """A validated proposal: one to six ordered steps.
+
+    ``additions`` carries the proposal's plan-extension request, already checked
+    for shape and bounds but **not** for authority — that verdict belongs to the
+    host (:mod:`flowagent.runtime.plan_extension`). Keeping it on the validated
+    proposal is what puts the request on the chain at ``plan_validated``, so a
+    later reader can see what was asked for even when the host refused it.
+    """
 
     version: str
     steps: tuple[Step, ...]
+    additions: tuple[dict[str, Any], ...] = ()
+    #: Source references the artifact's claims rest on, shape-checked here and
+    #: resolved against the durable chain by the loop. Shape is all this layer
+    #: can decide: whether a source *exists* is a question about history.
+    evidence: tuple[dict[str, Any], ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
-        return {"version": self.version, "steps": [step.to_dict() for step in self.steps]}
+        payload: dict[str, Any] = {
+            "version": self.version,
+            "steps": [step.to_dict() for step in self.steps],
+        }
+        if self.additions:
+            payload["additions"] = [dict(item) for item in self.additions]
+        if self.evidence:
+            payload["evidence"] = [dict(item) for item in self.evidence]
+        return payload
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "Plan":
         return cls(
             version=data["version"],
             steps=tuple(Step.from_dict(item) for item in data["steps"]),
+            additions=tuple(dict(item) for item in (data.get("additions") or ())),
+            evidence=tuple(dict(item) for item in (data.get("evidence") or ())),
         )
 
 
@@ -198,9 +253,19 @@ def validate_plan(value: Any) -> Plan:
     a dict of arguments no larger than the canonical 96 KiB bound. Tool
     *existence* is checked by the runtime gate, not here, so an unknown tool
     produces a denial receipt instead of a schema error.
+
+    ``additions`` — the optional plan-extension request — is validated for
+    *shape* and bounds here, and for *authority* by the host. The same split the
+    steps use: this function says whether a proposal is well formed, never
+    whether it is allowed.
     """
-    if not exact_keys(value, ("version", "steps")):
-        raise AgentError("PLAN_SCHEMA_INVALID", "plan must contain exactly version and steps")
+    if not isinstance(value, dict) or not (
+        set(_PLAN_REQUIRED_KEYS) <= set(value.keys()) <= set(_PLAN_ENVELOPE_KEYS)
+    ):
+        raise AgentError(
+            "PLAN_SCHEMA_INVALID",
+            f"plan must contain {list(_PLAN_REQUIRED_KEYS)} and at most {list(_PLAN_ENVELOPE_KEYS)}",
+        )
     if value["version"] != PLAN_VERSION:
         raise AgentError("PLAN_SCHEMA_INVALID", f"unsupported plan version {value['version']!r}")
     steps = value["steps"]
@@ -225,7 +290,154 @@ def validate_plan(value: Any) -> Plan:
             raise AgentError("PLAN_SCHEMA_INVALID", "step arguments exceed 96 KiB")
         seen.add(step_id)
         validated.append(Step(id=step_id, tool=tool, arguments=dict(arguments)))
+    if "additions" in value:
+        additions = validate_addition_shapes(value["additions"], known_ids=seen)
+        evidence = (
+            tuple(validate_evidence_shapes(value["evidence"])) if "evidence" in value else ()
+        )
+        return Plan(version=PLAN_VERSION, steps=tuple(validated),
+                    additions=tuple(additions), evidence=evidence)
+    if "evidence" in value:
+        return Plan(version=PLAN_VERSION, steps=tuple(validated),
+                    evidence=tuple(validate_evidence_shapes(value["evidence"])))
     return Plan(version=PLAN_VERSION, steps=tuple(validated))
+
+
+def validate_evidence_shapes(value: Any) -> list[dict[str, Any]]:
+    """Check the *shape* of a proposal's source references.
+
+    An empty list means "no sources cited", which is a legitimate answer and is
+    reported as such rather than treated as a violation: a summary nothing
+    factual rests on is not a crime, it is an unverified claim, and the labels
+    say so. What is refused here is a reference that cannot be looked up at all.
+    """
+    if not isinstance(value, list):
+        raise AgentError("EVIDENCE_INVALID", "evidence must be a list of references")
+    if len(value) > MAX_EVIDENCE_REFS_PER_PROPOSAL:
+        raise AgentError(
+            "EVIDENCE_INVALID",
+            f"evidence holds at most {MAX_EVIDENCE_REFS_PER_PROPOSAL} references, got {len(value)}",
+        )
+    shape: list[dict[str, Any]] = []
+    for index, raw in enumerate(value):
+        where = f"evidence[{index}]"
+        if not isinstance(raw, dict):
+            raise AgentError("EVIDENCE_INVALID", f"{where} must be an object")
+        unknown = set(raw) - set(_EVIDENCE_KEYS)
+        if unknown:
+            raise AgentError(
+                "EVIDENCE_INVALID", f"{where} may not set {sorted(unknown)}; allowed: {list(_EVIDENCE_KEYS)}",
+            )
+        missing = set(_EVIDENCE_REQUIRED_KEYS) - set(raw)
+        if missing:
+            raise AgentError("EVIDENCE_INVALID", f"{where} is missing {sorted(missing)}")
+        claim = raw["claim"]
+        if not isinstance(claim, str) or not claim.strip() or len(claim) > MAX_EVIDENCE_CLAIM_CHARS:
+            raise AgentError(
+                "EVIDENCE_INVALID",
+                f"{where}.claim must be a non-empty string of at most {MAX_EVIDENCE_CLAIM_CHARS} characters",
+            )
+        tool = raw["tool"]
+        if not isinstance(tool, str) or not _TOOL_NAME.match(tool):
+            raise AgentError("EVIDENCE_INVALID", f"{where}.tool {tool!r} is not a valid tool name")
+        path = raw["path"]
+        if not isinstance(path, str) or not path.strip() or len(path) > MAX_EVIDENCE_PATH_CHARS:
+            raise AgentError(
+                "EVIDENCE_INVALID",
+                f"{where}.path must be a workspace-relative path of at most {MAX_EVIDENCE_PATH_CHARS} characters",
+            )
+        digest = raw["sha256"]
+        if not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest):
+            raise AgentError("EVIDENCE_INVALID", f"{where}.sha256 must be a 64-character hex digest")
+        shape.append({
+            "claim": claim.strip(),
+            "tool": tool,
+            "path": path.strip(),
+            "sha256": digest,
+        })
+    return shape
+
+
+def validate_addition_shapes(value: Any, *, known_ids: Iterable[str] = ()) -> list[dict[str, Any]]:
+    """Check the *shape* of a proposal's plan-extension request.
+
+    Returns the entries as plain dicts for the host to judge. Every failure is a
+    ``PLAN_ADDITION_INVALID`` with the offending entry named, because the model
+    is expected to correct it on the next round rather than have the run die: a
+    refused extension is a rejection, not a governance event.
+    """
+    if not isinstance(value, list):
+        raise AgentError("PLAN_ADDITION_INVALID", "additions must be a list of todo objects")
+    if not value:
+        # "Nothing to add" is a legitimate answer, not a malformed one: a model
+        # that emits an empty list is declining to extend, and refusing the whole
+        # proposal over it would fail a run for saying so.
+        return []
+    if len(value) > MAX_PLAN_ADDITIONS_PER_PROPOSAL:
+        raise AgentError(
+            "PLAN_ADDITION_INVALID",
+            f"additions holds at most {MAX_PLAN_ADDITIONS_PER_PROPOSAL} todos, got {len(value)}",
+        )
+    seen = set(known_ids)
+    shape: list[dict[str, Any]] = []
+    for index, raw in enumerate(value):
+        where = f"additions[{index}]"
+        if not isinstance(raw, dict):
+            raise AgentError("PLAN_ADDITION_INVALID", f"{where} must be an object")
+        present = set(raw.keys())
+        forbidden = present - set(_ADDITION_KEYS)
+        if forbidden:
+            # Naming a host-owned field (`status`, `evidence`, `required`, …) is
+            # an attempt to write the part of a todo the proposer does not own.
+            raise AgentError(
+                "PLAN_ADDITION_INVALID",
+                f"{where} may not set {sorted(forbidden)}; allowed: {list(_ADDITION_KEYS)}",
+            )
+        missing = set(_ADDITION_REQUIRED_KEYS) - present
+        if missing:
+            raise AgentError("PLAN_ADDITION_INVALID", f"{where} is missing {sorted(missing)}")
+        todo_id = raw["id"]
+        if not isinstance(todo_id, str) or not _STEP_ID.match(todo_id) or todo_id in seen:
+            raise AgentError(
+                "PLAN_ADDITION_INVALID",
+                f"{where}.id {todo_id!r} is invalid, reserved or already used",
+            )
+        text = raw["text"]
+        if not isinstance(text, str) or not text.strip() or len(text) > MAX_PLAN_ADDITION_TEXT_CHARS:
+            raise AgentError(
+                "PLAN_ADDITION_INVALID",
+                f"{where}.text must be a non-empty string of at most {MAX_PLAN_ADDITION_TEXT_CHARS} characters",
+            )
+        tool = raw["tool"]
+        if not isinstance(tool, str) or not _TOOL_NAME.match(tool):
+            raise AgentError("PLAN_ADDITION_INVALID", f"{where}.tool {tool!r} is not a valid tool name")
+        done_when = raw["done_when"]
+        if (
+            not isinstance(done_when, str)
+            or not done_when.strip()
+            or len(done_when) > MAX_PLAN_ADDITION_DONE_WHEN_CHARS
+        ):
+            raise AgentError(
+                "PLAN_ADDITION_INVALID",
+                f"{where}.done_when must be a non-empty string of at most "
+                f"{MAX_PLAN_ADDITION_DONE_WHEN_CHARS} characters",
+            )
+        arguments = raw.get("arguments", {})
+        if not isinstance(arguments, dict):
+            raise AgentError("PLAN_ADDITION_INVALID", f"{where}.arguments must be an object")
+        from .hashing import canonical_json
+
+        if len(canonical_json(arguments).encode("utf-8")) > _MAX_STEP_ARGUMENT_BYTES:
+            raise AgentError("PLAN_ADDITION_INVALID", f"{where}.arguments exceed 96 KiB")
+        seen.add(todo_id)
+        shape.append({
+            "id": todo_id,
+            "text": text.strip(),
+            "tool": tool,
+            "done_when": done_when.strip(),
+            "arguments": dict(arguments),
+        })
+    return shape
 
 
 @dataclass

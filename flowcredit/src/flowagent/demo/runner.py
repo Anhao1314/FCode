@@ -208,6 +208,21 @@ def build_stack(
         receipts=receipts,
         verifier=lambda observation: module.verify(world, observation),
         state_fn=module.summarize_state,
+        # The domain's own protocol wording and prompt profile. Omitting these
+        # was not neutral: this path then told a general delegation the
+        # read-only kernel text and rendered it the financial system prompt,
+        # while the console — which passes both — told it the general ones, so
+        # the same run behaved differently depending on which entry point
+        # started it. A domain's contract travels with the domain.
+        instruction=module.instruction,
+        prompt_profile=module.prompt_profile,
+        plan_extension=module.plan_extension,
+        # The declared result obligation, when the delegation has one. Built
+        # from the world (which holds the validated spec), so the CLI and the
+        # console carry the same criterion for the same delegation.
+        verification=(
+            module.make_verification(world) if module.make_verification is not None else None
+        ),
     )
     return Stack(store, world, registry, receipts, provider, harness, module.make_planner(world), module, issued)
 

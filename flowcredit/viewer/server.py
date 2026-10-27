@@ -68,7 +68,7 @@ class RunManager(_RunManager):
         super().__init__(*args, **kwargs)
 from console_runtime import Run, Runtime  # noqa: E402
 
-__all__ = ["main"]
+__all__ = ["create_server", "main"]
 
 class Handler(SimpleHTTPRequestHandler):
     server_version = "FcodeConsole/1.1"
@@ -346,6 +346,18 @@ class Handler(SimpleHTTPRequestHandler):
                 control = getattr(run, "controller", None)
                 queue = control.queue_snapshot() if control is not None else (run.queue or [])
                 return self._json({"id": run.id, "queue": queue})
+            if action == "project":
+                project_path = RUNS_DIR / run.id / "project.json"
+                if not project_path.is_file():
+                    return self._json({"error": "this run has no imported project"}, 404)
+                try:
+                    payload = json.loads(project_path.read_text(encoding="utf-8"))
+                    patch_path = RUNS_DIR / run.id / "changes.patch"
+                    payload["patch"] = patch_path.read_text(encoding="utf-8") if patch_path.is_file() else ""
+                    payload["patchAvailable"] = patch_path.is_file()
+                except (OSError, ValueError) as error:
+                    return self._json({"error": f"project delivery is unreadable: {error}"}, 500)
+                return self._json(payload)
             if action == "workspace" or action.startswith("workspace/"):
                 # Read-only views of the run's sandbox, jail-checked by the
                 # same WorkspaceSandbox the tools use — never raw paths.
@@ -520,6 +532,8 @@ class Handler(SimpleHTTPRequestHandler):
     # ------------------------------------------------------------------- POST
 
     def do_POST(self) -> None:  # noqa: N802
+        from console_post import dispatch_post
+
         path = unquote(urlparse(self.path).path)
         if not path.startswith("/api/"):
             return self.send_error(404)
@@ -527,485 +541,7 @@ class Handler(SimpleHTTPRequestHandler):
             return self._json({"error": "unauthorized"}, 401)
         if not self._mutation_guard():
             return
-        mgr = self.manager
-        if path == "/api/intake":
-            if mgr.runtime is None:
-                return self._json({"error": f"live mode unavailable: {mgr.runtime_error}"}, 503)
-            body = self._read_body()
-            message = str(body.get("message") or "")[:2000]
-            spec = body.get("spec") if isinstance(body.get("spec"), dict) else {}
-            choice = body.get("choice") if isinstance(body.get("choice"), dict) else None
-            history = body.get("history") if isinstance(body.get("history"), list) else []
-            if len(json.dumps(spec, ensure_ascii=False).encode("utf-8")) > 4096:
-                return self._json({"error": "spec is too large"}, 400)
-            try:
-                turn = mgr.runtime.clarify(
-                    message=message,
-                    history=history[-20:],
-                    spec=spec,
-                    choice=choice,
-                    template=str(body.get("template") or ""),
-                )
-            except Exception as error:  # noqa: BLE001
-                return self._json({"error": f"intake failed: {error}"}, 400)
-            return self._json(turn)
-        if path == "/api/settings/chat-config":
-            if mgr.chat is None:
-                return self._json({"error": "chat is unavailable"}, 503)
-            body = self._read_body()
-            provider = body.get("provider")
-            if provider is not None and not isinstance(provider, str):
-                return self._json({"error": "provider must be a string"}, 400)
-            default_model = body.get("default_model")
-            if default_model is not None and not isinstance(default_model, str):
-                return self._json({"error": "default_model must be a string"}, 400)
-            values = body.get("values")
-            if values is not None and not isinstance(values, dict):
-                return self._json({"error": "values must be an object"}, 400)
-            if len(json.dumps(body, ensure_ascii=False).encode("utf-8")) > 8192:
-                return self._json({"error": "config payload is too large"}, 400)
-            try:
-                snapshot = mgr.chat.update_config(
-                    provider=provider,
-                    values=values,
-                    default_model=default_model,
-                )
-            except Exception as error:  # noqa: BLE001 — validation errors are 400s
-                return self._json(
-                    {"error": str(error), "code": getattr(error, "code", "CHAT_CONFIG_INVALID")},
-                    400,
-                )
-            return self._json(snapshot)
-        if path == "/api/chat/send":
-            if mgr.chat is None:
-                return self._json({"error": "chat is unavailable"}, 503)
-            body = self._read_body()
-            text = body.get("text")
-            if not isinstance(text, str):
-                return self._json({"error": "text must be a string"}, 400)
-            thread_id = body.get("threadId")
-            if thread_id is not None and not isinstance(thread_id, str):
-                return self._json({"error": "threadId must be a string"}, 400)
-            model = body.get("model") if isinstance(body.get("model"), str) else None
-            try:
-                mgr.chat.check_model(model)
-            except Exception as error:  # noqa: BLE001 — fail closed with the exact missing config
-                return self._json(
-                    {"error": str(error), "code": getattr(error, "code", "CHAT_PROVIDER_UNAVAILABLE")},
-                    400,
-                )
-            events = mgr.chat.send(
-                thread_id=thread_id,
-                text=text,
-                attachments=body.get("attachments"),
-                model=model,
-            )
-            return self._stream_chat(events)
-        if path.startswith("/api/chat/threads/") and path.endswith("/confirm"):
-            if mgr.chat is None:
-                return self._json({"error": "chat is unavailable"}, 503)
-            if mgr.runtime is None:
-                return self._json({"error": f"live mode unavailable: {mgr.runtime_error}"}, 503)
-            thread_id = path[len("/api/chat/threads/") : -len("/confirm")]
-            body = self._read_body()
-            message_id = str(body.get("messageId") or "").strip()
-            if not message_id:
-                return self._json({"error": "messageId is required"}, 400)
-            try:
-                thread = mgr.chat.get_thread(thread_id)
-            except Exception as error:  # noqa: BLE001 — no such thread is a 404, not a 500
-                return self._json({"error": str(error)}, 404)
-            message = next(
-                (item for item in thread["messages"] if item["id"] == message_id), None
-            )
-            if message is None:
-                return self._json({"error": "no such message"}, 404)
-            action = message.get("action") or {}
-            if not action:
-                return self._json({"error": "this message carries no execution proposal"}, 400)
-            if message.get("run"):
-                return self._json(
-                    {"error": "proposal already started", "runId": (message["run"] or {}).get("id")},
-                    409,
-                )
-            # The card may be edited before confirming; the edits pass the
-            # parser's own fail-closed checks (chat.merge_action).
-            try:
-                action = mgr.merge_chat_action(
-                    action,
-                    goal=body.get("goal") if isinstance(body.get("goal"), str) else None,
-                    mode=body.get("mode") if isinstance(body.get("mode"), str) else None,
-                    sources=body.get("sources") if isinstance(body.get("sources"), list) else None,
-                )
-            except ValueError as exc:
-                return self._json({"error": str(exc)}, 400)
-            # 与「转为委托」的同一创建路径：模板、spec 校验、审批档位都走原逻辑
-            template = "general-research"
-            try:
-                scenario = mgr.runtime.get_scenario(template)
-            except Exception:
-                return self._json({"error": f"unknown template {template!r}"}, 400)
-            spec = {
-                "version": "fcode.intake/v1",
-                "task": template,
-                "mode": str(action.get("mode") or "script"),
-                "source": "chat-action",
-                "origin_thread": {
-                    "threadId": thread_id,
-                    "threadTitle": thread.get("title", ""),
-                    # The tail of the conversation, same rule as
-                    # validate_delegation_spec: recency wins, size is bounded.
-                    "messages": [
-                        {"role": item["role"], "text": str(item["text"])[:600]}
-                        for item in thread["messages"]
-                        if item.get("role") in ("user", "assistant")
-                        and item.get("text") and item.get("status") != "error"
-                    ][-24:],
-                },
-            }
-            if action.get("sources"):
-                spec["sources"] = list(action["sources"])
-
-            approval = str(body.get("approval") or "consequential")
-            if approval not in ("off", "consequential", "all"):
-                return self._json({"error": "approval must be off, consequential or all"}, 400)
-            try:
-                mgr.validate_delegation_spec(spec, scenario)
-            except ValueError as exc:
-                return self._json({"error": str(exc)}, 400)
-            model_field = body.get("model")
-            effort_field = body.get("effort")
-            try:
-                model_key, effort = mgr.resolve_model(
-                    model_field if isinstance(model_field, str) else None,
-                    effort_field if isinstance(effort_field, str) else None,
-                )
-            except ValueError as exc:
-                return self._json({"error": str(exc)}, 400)
-            objective = str(action["goal"]).strip()[:600]
-            run = mgr.create(objective, template, approval, spec, model_key=model_key, effort=effort)
-            try:
-                mgr.chat.link_run(
-                    thread_id, message_id, run.id, goal=objective, mode=str(action["mode"])
-                )
-            except Exception as error:  # noqa: BLE001 — the run exists; the anchor failure is reported, not hidden
-                return self._json({"error": f"run {run.id} started but the thread anchor failed: {error}"}, 500)
-            return self._json({"run": run.to_json(detail=True)}, 202)
-        if path.startswith("/api/chat/threads/") and path.endswith("/edit"):
-            if mgr.chat is None:
-                return self._json({"error": "chat is unavailable"}, 503)
-            thread_id = path[len("/api/chat/threads/") : -len("/edit")]
-            body = self._read_body()
-            text = body.get("text")
-            message_id = body.get("messageId")
-            if not isinstance(text, str) or not isinstance(message_id, str):
-                return self._json({"error": "text and messageId are required strings"}, 400)
-            model = body.get("model") if isinstance(body.get("model"), str) else None
-            try:
-                mgr.chat.check_model(model)
-            except Exception as error:  # noqa: BLE001
-                return self._json(
-                    {"error": str(error), "code": getattr(error, "code", "CHAT_PROVIDER_UNAVAILABLE")},
-                    400,
-                )
-            events = mgr.chat.edit(
-                thread_id=thread_id,
-                message_id=message_id,
-                text=text,
-                attachments=body.get("attachments"),
-                model=model,
-            )
-            return self._stream_chat(events)
-        if path.startswith("/api/chat/threads/") and path.endswith("/regenerate"):
-            if mgr.chat is None:
-                return self._json({"error": "chat is unavailable"}, 503)
-            thread_id = path[len("/api/chat/threads/") : -len("/regenerate")]
-            body = self._read_body()
-            message_id = body.get("messageId")
-            if not isinstance(message_id, str):
-                return self._json({"error": "messageId must be a string"}, 400)
-            model = body.get("model") if isinstance(body.get("model"), str) else None
-            try:
-                mgr.chat.check_model(model)
-            except Exception as error:  # noqa: BLE001
-                return self._json(
-                    {"error": str(error), "code": getattr(error, "code", "CHAT_PROVIDER_UNAVAILABLE")},
-                    400,
-                )
-            events = mgr.chat.regenerate(
-                thread_id=thread_id,
-                message_id=message_id,
-                model=model,
-            )
-            return self._stream_chat(events)
-        if path == "/api/runs":
-            if mgr.runtime is None:
-                return self._json({"error": f"live mode unavailable: {mgr.runtime_error}"}, 503)
-            body = self._read_body()
-            template = str(body.get("template") or "full")
-            objective = str(body.get("objective") or "").strip()
-            try:
-                scenario = mgr.runtime.get_scenario(template)
-            except Exception:
-                return self._json({"error": f"unknown template {template!r}"}, 400)
-            if not objective:
-                objective = scenario.objective
-            if len(objective) > 600:
-                return self._json({"error": "objective too long"}, 400)
-            approval = str(body.get("approval") or "consequential")
-            if approval not in ("off", "consequential", "all"):
-                return self._json({"error": "approval must be off, consequential or all"}, 400)
-            spec = body.get("spec")
-            if spec is not None:
-                if not isinstance(spec, dict):
-                    return self._json({"error": "spec must be an object"}, 400)
-                if len(json.dumps(spec, ensure_ascii=False).encode("utf-8")) > 4096:
-                    return self._json({"error": "spec is too large"}, 400)
-                try:
-                    mgr.validate_delegation_spec(spec, scenario)
-                except ValueError as exc:
-                    return self._json({"error": str(exc)}, 400)
-            model_field = body.get("model")
-            effort_field = body.get("effort")
-            try:
-                model_key, effort = mgr.resolve_model(
-                    model_field if isinstance(model_field, str) else None,
-                    effort_field if isinstance(effort_field, str) else None,
-                )
-            except ValueError as exc:
-                # fail-closed：创建时环境不满足就是 400，绝不静默回退 mock
-                return self._json({"error": str(exc)}, 400)
-            run = mgr.create(objective, template, approval, spec, model_key=model_key, effort=effort)
-            return self._json(run.to_json(detail=True), 202)
-        if path.startswith("/api/runs/") and path.endswith("/review"):
-            if mgr.runtime is None:
-                return self._json({"error": f"live mode unavailable: {mgr.runtime_error}"}, 503)
-            run_id = path[len("/api/runs/") : -len("/review")]
-            run = mgr.get(run_id)
-            if run is None:
-                return self._json({"error": "no such run"}, 404)
-            body = self._read_body()
-            decision = body.get("decision")
-            if decision not in mgr.runtime.REVIEW_DECISIONS:
-                return self._json(
-                    {"error": f"decision must be one of {', '.join(mgr.runtime.REVIEW_DECISIONS)}"},
-                    400,
-                )
-            reason = body.get("reason")
-            if reason is None:
-                reason = ""
-            if not isinstance(reason, str) or len(reason) > mgr.runtime.MAX_REASON:
-                return self._json(
-                    {"error": f"reason must be a string of at most {mgr.runtime.MAX_REASON} characters"},
-                    400,
-                )
-            reviewer = body.get("reviewer")
-            if reviewer is None:
-                reviewer = ""
-            if not isinstance(reviewer, str) or len(reviewer) > mgr.runtime.MAX_REVIEWER:
-                return self._json(
-                    {"error": f"reviewer must be a string of at most {mgr.runtime.MAX_REVIEWER} characters"},
-                    400,
-                )
-            try:
-                payload = mgr.record_review(run.id, decision, reason, reviewer)
-            except KeyError:
-                return self._json({"error": "no such run"}, 404)
-            except ValueError as exc:
-                return self._json({"error": str(exc)}, 409)
-            return self._json(payload)
-        if path.startswith("/api/runs/") and path.endswith("/stop"):
-            run_id = path[len("/api/runs/") : -len("/stop")]
-            run = mgr.get(run_id)
-            if run is None:
-                return self._json({"error": "no such run"}, 404)
-            run.stop_requested = True
-            return self._json({"stop": True, "id": run.id})
-        if path.startswith("/api/runs/") and path.endswith("/decision"):
-            run_id = path[len("/api/runs/") : -len("/decision")]
-            run = mgr.get(run_id)
-            if run is None:
-                return self._json({"error": "no such run"}, 404)
-            body = self._read_body()
-            control = getattr(run, "controller", None)
-            if control is None:
-                return self._json({"error": "run is not waiting for a decision"}, 409)
-            if not control.decide(
-                str(body.get("approvalId") or ""),
-                allow=bool(body.get("allow")),
-                remember=bool(body.get("remember")),
-            ):
-                return self._json({"error": "no pending approval with that id"}, 409)
-            return self._json({"ok": True})
-        if path.startswith("/api/runs/") and path.endswith("/answer"):
-            run_id = path[len("/api/runs/") : -len("/answer")]
-            run = mgr.get(run_id)
-            if run is None:
-                return self._json({"error": "no such run"}, 404)
-            body = self._read_body()
-            question_id = str(body.get("questionId") or "").strip()
-            if not question_id:
-                return self._json({"error": "questionId is required"}, 400)
-            text = body.get("text")
-            skip = bool(body.get("skip"))
-            control = getattr(run, "controller", None)
-            if control is None:
-                return self._json({"error": "this run is not accepting answers"}, 409)
-            if skip:
-                ok = control.skip_question(question_id)
-            else:
-                if not isinstance(text, str) or not text.strip():
-                    return self._json({"error": "text is required unless skip is set"}, 400)
-                if len(text) > 600:
-                    return self._json({"error": "text must be at most 600 characters"}, 400)
-                ok = control.answer(question_id, text)
-            if not ok:
-                return self._json({"error": "that question is not pending"}, 409)
-            return self._json({"ok": True, "questionId": question_id, "skipped": skip})
-        if path.startswith("/api/runs/") and path.endswith("/messages"):
-            run_id = path[len("/api/runs/") : -len("/messages")]
-            run = mgr.get(run_id)
-            if run is None:
-                return self._json({"error": "no such run"}, 404)
-            if run.finished:
-                return self._json({"error": "run has finished"}, 409)
-            control = getattr(run, "controller", None)
-            if control is None:
-                return self._json({"error": "run has no live control"}, 409)
-            body = self._read_body()
-            text = str(body.get("text") or "").strip()
-            if not text:
-                return self._json({"error": "text is required"}, 400)
-            if len(text) > 600:
-                return self._json({"error": "message too long"}, 400)
-            message_id = uuid.uuid4().hex[:10]
-            control.queue({"kind": "message", "text": text, "id": message_id})
-            return self._json({"queued": True, "id": run.id, "messageId": message_id}, 202)
-        if path.startswith("/api/runs/") and path.endswith("/steer"):
-            run_id = path[len("/api/runs/") : -len("/steer")]
-            run = mgr.get(run_id)
-            if run is None:
-                return self._json({"error": "no such run"}, 404)
-            if run.finished:
-                return self._json({"error": "run has finished"}, 409)
-            control = getattr(run, "controller", None)
-            if control is None:
-                return self._json({"error": "run has no live control"}, 409)
-            body = self._read_body()
-            result = control.steer_message(str(body.get("messageId") or ""))
-            if not result.get("ok"):
-                return self._json({"error": result.get("error", "steer failed")}, 409)
-            return self._json(result)
-        if path.startswith("/api/runs/") and path.endswith("/queue"):
-            run_id = path[len("/api/runs/") : -len("/queue")]
-            run = mgr.get(run_id)
-            if run is None:
-                return self._json({"error": "no such run"}, 404)
-            if run.finished:
-                return self._json({"error": "run has finished"}, 409)
-            control = getattr(run, "controller", None)
-            if control is None:
-                return self._json({"error": "run has no live control"}, 409)
-            body = self._read_body()
-            op = str(body.get("op") or "")
-            result = control.mutate_message(str(body.get("messageId") or ""), op, body.get("text"))
-            if not result.get("ok"):
-                return self._json({"error": result.get("error", "queue op failed")}, 409)
-            return self._json(result)
-        if path.startswith("/api/runs/") and path.endswith("/plan"):
-            run_id = path[len("/api/runs/") : -len("/plan")]
-            run = mgr.get(run_id)
-            if run is None:
-                return self._json({"error": "no such run"}, 404)
-            if run.finished:
-                return self._json({"error": "run has finished"}, 409)
-            control = getattr(run, "controller", None)
-            if control is None:
-                return self._json({"error": "run has no live control"}, 409)
-            body = self._read_body()
-            action = str(body.get("action") or "")
-            todo_id = str(body.get("todoId") or "")
-            if action not in ("skip", "promote") or not todo_id:
-                return self._json({"error": "action must be skip or promote, with a todoId"}, 400)
-            control.queue(
-                {
-                    "kind": "plan",
-                    "action": action,
-                    "todo_id": todo_id,
-                    "note": str(body.get("note") or "")[:200],
-                }
-            )
-            return self._json({"queued": True, "applies": "next-round"})
-        if path.startswith("/api/runs/") and path.endswith("/budget"):
-            run_id = path[len("/api/runs/") : -len("/budget")]
-            run = mgr.get(run_id)
-            if run is None:
-                return self._json({"error": "no such run"}, 404)
-            if run.finished:
-                return self._json({"error": "run has finished"}, 409)
-            control = getattr(run, "controller", None)
-            if control is None:
-                return self._json({"error": "run has no live control"}, 409)
-            body = self._read_body()
-            try:
-                max_calls = int(body["maxCalls"])
-                max_reads = int(body["maxReads"])
-                max_cost = int(body["maxCostMicrousd"])
-            except (KeyError, TypeError, ValueError):
-                return self._json({"error": "maxCalls, maxReads and maxCostMicrousd are required integers"}, 400)
-            current = control.current_limits()
-            if (
-                max_calls < current["max_calls"]
-                or max_reads < current["max_reads"]
-                or max_cost < current["max_cost_microusd"]
-            ):
-                return self._json({"error": "limits can only be raised"}, 400)
-            control.queue(
-                {
-                    "kind": "budget",
-                    "maxCalls": max_calls,
-                    "maxReads": max_reads,
-                    "maxCostMicrousd": max_cost,
-                }
-            )
-            return self._json({"queued": True, "applies": "next-round"})
-        if path.startswith("/api/runs/") and path.endswith("/resume"):
-            run_id = path[len("/api/runs/") : -len("/resume")]
-            run = mgr.get(run_id)
-            if run is None:
-                return self._json({"error": "no such run"}, 404)
-            body = self._read_body()
-            try:
-                max_calls = int(body["maxCalls"])
-                max_reads = int(body["maxReads"])
-                max_cost = int(body["maxCostMicrousd"])
-                extra_rounds = int(body.get("extraRounds") or 6)
-            except (KeyError, TypeError, ValueError):
-                return self._json({"error": "maxCalls, maxReads and maxCostMicrousd are required integers"}, 400)
-            if min(max_calls, max_reads, max_cost) < 1 or not 0 <= extra_rounds <= 50:
-                return self._json({"error": "limits must be positive and extraRounds between 0 and 50"}, 400)
-            try:
-                mgr.resume(
-                    run,
-                    limits={"maxCalls": max_calls, "maxReads": max_reads, "maxCostMicrousd": max_cost},
-                    extra_rounds=extra_rounds,
-                )
-            except ValueError as exc:
-                return self._json({"error": str(exc)}, 409)
-            return self._json(run.to_json(detail=True), 202)
-        if path.startswith("/api/runs/") and path.endswith("/meta"):
-            run_id = path[len("/api/runs/") : -len("/meta")]
-            run = mgr.get(run_id)
-            if run is None:
-                return self._json({"error": "no such run"}, 404)
-            body = self._read_body()
-            if "name" in body:
-                run.name = str(body.get("name") or "").strip()[:60]
-            if "pinned" in body:
-                run.pinned = bool(body.get("pinned"))
-            mgr._write_meta(run)
-            return self._json(run.to_json())
-        return self._json({"error": "unknown endpoint"}, 404)
+        return dispatch_post(self, path)
 
     def do_DELETE(self) -> None:  # noqa: N802
         path = unquote(urlparse(self.path).path)
@@ -1063,6 +599,39 @@ class ConsoleHTTPServer(ThreadingHTTPServer):
         self.server_port = int(port)
 
 
+def create_server(
+    *,
+    repo: str | Path = "",
+    host: str = "127.0.0.1",
+    port: int = 0,
+    token: str = "",
+    pace: float = 0.0,
+    approval_timeout: float = 300.0,
+    local_endpoint: str | None = None,
+) -> ConsoleHTTPServer:
+    """Construct a bound console for either the CLI or an embedded desktop."""
+    runtime: Runtime | None = None
+    runtime_error = ""
+    if repo:
+        try:
+            runtime = Runtime(Path(repo).expanduser())
+        except Exception as exc:  # noqa: BLE001 — health reports why live mode is off
+            runtime_error = f"{type(exc).__name__}: {exc}"
+    else:
+        runtime_error = "no repo given; set FLOWAGENT_REPO to enable live runs"
+
+    migrate_legacy_chat_config()
+    manager = RunManager(
+        runtime, runtime_error, pace, approval_timeout,
+        local_endpoint=(local_endpoint or "").strip() or None,
+    )
+    Handler.manager = manager
+    Handler.token = token or None
+    httpd = ConsoleHTTPServer((host, port), Handler)
+    httpd.daemon_threads = True
+    return httpd
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         prog="console-server", description="Fcode console — static viewer + live runtime API."
@@ -1101,37 +670,30 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 2
 
-    runtime: Runtime | None = None
-    runtime_error = ""
-    if args.repo:
-        try:
-            runtime = Runtime(Path(args.repo).expanduser())
-        except Exception as exc:  # noqa: BLE001
-            runtime_error = f"{type(exc).__name__}: {exc}"
-    else:
-        runtime_error = "no --repo given; set it to the FCode checkout to enable live runs"
-
-    migrate_legacy_chat_config()
-    manager = RunManager(
-        runtime, runtime_error, args.pace, args.approval_timeout,
-        local_endpoint=args.local_endpoint.strip() or None,
+    httpd = create_server(
+        repo=args.repo,
+        host=args.host,
+        port=args.port,
+        token=args.token,
+        pace=args.pace,
+        approval_timeout=args.approval_timeout,
+        local_endpoint=args.local_endpoint,
     )
-    Handler.manager = manager
-    Handler.token = args.token or None
-    httpd = ConsoleHTTPServer((args.host, args.port), Handler)
-    httpd.daemon_threads = True
-    print(f"[console] serving {VIEWER_DIR} on http://{args.host}:{args.port}")
-    if runtime is not None:
+    manager = Handler.manager
+    print(f"[console] serving {VIEWER_DIR} on http://{args.host}:{httpd.server_port}")
+    if manager.runtime is not None:
         print(
-            f"[console] live mode on — runtime from {runtime.src} "
+            f"[console] live mode on — runtime from {manager.runtime.src} "
             f"(pace {args.pace}s/round, approval timeout {args.approval_timeout:.0f}s)"
         )
     else:
-        print(f"[console] live mode OFF — {runtime_error}")
+        print(f"[console] live mode OFF — {manager.runtime_error}")
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
         print("\n[console] bye")
+    finally:
+        httpd.server_close()
     return 0
 
 

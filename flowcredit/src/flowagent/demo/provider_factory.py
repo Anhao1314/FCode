@@ -8,13 +8,13 @@ in the runtime and are unchanged.
 
 from __future__ import annotations
 
-import os
 from dataclasses import replace
 from pathlib import Path
 from typing import Any, Callable, Mapping
 
 from ..core.receipts import ReceiptStore
 from ..providers.base import Provider, Proposal
+from ..providers.catalog import resolved_provider_env
 from ..providers.deepseek_config import load_deepseek_settings
 from ..providers.kimi import KimiProvider, load_kimi_settings
 from ..providers.local import LocalProvider
@@ -127,6 +127,7 @@ def build_provider(
     is never a way around validation: prices and their date are still required,
     and cloud endpoints still refuse a non-https base URL.
     """
+    env = resolved_provider_env() if env is None else dict(env)
     if provider_name == "mock":
         return MockProvider(
             policy=scenario.policy,
@@ -180,12 +181,13 @@ def build_provider(
         prefix = declared[provider_name]
         settings = load_compat_settings(
             prefix,
+            env=env,
             defaults=GENERIC_COMPAT_DEFAULTS,
             overrides={"reasoning_effort": reasoning_effort} if reasoning_effort else None,
         )
         calibration = calibration_path
         if calibration is None:
-            path_env = os.environ.get(f"{prefix}_CALIBRATION_PATH", "").strip()
+            path_env = env.get(f"{prefix}_CALIBRATION_PATH", "").strip()
             if path_env:
                 calibration = Path(path_env)
         provider = OpenAICompatProvider.from_settings(

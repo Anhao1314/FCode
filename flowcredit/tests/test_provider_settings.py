@@ -3,7 +3,7 @@
 The complaint this closes: the settings card held the Kimi key, the model menu
 in Work still said "KIMI_API_KEY is required", because delegation providers
 were declared only by the process environment. These tests pin the merge
-(settings → environment → defaults), the guards that survive it, and the two
+(environment → user settings → defaults), the guards that survive it, and the two
 catalogs agreeing about the same provider.
 """
 
@@ -87,9 +87,9 @@ class SettingsOverlayTests(unittest.TestCase):
         merged = merged_env({"KIMI_API_KEY": "   "}, env={"KIMI_API_KEY": "env-key"})
         self.assertEqual(merged["KIMI_API_KEY"], "env-key")
 
-    def test_settings_beat_the_environment(self) -> None:
+    def test_environment_beats_settings(self) -> None:
         merged = merged_env({"KIMI_API_KEY": "settings-key"}, env={"KIMI_API_KEY": "env-key"})
-        self.assertEqual(merged["KIMI_API_KEY"], "settings-key")
+        self.assertEqual(merged["KIMI_API_KEY"], "env-key")
 
     def test_unknown_providers_are_ignored(self) -> None:
         self.assertEqual(settings_as_env({"ollama": {"api_key": "x"}}), {})
@@ -271,18 +271,19 @@ class ConsoleWiringTests(unittest.TestCase):
             manager.resolve_model("kimi", None)
         self.assertIn("KIMI_PRICE_AS_OF", str(caught.exception))
 
-    def test_the_budget_ceiling_follows_the_settings_prices(self) -> None:
-        """A configured price must move the draft ceiling, not just the menu."""
-        from flowagent.demo.fixtures import get_scenario
+    def test_the_budget_capacity_follows_the_settings_prices(self) -> None:
+        """Real prices reduce capacity without raising the operator's ceiling."""
+        from flowagent.runtime.budget import BudgetLimits
 
         manager = self.manager_module.RunManager(None, "", 0.0, runs_dir=self.runs)
         manager._settings_env = settings_as_env({"kimi": KIMI_SETTINGS})
         entry = find(model_catalog_entries(manager), "kimi")
         self.assertTrue(entry["available"], entry["reason"])
-        budget = manager._budget_for_model(entry, get_scenario("general-research").limits)
-        self.assertIsNotNone(budget)
-        self.assertGreater(budget["max_cost_microusd"], 0)
+        limits = BudgetLimits(12, 8, 100_000, 100_000)
+        budget = manager._budget_for_model(entry, limits)
+        self.assertEqual(budget["max_cost_microusd"], limits.max_cost_microusd)
         self.assertGreater(budget["max_calls"], 0)
+        self.assertLess(budget["max_calls"], limits.max_calls)
 
 
 if __name__ == "__main__":

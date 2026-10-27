@@ -444,7 +444,7 @@ class ChatSettingsTests(unittest.TestCase):
             self.service.update_config(default_model="not-a-model")
         self.assertEqual(error.exception.code, "CHAT_CONFIG_INVALID")
 
-    def test_override_beats_environment(self) -> None:
+    def test_environment_beats_stored_settings(self) -> None:
         with mock.patch.dict(os.environ, {
             "KIMI_API_KEY": "env-key",
             "KIMI_INPUT_PRICE_MICROUSD_PER_MTOK": "1",
@@ -462,8 +462,8 @@ class ChatSettingsTests(unittest.TestCase):
             config = resolve_chat_provider(
                 "kimi", self.service._overrides_for("kimi"),
             )
-        self.assertEqual(config.api_key, "settings-key")
-        self.assertEqual(config.model, "kimi-settings")
+        self.assertEqual(config.api_key, "env-key")
+        self.assertEqual(config.model, "kimi-env")
 
     def test_empty_value_clears_back_to_environment(self) -> None:
         with mock.patch.dict(os.environ, {

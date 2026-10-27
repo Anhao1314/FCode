@@ -4,13 +4,15 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light">
-<title>Fcode · flowcredit console</title>
+<title>FCode · 本机 Agent 工作区</title>
 <link rel="icon" type="image/svg+xml" href="brand/favicon.svg">
 <script>window.__errs=[];window.addEventListener('error',e=>window.__errs.push((e.message||'')+'@'+e.lineno));window.addEventListener('unhandledrejection',e=>window.__errs.push('rej:'+(e.reason&&e.reason.message||e.reason)));</script><script>if(new URLSearchParams(location.search).get("desktop")==="1")document.documentElement.classList.add("desktop-app");</script><link rel="stylesheet" href="app.css?v=75">
-<link rel="stylesheet" href="design.css?v=76">
+<link rel="stylesheet" href="design.css?v=78">
 <link rel="stylesheet" href="desktop.css?v=3">
 <link rel="stylesheet" href="chat.css?v=4">
-<link rel="stylesheet" href="kimi.css?v=20">
+<link rel="stylesheet" href="kimi.css?v=25">
+<link rel="stylesheet" href="moonshot.css?v=2">
+<link rel="stylesheet" href="workspace.css?v=1">
 </head>
 <body>
 <div class="shell app rail-hidden" id="app">
@@ -18,8 +20,9 @@
   <div class="sidebar-frame">
   <aside class="sidebar">
     <div class="side-head">
-      <button class="side-fold" id="sidebar-toggle" type="button" title="折叠侧栏（⌘B）" aria-label="折叠侧栏">
+      <button class="side-fold" id="sidebar-toggle" type="button" aria-label="折叠侧栏">
         <svg class="i" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4v16"/></svg>
+        <span class="side-tip" role="tooltip"><span class="side-tip-label">折叠侧栏</span><kbd class="side-tip-key">⌘B</kbd></span>
       </button>
       <img class="brand-mark" src="brand/logo.svg" alt="FCode" width="32" height="32">
       <span class="side-flavor" id="side-flavor">WORK</span>
@@ -40,10 +43,18 @@
       <span id="new-label">新对话</span>
       <kbd class="nav-shortcut" aria-hidden="true">⌘K</kbd>
     </button>
+    <button class="side-search" id="side-search" type="button" title="搜索与命令（⌘K）">
+      <span data-doodle="search"></span><span>搜索与命令</span><kbd>⌘K</kbd>
+    </button>
 
     <!-- 对话侧栏 = kimi.com 网页版（桌面版点「对话」会 closePage 回到网页 chat）：
-         固定新建对话 → 顶部主入口 → More 折叠 → 置顶 → Projects → 对话列表。 -->
+         固定新建对话 → 顶部主入口 → More 折叠 → 置顶 → Projects → 对话列表。
+         折叠区只包"行"（.side-block-inner = Kimi 的 .sidebar-reveal-content），
+         段标题留在外面——第一版把标题一起包了进去，折叠后标题被裁掉，
+         [data-section-toggle] 点不到，该段再也展不开（浏览器验收抓到的真 bug）。
+         #chat-pinned / #chat-projects 的 inner 由 side-nav.js 自带（它一次生成标题+行）。 -->
     <div class="side-list" id="pane-chat">
+      <div class="side-scroll-top-mask"></div>
       <div class="side-nav">
         <nav id="chat-top-nav"></nav>
         <button class="nav-item" id="nav-more" type="button" aria-expanded="false" aria-controls="more-nav" title="更多">
@@ -55,17 +66,18 @@
       <div id="chat-pinned"></div>
       <div id="chat-projects"></div>
       <div id="chat-chats"></div>
-      <nav class="nav" id="chat-nav"></nav>
+      <div class="side-block-inner"><nav class="nav" id="chat-nav"></nav></div>
     </div>
 
     <!-- 工作侧栏 = Kimi Work 的 AppSidebar：平坦导航（看板/判断/定时）→ 置顶 →
          Projects（＋：新建项目）→ 任务（＋、状态点、空态）。 -->
     <div class="side-list" id="pane-work" hidden>
+      <div class="side-scroll-top-mask"></div>
       <nav class="side-nav" id="work-nav"></nav>
       <div id="work-pinned"></div>
       <div id="work-projects"></div>
       <div id="work-tasks"></div>
-      <nav class="nav" id="run-nav"></nav>
+      <div class="side-block-inner"><nav class="nav" id="run-nav"></nav></div>
     </div>
 
     <div class="side-foot">
@@ -90,10 +102,17 @@
     </div>
 
   </aside>
+  <!-- 拖拽调宽（Kimi 的 .sidebar-resizer）：4px 命中区贴右缘，拖拽时的 1px KMBlue
+       渐变指示条由 ::after 画（见 kimi.css 第二批 ②）。 -->
+  <div class="side-resizer" id="side-resizer" role="separator" aria-orientation="vertical" aria-label="拖动调整侧栏宽度"></div>
   </div>
+  <div class="sidebar-scrim" aria-hidden="true"></div>
 
   <div class="workspace" id="workspace">
     <header class="topbar">
+      <button class="icon-btn workspace-menu" id="workspace-menu" type="button" title="打开导航" aria-label="打开导航">
+        <svg class="i" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+      </button>
       <div class="tb-title" id="tb-title">—</div>
       <div class="tb-chips" id="tb-chips"></div>
       <div class="grow"></div>
@@ -126,6 +145,7 @@
               <div class="tpl-menu model-menu" id="model-menu" hidden></div>
               <div class="attach-panel" id="attach-panel" hidden></div>
               <div class="chat-attach-chips" id="chat-attach-chips" hidden></div>
+              <div class="project-composer" id="project-composer" hidden></div>
               <textarea class="composer-ta" id="composer-ta" rows="1"
                 placeholder="给 agent 派一个任务：判断 2024 与 2025 两期合并毛利率是否可比…"></textarea>
               <div class="composer-bar">
@@ -165,21 +185,22 @@
             </div>
           </div>
         </footer>
+        <button class="scroll-latest" id="scroll-latest" type="button" title="回到最新内容" aria-label="回到最新内容" hidden>↓</button>
         <input type="file" id="chat-files" multiple hidden accept=".txt,.md,.markdown,.json,.jsonl,.csv,.log,.py,.js,.ts,.tsx,.jsx,.html,.css,.yaml,.yml,.toml,.sql,.sh">
       </div>
 
       <div class="rail-scrim" data-rail-close></div>
-      <aside class="rail">
+      <aside class="rail" aria-label="任务详情">
         <div class="rail-head">
           <div class="rail-title">
-            <span class="rail-kicker">案卷</span>
+            <span class="rail-kicker">任务详情</span>
             <span class="rail-count" id="rail-count"></span>
-            <button class="rail-close" data-rail-close type="button" title="关闭事件面板" aria-label="关闭事件面板">×</button>
+            <button class="rail-close" data-rail-close type="button" title="关闭任务详情" aria-label="关闭任务详情">×</button>
           </div>
           <div class="seg" id="rail-tabs">
-            <button data-tab="events" class="active">事件<span class="tab-count" data-count="events"></span></button>
+            <button data-tab="events" class="active">活动<span class="tab-count" data-count="events"></span></button>
             <button data-tab="tools">工具<span class="tab-count" data-count="tools"></span></button>
-            <button data-tab="chain">链<span class="tab-count" data-count="chain"></span></button>
+            <button data-tab="chain">验证<span class="tab-count" data-count="chain"></span></button>
             <button data-tab="raw">原始</button>
           </div>
         </div>
@@ -220,7 +241,7 @@
                 <button class="set-switch" id="settings-motion" type="button" role="switch" aria-checked="true" aria-label="界面动效"><span></span></button>
               </div>
               <div class="set-row">
-                <span class="set-row-text"><b>主题</b><small>浅色（Kimi 风格）；深色版保留在版本历史</small></span>
+                <span class="set-row-text"><b>主题</b><small>月之暗面 · 明亮工作区与黑白像素细节</small></span>
                 <span class="set-value">浅色</span>
               </div>
               <div class="set-row">
@@ -371,6 +392,6 @@
 <script src="report.js?v=56"></script>
 <script src="icons-doodle.js?v=54"></script>
   <script src="brand/seal-icons.js"></script>
-<script src="app.js?v=104" type="module"></script>
+<script src="app.js?v=112" type="module"></script>
 </body>
 </html>

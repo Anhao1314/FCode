@@ -396,3 +396,79 @@ FCode 的两侧栏按这份对照落在 `core/side-nav.js`（纯渲染）+ `app.
 置顶把运行移入置顶段、取消后回到主列表（两侧同步，`renderNav()` 一次重绘）；
 运行行的事件委托从 `#run-nav` 上移到侧栏容器——否则置顶段里复用的同一套行
 有菜单却点不开（这是本轮浏览器验证抓到的真 bug）。
+
+## 侧栏第二批：交互结构、动画符号与三条失效修复
+
+第一批（上面「侧栏复刻」「侧栏是两套」两节）覆盖了几何与基础色号。第二批是重新解包
+`app.asar`（Kimi 3.2.20，`kimi-agent-DMtZmzV-.css` 153 KB / `kimi-agent-BHrERAnD.js`
+958 KB）后补齐的，三条都是第一批漏掉的。
+
+**① 交互结构（此前完全没有）**
+
+| Kimi | 实测值（出处选择器） | FCode 落地 |
+| --- | --- | --- |
+| `.sidebar-resizer` | 4px 命中区 / `col-resize`；`:after` 1px、高 400px、拖拽中 360px、`opacity .5`、`--sidebar-indicator-y` 跟指针 | `.side-resizer` + 双击回 240 + `fa.sidebarW` 记忆 |
+| `.sidebar-scroll-top-mask` | `height:0; flex:0 0 0; opacity:0`，`.is-visible{opacity:1}`，`transition: opacity .16s cubic-bezier(.23,1,.32,1)`；`::after` 24px 顶部渐变 | 同名元素 + 捕获阶段 scroll 监听；**替换**了原先把 `mask-image` 挂在 `.side-list` 上的做法（那只能常亮，没有"滚了才淡入"） |
+| `.sidebar-footer::before` | `bottom:100%`、高 24px、`transparent → Bg-GroundPC` | 同 |
+| `.sidebar-toggle-tooltip` / `-shortcut` | 浮层 + 快捷键帽，`--keycap-chips-gap: 4px` | `.side-tip` / `.side-tip-key`（`--k-fill-1-invert` 底、`--font-mono`） |
+
+**② 动画符号（keyframes 名字与节奏照抄）**
+
+| Kimi | 值 | 用在哪 |
+| --- | --- | --- |
+| `.sidebar-reveal-*` | `grid-template-rows .16s cubic-bezier(.2,0,0,1), opacity .12s ease-out`；enter-from/leave-to = `0fr + opacity 0` | 段落折叠。**替换**了原来的 `display:none` 硬切；实测 70ms 时 `rows 7.80px / opacity 0.409`，确认为补间 |
+| `kimi-spin` | `rotate(360deg)` | 运行中状态点（`border` 环，`border-top-color` = KMBlue） |
+| `quickstart-dismiss` | `scale(.804); opacity:0` | 快速开始卡退场 |
+| `conversation-title-marquee` | `translate(calc(-1 * var(--…-distance)))` | 悬停溢出标题。距离在**悬停态**下量：悬停时行尾时间戳让位给 ⋯ 按钮，标签 142→185 变宽，所以未悬停时算出的 154px 不是播放时的值（悬停态 296-185=111px，正好露出尾巴） |
+| `kimi-shimmer-text-sweep` | `background-position 0% → -200%` | 已记，未接线（等有 shimmer 场景再用） |
+
+**③ 三条此前写了但没生效的规则**（kimi.css 里写了，被更早的文件以更高优先级压住；
+用同序或更高序的选择器重述，靠"最后加载"取胜）
+
+1. `.app.side-collapsed .sidebar` 的纵向内边距 10px → **9px**（Kimi 恒为 `9px 8px 8px`）
+2. `html.desktop-app .side-list` 的 `padding:0` → **`0 2px`**（Kimi 的 `.sidebar-scroll` 有
+   `padding-right:2px`）
+3. 导航图标染色：`design.css` 在 `<svg>` 元素上写 `color: --text-3`，压过给 span 写的规则
+   （`stroke=currentColor`，谁定 svg 的 color 谁赢）。Kimi 的 `.nav-item` 是
+   `Labels-Primary(.9)`，且 `.active` **只换背景不改颜色** → 现在工作侧图标是 `.9`
+
+**两条没有改**（因为 Kimi 里没有可测值，不编）：`.side-user .side-gear` 的 24 vs 20px
+（`.account` 规则里只有 `min-width:0`）、`.side-nav` 的 `gap` 1 vs 2px。它们不是"Kimi
+规则失效"，是 FCode 内部 desktop/非 desktop 不一致，没有实测依据可判。
+
+**留存的差异**（有意，不是没对齐）
+
+- Kimi Work 的 5 槽位顺序是 `canvas / plugins / cron / remoteControl / apps`。FCode 把
+  3 个**真页面**排在前、4 个**预留槽位**排在后：第一眼能点开的应该是真页面。
+- 预留槽位不是 Kimi 的 `:disabled`（点不动 + `opacity .5`），而是**可点的、标注过的预留页**：
+  页面上直说"对应 Kimi 的哪一项 / 落地需要什么 / 现在能做什么"。行上带一个安静的「预留」小标。
+  理由：把未实现的能力说成已实现，比留一个标好的空位更糟。
+
+**验收**（`http://127.0.0.1:8650/?desktop=1`，桌面模式、真数据，浏览器实测计算样式）
+
+| 项 | Kimi | 实测 | |
+| --- | --- | --- | --- |
+| 侧栏宽 / 内边距 / 底 | 240 / `9px 8px 8px` / `#fbfaf9` | 240 / `9px 8px 8px` / `rgb(251,250,249)` | ✅ |
+| header | 高 36、`margin 0 -8px -3px` | 36、`0 -8px -3px` | ✅ |
+| nav-item | 36 / p8 / gap6 / r12 / Primary .9 | 36 / 8px / 6px / 12px / `rgba(0,0,0,.9)` | ✅ |
+| nav 图标 | 18px、Primary | 18px、`rgba(0,0,0,.9)` | ✅（修复后） |
+| 悬停 / 选中填充 | F1 `.03` / F2 `.05` | `rgba(0,0,0,.03)` / `.05` | ✅ |
+| flavor 徽章 | 18 / p0 6 / r5 / KMBlue / 11-600 / 字距 .06em / 大写 | 同（本轮补了 letter-spacing 与大写） | ✅ |
+| 折叠补间 | grid `1fr→0fr` + `.16s cb(.2,0,0,1)` | 70ms 采样 `7.80px / opacity .409` | ✅ |
+| 拖拽调宽 | 4px / col-resize / 1px KMBlue 指示条 | 拖动 240→300px 并写入 `fa.sidebarW` | ✅ |
+| toggle tooltip | 浮层 + 键帽 | `(8,51)` 视口内、文案「折叠侧栏 ⌘B」 | ✅ |
+| 运行中 | 转动环 | `kimi-spin 1s`、`border-top` KMBlue | ✅ |
+
+**本轮浏览器验收抓到的真 bug（两个，都已修）**
+
+1. **段标题被一起折进去了**：第一版把 `#work-tasks`（段标题）和 `#run-nav`（行）都放进
+   `.side-block-inner`，折叠后标题被 `overflow:hidden` 裁掉 → `[data-section-toggle]`
+   点不到 → 该段**再也展不开**。Kimi 的 reveal 只收内容、标题在 reveal 之外。改成只包行，
+   用 `.side-block-inner:has(#run-nav)` 认领各自的列表。复验：折叠态下标题仍可点。
+2. **tooltip 落到视口外**：`.side-tip` 是 absolute，但 `.side-fold` 没有 `position: relative`，
+   于是它按 `.sidebar`（absolute）定位，`top:100%` 跑到了 y=728。加了
+   `.side-fold { position: relative }` 后落在 (8,51)。
+
+（另有一条是既有缺陷而非本轮引入，顺手修掉：`quickState().providerReady` 写成
+`!!quickState.providerReady`——一个从未被赋值的静态属性，导致快速开始第一步**永远**无法完成。
+现在由 `modelCatalog` 里是否存在可用的非 mock provider 推导。）

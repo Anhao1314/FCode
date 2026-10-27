@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 
 import {
   CHAT_MORE_NAV, CHAT_NAV, WORK_NAV, chatRowsHtml, chatSectionHtml, modeChrome,
-  navItemsHtml, pinnedSectionHtml, projectSectionHtml, quickStartHtml, runRowsHtml,
-  statusDotHtml, taskSectionHtml,
+  navItemsHtml, pinnedSectionHtml, projectSectionHtml, quickStartHtml, reservedSlots,
+  runRowsHtml, statusDotHtml, taskSectionHtml,
 } from "../core/side-nav.js";
 
 test("两侧栏的导航条目是两套（工作平坦、对话折叠）", () => {
@@ -16,8 +16,26 @@ test("两侧栏的导航条目是两套（工作平坦、对话折叠）", () =>
   assert.match(work, /data-open="scheduled"/);
   assert.equal((chat.match(/data-open="ledger"/g) || []).length, 0, "工作侧的看板不进对话顶部列表");
   assert.match(more, /data-open="ledger"/, "对话侧栏把看板收进 More");
-  assert.equal(WORK_NAV.length, 3);
+  // 工作侧栏 = 3 个真页面 + Kimi Work 的 4 个预留槽位（canvas/plugins/remoteControl/apps）。
+  // 之前是 3：本轮按 Kimi Work 的 5 槽位补齐结构，缺失的 4 个能力用标注过的预留页承接。
+  assert.equal(WORK_NAV.length, 7);
+  assert.equal(WORK_NAV.filter(item => item.reserved).length, 4);
   assert.equal(CHAT_NAV.length, 2);
+});
+
+test("预留槽位带出处与落地条件，且仍是可点的按钮", () => {
+  const html = navItemsHtml(WORK_NAV, {});
+  const reserved = reservedSlots();
+  assert.deepEqual(Object.keys(reserved).sort(), ["apps", "canvas", "plugins", "remoteControl"]);
+  for (const [key, slot] of Object.entries(reserved)) {
+    assert.ok(slot.kimi, `${key} 要写明对应 Kimi 的哪一项`);
+    assert.ok(slot.needs, `${key} 要写明落地需要什么`);
+    assert.match(html, new RegExp(`data-open="${key}"`), `${key} 要出现在导航里`);
+  }
+  // 可点（不是 disabled）+ 带「预留」标记
+  assert.match(html, /class="nav-item nav-item--reserved" type="button" data-open="canvas" data-reserved="1"/);
+  assert.match(html, /<span class="nav-reserved" aria-hidden="true">预留<\/span>/);
+  assert.equal((html.match(/<button/g) || []).length, 7);
 });
 
 test("导航条目的图标与计数按 Kimi 的行结构渲染", () => {

@@ -119,6 +119,11 @@ class Runtime:
         self.Harness = m.Harness
         m = imp("flowagent.runtime.loop")
         self.Loop = m.Loop
+        m = imp("flowagent.runtime.verification")
+        # The console validates a declared verification obligation when a run is
+        # created, so an operator typo is refused then rather than discovered
+        # after the work is already done.
+        self.build_obligation = m.build_obligation
         m = imp("flowagent.tools.finance.fixtures")
         self.FinanceWorld = m.FinanceWorld
         m = imp("flowagent.tools.finance.planner")
@@ -141,6 +146,11 @@ class Runtime:
         self.build_profile = m.build_profile
         m = imp("flowagent.tools.general.sandbox")
         self.WorkspaceSandbox = m.WorkspaceSandbox
+        m = imp("flowagent.tools.general.project")
+        self.import_project = m.import_project
+        self.project_delivery = m.project_delivery
+        self.validate_project_spec = m.validate_project_spec
+        self.PROJECT_REPORT_PATH = m.PROJECT_REPORT_PATH
         m = imp("flowagent.providers.catalog")
         self.provider_catalog = m.provider_catalog
 

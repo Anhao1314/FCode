@@ -53,3 +53,24 @@ class DomainModule:
     #: instruction it is given, and a read-only instruction makes it refuse the
     #: very steps the plan requires (observed on a real run, not in theory).
     instruction: str | None = None
+    #: Which system-prompt profile this domain's runs are bound by (see
+    #: :data:`flowagent.providers.prompt.PROMPT_PROFILES`). ``None`` means "the
+    #: kernel default", which is the frozen financial contract — so a domain
+    #: that declares nothing keeps rendering the v10 pair, and its contexts stay
+    #: byte-identical to the ones the SFT golden hash covers. A domain whose
+    #: behaviour contract differs names its profile explicitly; there is no
+    #: inference from the module key, the objective text or the tool list.
+    prompt_profile: str | None = None
+    #: True when this domain's plan may be **extended by the model**: its
+    #: planner's blueprint is a starting point or an artifact obligation, not
+    #: the whole task, and the model may propose additional todos that the host
+    #: validates before they are persisted. False means the plan is exactly
+    #: what the domain's planner wrote — a proposal that carries additions is
+    #: refused, not silently applied.
+    plan_extension: bool = False
+    #: Build the declared result obligation for a world, or ``None`` when this
+    #: delegation declared none. The kernel dispatches it and records it; the
+    #: module judges the observation. ``None`` (the field's absence) means the
+    #: domain has no such concept, and the terminal result then reports only
+    #: what was actually recomputed.
+    make_verification: Callable[..., Any] | None = None

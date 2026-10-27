@@ -15,6 +15,7 @@ from typing import Any
 from ..tools.base import ToolSpec
 from ..tools.general.planner import GeneralPlanner
 from ..tools.general.world import GeneralWorld
+from ..providers.prompt import GENERAL_PROMPT_PROFILE
 from .base import DomainModule
 
 __all__ = [
@@ -40,13 +41,23 @@ GENERAL_INSTRUCTION = (
     "所以不确定时选 tools 里最接近的那个，而不是发明一个工具名。"
     "如果关键信息缺失（日期、对象、目标文件……）且猜错代价高，"
     "用 ask_operator 问操作员一句再继续——它会带着答案回到你的下一轮。"
-    "如果问了没人回答，而你仍然无法完成：把已知信息与缺口如实写进产出文件，"
-    "在文件里说明缺什么——不要提议未列出的工具（那会被门控拒绝并终止整个运行）。"
+    "如果确实做不下去（信息不足、缺少依据、工作无法完成）："
+    "提议 report_blocked，把缺什么如实写进 reason——运行时会以证据不足终止本次运行，"
+    "这是诚实的出口，不是失败。不要为了凑出一个结果而编造。"
     "如果上一轮的提议因为参数形状被拒（context 里的 rejected_proposals），"
     "按错误信息改正参数后重新提议；连续两次都改不对，这次运行会终止。"
 )
 
 APPROVAL_TOOLS = ("write_file", "edit_file", "run_command")
+
+#: ``report_blocked`` is deliberately *not* an approval tool here. It is a
+#: read-effect declaration whose only consequence is that the runtime stops;
+#: asking a human to authorise "I am blocked" would make an honest stop depend
+#: on someone clicking, and a silent operator would turn it into
+#: APPROVAL_TIMEOUT — a different fact about the world than "the evidence was
+#: insufficient". Finance gates it because its blocker changes what its
+#: calculator reports; the general domain's blocker changes nothing but the
+#: terminal reason, which the loop owns.
 
 
 def create_world(partial: bool = False, spec: dict[str, Any] | None = None, **kwargs: Any) -> GeneralWorld:
@@ -84,6 +95,19 @@ def make_planner(world: GeneralWorld | None = None, **kwargs: Any) -> GeneralPla
 
 def verify_observation(world: GeneralWorld, observation) -> dict[str, Any]:
     return world.verify_observation(observation)
+
+
+def make_verification(world: GeneralWorld | None = None) -> Any:
+    """The declared result obligation for this delegation, or ``None``.
+
+    Returns the scope the runtime uses to re-run it. ``None`` is a real answer,
+    not a failure: a delegation that declares no engineering-result obligation
+    gets exactly the old behaviour, and the terminal result then reports that
+    only file state was verified.
+    """
+    if world is None:
+        return None
+    return world.verification_scope()
 
 
 def summarize_state(records) -> dict[str, Any]:
@@ -126,6 +150,13 @@ def summarize_state(records) -> dict[str, Any]:
             fetches.append({"url": result.get("url"), "status": result.get("status")})
         elif tool == "ls_workspace":
             listed = True
+        elif tool == "report_blocked":
+            # The model declared the work impossible. It belongs on the state
+            # card as a blocker: a resumed run must see why the previous
+            # attempt stopped instead of re-deriving it from the raw log.
+            reason = str(result.get("reason") or "").strip()
+            if reason:
+                blockers.append(reason)
         if result.get("blockers"):
             blockers.extend(result["blockers"])
     return {
@@ -141,6 +172,19 @@ def summarize_state(records) -> dict[str, Any]:
 
 GENERAL_DOMAIN = DomainModule(
     instruction=GENERAL_INSTRUCTION,
+    # The general contract, not the frozen financial one. This is the whole
+    # point of the field: the model doing engineering work must not be told
+    # that numbers are the only evidence, that reads are the only permitted
+    # action, or that a blueprint must be finished even when it no longer fits.
+    prompt_profile=GENERAL_PROMPT_PROFILE.key,
+    # A general delegation's tasks are not known in advance, so its blueprint
+    # is a starting point rather than the whole job: the model may propose
+    # additional todos and the host validates every one before it is persisted.
+    plan_extension=True,
+    # And when the operator declared an engineering-result obligation, the
+    # runtime re-runs it: the artifact hash is not the only thing this domain
+    # can establish.
+    make_verification=make_verification,
     key="general-work",
     title="通用委托",
     create_world=create_world,

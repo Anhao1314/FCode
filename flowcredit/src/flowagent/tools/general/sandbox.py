@@ -23,6 +23,7 @@ import difflib
 import hashlib
 import os
 import subprocess
+import tempfile
 import threading
 from pathlib import Path
 from typing import Any
@@ -142,7 +143,9 @@ class WorkspaceSandbox:
         self.ensure()
         out: list[dict[str, Any]] = []
         for path in sorted(self.root.rglob("*")):
-            if not path.is_file() or self._is_metadata(path):
+            # Never follow a workspace link while hashing an inventory. Direct
+            # reads still use resolve(); listings fail closed by omitting links.
+            if path.is_symlink() or not path.is_file() or self._is_metadata(path):
                 continue
             data = path.read_bytes()
             relative = path.relative_to(self.root).as_posix()
@@ -191,9 +194,19 @@ class WorkspaceSandbox:
             before = _sha256(target.read_bytes())
         after = _sha256(content.encode("utf-8"))
         target.parent.mkdir(parents=True, exist_ok=True)
-        temporary = target.with_name(f".{target.name}.tmp-{os.getpid()}")
-        temporary.write_text(content, encoding="utf-8")
-        os.replace(temporary, target)
+        # A predictable PID-only name let a pre-planted symlink redirect the
+        # write before replace(). mkstemp creates a random file with O_EXCL in
+        # the already-jailed parent, so an existing link is never followed.
+        descriptor, temporary_name = tempfile.mkstemp(
+            prefix=f".{target.name}.tmp-", dir=target.parent,
+        )
+        temporary = Path(temporary_name)
+        try:
+            with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+                stream.write(content)
+            os.replace(temporary, target)
+        finally:
+            temporary.unlink(missing_ok=True)
 
         commit = ""
         changed = before != after
