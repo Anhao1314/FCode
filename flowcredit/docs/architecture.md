@@ -1,6 +1,6 @@
 # 架构
 
-**状态：当前权威** — 本文件描述**已实现**的运行时（门控、预算、循环、链、恢复）。从这里读起。相关：下一版框架 design 见 [framework.md](framework.md)；语言层规范见 [voice.md](voice.md)；与外部框架的对照见 [framework-mapping.md](framework-mapping.md)；能力与 MCP 桥边界见 [general-capabilities.md](general-capabilities.md)。最后核对：2026-10-26。
+**状态：当前权威** — 本文件描述**已实现**的运行时（门控、预算、循环、链、恢复）。从这里读起。相关：下一版框架 design 见 [framework.md](framework.md)；语言层规范见 [voice.md](voice.md)；与外部框架的对照见 [framework-mapping.md](framework-mapping.md)；能力与 MCP 桥边界见 [general-capabilities.md](general-capabilities.md)。最后核对：2026-10-29。
 
 > 下一版框架（Policy / Voice 分层、领域模块、评测与学习闭环）见
 > [`framework.md`](framework.md)。本文描述当前已落地的运行时。
@@ -8,16 +8,16 @@
 ## 分层与依赖方向
 
 ```
-demo/          CLI、渲染、场景、provider 显式选择
+demo/ benchmark/  CLI、场景、任务评测、provider 显式选择
    │
-runtime/       门控、预算、harness、loop
+runtime/          门控、预算、harness、loop、恢复与只读回放
    │
 tools/  providers/(mock·local·kimi·deepseek·oracle)  memory/  trajectory/
    │
-core/          哈希、契约、存储、收据
+core/             哈希、契约、存储、收据
 ```
 
-依赖是单向的：`core` 不 import 包内任何其他模块；`runtime` 可以 import `core` / `tools` / `providers`；没有任何模块 import `runtime`，除了 `demo` 和测试。这条约束让安全属性可以脱离 demo 单独测。
+依赖是单向的：`core` 不 import 包内任何其他模块；`runtime` 可以 import `core` / `tools` / `providers`；只有 `demo`、`benchmark` 和测试从上层装配 Runtime。这条约束让安全属性可以脱离展示层单独测。
 
 `tools/finance/` 是示例域，不是内核。`runtime` 不 import 它——换一个领域只需要提供自己的 `build_*_tools` 和 `authority`。
 
@@ -131,6 +131,10 @@ hash_n = sha256(canonical_json({sequence, type, payload, prev_hash, at}))
 4. `Loop.pending_step(task)` 检查是否有已批准但未执行的提案（对账后的情况）。
 5. 继续跑，轮次号取自 `task.model.attempts`，不会重复。
 
+工具侧还有一个更窄的未知结果窗口：`tool_started` 已提交，但进程可能在 handler 前、handler 副作用后或结果提交前消失。`runtime/recovery.py` 对未闭合调用只做对账与标记，不重发；主机证据区分 `observed`、`not_observed` 与 `unknown`。`runtime/replay.py` 只消费事件字典，比较动作顺序、结果哈希、计划与终态，不接触工具注册表。预算计数仍在 SQLite，恢复前后独立比较。
+
+版本化基准在 `benchmark/` 中复用上述正式链路；`ScriptedProvider` 只给提议，独立 verifier 直接检查文件、命令、事件、收据与 canary。运行方法和统计分母见 [runtime-benchmark](runtime-benchmark.md)，真实 SIGKILL 录屏顺序见 [demo-script](demo-script.md)。
+
 ## 扩展点
 
 | 想加什么 | 改哪里 | 不用改什么 |
@@ -155,6 +159,9 @@ hash_n = sha256(canonical_json({sequence, type, payload, prev_hash, at}))
 | `runtime/budget.py` | 四维预算 | 发送前扣，不退 |
 | `runtime/harness.py` | 单轮机制 + 独立重算 | 成功只能由 verify 产生 |
 | `runtime/loop.py` | 多轮 + 恢复 | 轮次不重复；支持 packet 模式与 fast path |
+| `runtime/recovery.py` | 工具未知结果对账 | 不重发；区分副作用证据；重复恢复拒绝 |
+| `runtime/replay.py` | 只读状态投影 | 不接触 registry；比较动作、收据、计划与终态 |
+| `benchmark/` | 版本化任务与独立验证 | 复用正式 Runtime；指标保留分子分母与任务边界 |
 | `runtime/policy.py` | DecisionPacket / ActionCompiler / Policy | 模型只选候选；单候选不调模型 |
 | `providers/local.py` | OpenAI 兼容本地 Provider | 零成本如实记账；失败 unknown，不重试 |
 | `providers/local_policy.py` | LocalPolicy | choice-only；一次修复；失败不编造 |

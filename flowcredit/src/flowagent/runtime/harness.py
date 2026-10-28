@@ -425,7 +425,12 @@ class Harness:
                 raise
             failed = task
             failed.failure = error.to_dict()
-            failed = self._commit(failed, failed, "tool_failed", {"code": error.code})
+            failed = self._commit(failed, failed, "tool_failed", {
+                "code": error.code,
+                "tool": step["tool"],
+                "arguments": step.get("arguments") or {},
+                "round": round_no,
+            })
             raise
         detail = {
             "tool": observation.tool,
