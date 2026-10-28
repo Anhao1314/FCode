@@ -15,7 +15,7 @@ from typing import Any
 from ..tools.base import ToolSpec
 from ..tools.general.planner import GeneralPlanner
 from ..tools.general.world import GeneralWorld
-from ..providers.prompt import GENERAL_PROMPT_PROFILE
+from ..providers.prompt import GENERAL_DOMAIN_INSTRUCTION, GENERAL_PROMPT_PROFILE
 from .base import DomainModule
 
 __all__ = [
@@ -28,25 +28,9 @@ __all__ = [
     "summarize_state",
 ]
 
-#: The protocol the general planner is bound by. It must describe what this
-#: domain actually does: read *and* write the workspace, run whitelisted
-#: commands, fetch declared sources — while still proposing exactly one action
-#: and leaving execution to the runtime.
-GENERAL_INSTRUCTION = (
-    "每轮只提议一个动作，且必须来自 tools 列表里的工具；"
-    "你只能提议，不能执行、不能宣告任务完成——执行与验收由运行时完成。"
-    "你可以读写工作区文件（write_file / edit_file）、"
-    "用受限终端运行白名单命令（run_command）、抓取已声明的来源（fetch_url）。"
-    "提议未列出的工具会被权限门控拒绝并终止本次运行，"
-    "所以不确定时选 tools 里最接近的那个，而不是发明一个工具名。"
-    "如果关键信息缺失（日期、对象、目标文件……）且猜错代价高，"
-    "用 ask_operator 问操作员一句再继续——它会带着答案回到你的下一轮。"
-    "如果确实做不下去（信息不足、缺少依据、工作无法完成）："
-    "提议 report_blocked，把缺什么如实写进 reason——运行时会以证据不足终止本次运行，"
-    "这是诚实的出口，不是失败。不要为了凑出一个结果而编造。"
-    "如果上一轮的提议因为参数形状被拒（context 里的 rejected_proposals），"
-    "按错误信息改正参数后重新提议；连续两次都改不对，这次运行会终止。"
-)
+#: Backwards-compatible domain export; the prompt package owns the single
+#: definition so the system contract and user-context instruction cannot drift.
+GENERAL_INSTRUCTION = GENERAL_DOMAIN_INSTRUCTION
 
 APPROVAL_TOOLS = ("write_file", "edit_file", "run_command")
 

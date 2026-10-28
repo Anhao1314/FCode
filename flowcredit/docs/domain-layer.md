@@ -73,15 +73,12 @@ flowcredit/src/flowagent/tools/credit`），需要时可以按模块协议重新
    `DomainModule.summarize_state`，`memory/context.py` 不再出现工具名；
    finance 键集逐字节保留（v10 合约），general 得到文件/命令/抓取状态卡。
    设计与测试见 [context-management.md](context-management.md)。
-2. **`providers/prompt.py` 的 system prompt。** 它仍是金融语义（“不要编造
-   财务数值”、证据不足时提议 `report_blocked`），并与 `PROMPT_VERSION=v10`
-   和 2271 条 SFT 样本逐字节绑定。通用委托在 mock 下不受影响（mock 只读
-   plan），真实模型需要独立的 prompt profile；改 prompt 必须同时升版本、
-   重导出 SFT，不能悄悄改。
-
-这两条是有意留下的，不是遗漏：它们需要一次带评估的改动，而不是清理时的
-顺手替换。评估 harness 就位后，先用它量出“通用 prompt / 通用 memory view”
-前后的任务成功率，再动合约。
+2. ~~**`providers/prompt.py` 的 system prompt 串域。**~~ **已解决**：
+   通用委托显式选择 `fcode.prompt/general-v3`，不再继承财务数值与只读规则。
+   通用系统合约按角色、输出协议、工作方式、拒绝恢复、证据验收分节；域指令
+   只有 `GENERAL_DOMAIN_INSTRUCTION` 一处定义。解析器拒绝多动作与未知顶层字段，
+   不再静默丢弃 `steps[1:]`。finance 的 v10、2271 条 SFT 样本和历史上下文仍走
+   缺省 legacy profile，黄金哈希不变；新域必须在模块上显式声明自己的 profile。
 
 ## 验收
 

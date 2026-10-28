@@ -165,10 +165,10 @@ provider 读到它（代码注释也承认了）。现在 `Loop.operator_notes()
 模型提议 `report_blocked`，理由原文是"当前 instruction 要求只能提议 read-only
 action，但 plan 中所有剩余待办均为 write_file、edit_file 或 run_command，没有
 可推进的只读步骤"——工具没注册，运行以 `TOOL_NOT_REGISTERED` 被拒。模型没有
-出错，它**照着我们写的话**拒绝干活。现在指令变成域声明：通用域给出
-`GENERAL_INSTRUCTION`（可以读写工作区、运行白名单命令、抓取已声明来源；每轮
-一个动作且必须来自 tools 列表），`Harness(state_fn=…, instruction=…)` 一次接线，
-两个 Loop 构造点自动继承；`None` 仍是那句冻结的默认文本。
+出错，它**照着我们写的话**拒绝干活。现在指令变成域声明：通用域的
+`GENERAL_INSTRUCTION` 只描述工程能力、上下文视图与数据边界，行为协议统一由
+`general-v3` 系统合约拥有，避免两处规则漂移；`Harness(state_fn=…, instruction=…)`
+一次接线，两个 Loop 构造点自动继承；`None` 仍是那句冻结的默认文本。
 
 验收（真实 Kimi，6 轮，$0.11，trace 存 `work/kimi-e2e/phase-a-operator-note/`）：
 运行中插话要求"最终 markdown 命名为 note-seen.md 并写一行『已读插话』"，运行

@@ -188,10 +188,19 @@ class FidelityTests(unittest.TestCase):
                 self.assertTrue(assistant["steps"])
 
     def test_parse_proposal_text_rejects_garbage(self) -> None:
+        two_actions = (
+            '{"version": "%s", "steps": ['
+            '{"tool": "read_file", "arguments": {"path": "a"}},'
+            '{"tool": "read_file", "arguments": {"path": "b"}}]}'
+        ) % PLAN_VERSION
+        unknown_field = (
+            '{"version": "%s", "steps": [{"tool": "read_file"}], "note": "ignored"}'
+        ) % PLAN_VERSION
         for bad in ("no json", "[]", '{"steps": []}', '{"steps": [{"tool": 1}]}',
                     '{"version": "wrong", "steps": [{"tool": "list_documents"}]}',
-                    '{"version": "%s", "steps": [{"tool": "bad name"}]}' % PLAN_VERSION):
-            with self.assertRaises(ValueError):
+                    '{"version": "%s", "steps": [{"tool": "bad name"}]}' % PLAN_VERSION,
+                    two_actions, unknown_field):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
                 parse_proposal_text(bad)
 
     def test_parse_proposal_text_tolerates_thinking_and_prose(self) -> None:
