@@ -10,18 +10,21 @@
 ```
 flowcredit/viewer/
   index.html          ← 外壳（零依赖、零构建）
-  app.css             ← design tokens（浅色三层表面 / 单强调色 / 语义色）+ 外壳布局
-  design.css          ← 组件视觉
-  chat.css            ← 对话消息 / 气泡 / 代码块 / 附件 / 设置卡片
-  desktop.css         ← ?desktop=1 时的桌面比例覆盖（Kimi 测量值）
-  kimi.css            ← Kimi 实测色号与动效皮肤（最后加载）
+  app.css             ← design tokens（全站唯一 :root）+ 基础基元 + 外壳布局（第一加载）
+  desktop.css         ← ?desktop=1 桌面模式壳几何（第二加载）
+  design.css          ← 组件视觉 / Paper & Proof 审计组件（第三加载）
+  chat.css            ← 对话消息 / 气泡 / 代码块 / 附件 / 设置卡片（第四加载）
+  kimi.css            ← 过渡视图层：对话皮肤、侧栏功能件、run-card（待迁移）
+  moonshot.css        ← 开屏舞台（打字机标题/轨道场景/reduce-motion）
+  workspace.css       ← 过渡视图层：壳观感定稿 + 响应式四段（待迁移）
+  thread.css          ← 统一任务线程：Codex 式阅读列、工具行、审批、计划（最后加载）
   app.js              ← 页面逻辑（对话 / 委托 / 回放 / 运行管理）
   core/               ← 前端纯函数层（全部 Node 可测，无 DOM 依赖）
     format.js         canonical JSON、SHA-256、链验证、格式化
     chat-format.js    Markdown 渲染与 SSE 分帧
     chat-view.js      单条消息 DOM 渲染
-    run-card.js       执行提案卡与运行镜像的投影
-    round-fold.js     「安静轮次」折叠规则（只影响可见性）
+    run-card.js       对话内执行提案（紧凑下一步）与运行镜像的投影
+    task-thread.js    运行 trace → 统一任务线程（纯投影 + 单条渲染，Node 可测）
     side-nav.js       两侧栏（工作 / 对话）的条目、置顶、Projects、任务与对话列表
     ai-avatar.js      对话 AI 的头像（Q 版印豆 · 圆框 · 黑白，状态由事实推导）
   report.js           ← 自包含审计报告生成器
@@ -30,15 +33,18 @@ flowcredit/viewer/
   console_common.py   ← 路径、静态拒绝、模型目录与预算换算
   console_runtime.py  ← runtime 导入、单次运行、观察者与崩溃检查
   console_manager.py  ← 运行历史、创建、控制、续跑与持久化
-  tests/              ← 前端纯函数测试（node --test，58 项）
+  tests/              ← 前端纯函数测试（node --test，164 项）
   runs/               ← 运行产物（task.sqlite / trace.json / meta.json，不入库）
   chat.sqlite         ← 对话事件库（不入库）
   docs/console-live.png  ← 看板 · 账本（换肤后重拍；另有 desktop-home / -chat / -run）
 ```
 
-设计语言分两面：外壳与对话面走 Kimi 实测皮肤（`../docs/kimi-skin.md`），
-审计底稿与证据面走 Paper & Proof（`../docs/design-system.md`）——
-本目录的 `kimi.css` 与 `design.css` 就是这两面的落点。
+样式栈按 tokens → layout → components → views 分层，加载顺序固定为
+`app.css → desktop.css → design.css → chat.css → kimi.css → moonshot.css →
+workspace.css → thread.css`：令牌只在 `app.css :root` 定义一次，其余文件只消费不改写；
+`kimi.css` 与 `workspace.css` 是过渡层（其规则正按职责迁往前三层，迁完删除）。
+设计语言分两面：外壳与对话面走黑白灰克制皮肤，审计底稿与证据面走
+Paper & Proof（`../docs/design-system.md`）。
 
 ## 快速开始
 
@@ -90,7 +96,12 @@ open 'http://127.0.0.1:8642/?desktop=1'
 - **审批门**：默认只在关键工具前暂停；可切「逐步审批」或「自动」。允许 / 拒绝 / 超时都入链。
 - **运行中插话**：消息排队到下一轮边界，以 `operator_message` 写入同一条链；
   排队 / 入链 / 未送达三种状态都在气泡上标明。
-- **计划与预算**：可跳过 / 提前某个 todo；预算只能调高，下一轮生效。
+- **统一任务线程**：任务 → 状态／计划 → 工具调用与审批 → 最终回复。实时运行、
+  历史回放、普通项目与完整研究共用 `app/task-thread.js` 的同一套投影与 DOM；
+  工具默认一行摘要，展开才看参数、命令、真实 diff 与签名收据；预算与链验证
+  退到"运行详情／证据"入口。
+- **计划与预算**：线程内紧凑清单，可跳过 / 提前某个 todo；预算只能调高，
+  下一轮生效，明细收在可展开的用量区。
 - **续跑**：仅接受 `BUDGET_EXCEEDED` / `ROUND_LIMIT`，从事件日志续写，已付的读取不重发。
 - **随时停止**：轮次边界停止，终态 `STOPPED_BY_OPERATOR`，链仍完整可验。
 - **工具卡按运行时词汇渲染**：通用工具是 `ls_workspace` / `read_file` / `write_file` /

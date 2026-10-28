@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { workPromptsHtml } from "../core/work-surface.js";
+import { modeForDeepLink, workPromptsHtml } from "../core/work-surface.js";
 
 test("Work suggestions are explicit drafts, never automatic run actions", () => {
   const html = workPromptsHtml();
@@ -14,4 +14,12 @@ test("Opening scene exposes three useful Work starting points", () => {
   assert.match(html, /研究并整理结论/);
   assert.match(html, /交付一份工作成果/);
   assert.match(html, /aria-label="任务建议"/);
+});
+
+test("run and trace deep links select Work without changing ordinary startup", () => {
+  assert.equal(modeForDeepLink("?run=run-123"), "work");
+  assert.equal(modeForDeepLink("?trace=%2Ftraces%2Ffull.json"), "work");
+  assert.equal(modeForDeepLink("?run=run-123&desktop=1"), "work");
+  assert.equal(modeForDeepLink("?chat=chat-123"), null);
+  assert.equal(modeForDeepLink(""), null);
 });

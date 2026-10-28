@@ -133,6 +133,15 @@ class MockProvider:
             path = str(arguments.get("path") or "")
             if path.endswith(".py"):
                 arguments["content"] = self._first_draft()
+            elif path.endswith(".md"):
+                # Open/project delegations require a real Markdown artifact too.
+                # Previously only Python received authored content, so the mock
+                # repeatedly proposed an invalid write and could never succeed.
+                arguments["content"] = (
+                    "# Offline mock delivery\n\n"
+                    f"- Artifact: `{path}`\n"
+                    "- Result: completed by the deterministic offline provider.\n"
+                )
         elif tool == "edit_file" and not str(arguments.get("old_text") or "").strip():
             arguments["old_text"] = self.SCRIPT_BUG
             arguments["new_text"] = self.SCRIPT_FIX

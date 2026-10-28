@@ -122,6 +122,9 @@ class SandboxJailTests(unittest.TestCase):
         second = self.sandbox.write("notes/a.md", "second")
         self.assertNotEqual(second["sha256_before"], second["sha256_after"])
         self.assertTrue(second["commit"], "a changed write must produce a git commit")
+        self.assertIn("-first", second["diff"])
+        self.assertIn("+second", second["diff"])
+        self.assertFalse(second["truncated"])
         reread = self.sandbox.read("notes/a.md")
         self.assertEqual(reread["sha256"], second["sha256_after"])
 
@@ -131,6 +134,8 @@ class SandboxJailTests(unittest.TestCase):
         self.assertFalse(again["changed"])
         self.assertEqual(again["commit"], "")
         self.assertEqual(again["sha256_before"], again["sha256_after"])
+        self.assertEqual(again["diff"], "")
+        self.assertFalse(again["truncated"])
 
     def test_diff_preview_shows_a_real_unified_diff(self) -> None:
         self.sandbox.write("report.md", "line one\nline two\n")

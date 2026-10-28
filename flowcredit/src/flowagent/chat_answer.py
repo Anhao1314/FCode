@@ -192,10 +192,13 @@ class AnswerStream:
             "provider": self.config.key,
             "model": self.config.model,
             "error": {},
-            "action": action or {},
             "at": "",
             "seq": self.thread.sequence,
         }
+        # Same rule as the replay: no proposal, no action field. The client
+        # treats a present-but-empty action as "render the proposal card".
+        if action:
+            message["action"] = action
         return {
             "type": "done", "message": message,
             "budget": self.accounting.snapshot(), "thread_id": self.thread_id,

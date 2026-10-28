@@ -12,8 +12,10 @@ import importlib
 import json
 import os
 import secrets
+import subprocess
 import sys
 import threading
+import time
 import urllib.request
 from collections.abc import MutableMapping
 from pathlib import Path
@@ -126,12 +128,84 @@ class DesktopConsole:
             bridge.disconnect()
 
 
+def _fcode_window_id() -> int:
+    """Return the on-screen FCode window id for native, window-only screenshots."""
+    import Quartz
+
+    windows = Quartz.CGWindowListCopyWindowInfo(
+        Quartz.kCGWindowListOptionOnScreenOnly,
+        Quartz.kCGNullWindowID,
+    )
+    for window in windows:
+        if window.get("kCGWindowOwnerName") == "FCode" and window.get("kCGWindowLayer") == 0:
+            return int(window["kCGWindowNumber"])
+    raise RuntimeError("no visible FCode window")
+
+
+def _acceptance_screenshot(path: Path) -> dict:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    window_id = _fcode_window_id()
+    subprocess.run(
+        ["/usr/sbin/screencapture", "-o", "-x", "-l", str(window_id), str(path)],
+        check=True,
+        timeout=15,
+    )
+    return {"path": str(path), "windowId": window_id}
+
+
+def run_acceptance_plan(window, plan_path: str) -> None:
+    """Execute an explicit, local JSON plan inside the native webview.
+
+    This exists for automated acceptance on machines where macOS Accessibility
+    permission cannot be granted to the test process. It drives the *real*
+    native window's DOM through pywebview; it is not a second HTTP/browser UI.
+    """
+    plan = json.loads(Path(plan_path).read_text(encoding="utf-8"))
+    output_path = Path(plan_path).with_suffix(".results.jsonl")
+    if not window.events.loaded.wait(timeout=20):
+        raise RuntimeError("native webview did not finish loading")
+
+    with output_path.open("w", encoding="utf-8") as results:
+        for index, step in enumerate(plan):
+            kind = str(step.get("type") or "")
+            record = {"step": index, "type": kind, "name": step.get("name", "")}
+            try:
+                if kind == "wait":
+                    seconds = max(0.0, float(step.get("ms", 0)) / 1000)
+                    time.sleep(seconds)
+                    record["result"] = {"ms": step.get("ms", 0)}
+                elif kind == "resize":
+                    window.resize(int(step["width"]), int(step["height"]))
+                    record["result"] = {"width": window.width, "height": window.height}
+                elif kind == "screenshot":
+                    record["result"] = _acceptance_screenshot(Path(step["path"]))
+                elif kind == "js":
+                    record["result"] = window.evaluate_js(str(step["code"]))
+                elif kind == "exit":
+                    record["result"] = {"exiting": True}
+                    results.write(json.dumps(record, ensure_ascii=False) + "\n")
+                    results.flush()
+                    window.destroy()
+                    return
+                else:
+                    raise ValueError(f"unknown acceptance step type: {kind!r}")
+            except Exception as error:  # keep one bad step from losing the earlier evidence
+                record["error"] = f"{type(error).__name__}: {error}"
+            results.write(json.dumps(record, ensure_ascii=False) + "\n")
+            results.flush()
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="FCode desktop application")
     parser.add_argument(
         "--smoke-test",
         action="store_true",
         help="start the embedded console, verify its authenticated health API, and exit",
+    )
+    parser.add_argument(
+        "--acceptance-plan",
+        metavar="PATH",
+        help="test-only: run a JSON DOM plan in the native window and write PATH.results.jsonl",
     )
     args = parser.parse_args(argv)
     console = DesktopConsole(bundle_root())
@@ -151,7 +225,10 @@ def main(argv: list[str] | None = None) -> int:
             min_size=(1080, 680),
             background_color="#FBFAF9",
         )
-        webview.start()
+        if args.acceptance_plan:
+            webview.start(run_acceptance_plan, args=(webview.windows[0], args.acceptance_plan))
+        else:
+            webview.start()
         return 0
     finally:
         console.stop()

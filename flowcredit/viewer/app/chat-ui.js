@@ -1,24 +1,127 @@
 "use strict";
 
+import { applyChatEvent, createChatStreamRegistry } from "../core/chat-streams.js";
+
 /* 对话线程、消息流与模式切换。运行镜像和 Provider 设置分别在独立模块。 */
 export function createChatUI(deps) {
   const d = deps;
   const { chat, chatModelChoice } = d;
+  const streams = createChatStreamRegistry();
+  let openChatSeq = 0;
+  let pendingSeq = 0;
+  // 侧栏分页状态：baselineVersion 只在 reset 开始/结束时推进；append 必须
+  // 绑定发起时的基线版本。serverRows 只统计已接受的服务端行，不含
+  // mergeLiveThreads() 插入的本地占位行。
+  let resetSeq = 0;
+  let resetInFlight = 0;
+  let baselineVersion = 0;
+  let serverRows = 0;
+  let serverIds = new Set();
+  let appendInFlight = null;
+  // 归档成功的线程不再允许 mergeLiveThreads 把仍在流式的占位行带回侧栏。
+  const archivedIds = new Set();
+
+  // 同一线程可能连续多轮：optimistic 消息 id 必须唯一，否则停止后立刻
+  // 发下一条时两个 pending-assistant 会争同一个 DOM 节点。
+  const pendingId = prefix => `${prefix}-${Date.now()}-${++pendingSeq}`;
+
+  const streamFor = thread => streams.get(thread);
+  // “可见”必须同时要求对话视图仍在前台：切到 Work 时 chat.current 可能
+  // 仍保留（便于切回），但后台流不得改标题或消息 DOM。
+  const visible = thread => chat.active && !!thread && chat.current === thread;
+
+  /* 本地正在流式更新的线程不能被旧的服务端列表快照回滚：保留本地标题，
+     服务端还没列出时先补一行，流结束后再以服务端事实为准。 */
+  function mergeLiveThreads(list) {
+    for (const entry of streams.entries()) {
+      const thread = entry.thread;
+      if (!thread || !thread.id || archivedIds.has(thread.id)) continue;
+      const index = list.findIndex(item => item.id === thread.id);
+      if (index < 0) {
+        list.unshift({
+          id: thread.id,
+          title: thread.title || "新对话",
+          updated_at: new Date().toISOString(),
+        });
+      } else if (thread.title && list[index].title !== thread.title) {
+        list[index] = { ...list[index], title: thread.title };
+      }
+    }
+    return list;
+  }
+
+  function commitThreadList(next, total) {
+    if (Number.isFinite(Number(total))) chat.total = Number(total);
+    d.setChatThreads(next);
+    chat.threads = next;
+    renderChats();
+  }
+
+  async function fetchThreadPage(offset) {
+    const response = await fetch(
+      `/api/chat/threads?limit=${chat.limit}&offset=${offset}`,
+      { cache: "no-store" },
+    );
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const data = await response.json();
+    if (!data || !Array.isArray(data.threads)) throw new Error("对话列表响应格式不正确");
+    return data;
+  }
 
   async function loadChatThreads(reset = true) {
     const health = d.getHealth();
-    if (!health || !health.live) return;
-    const threads = d.getChatThreads();
-    const offset = reset ? 0 : threads.length;
+    if (!health || !health.live) return { skipped: true };
+
+    if (reset) {
+      const requestId = ++resetSeq;
+      resetInFlight = requestId;
+      // reset 开始即结束旧基线：此前发出的 append 都不能再写。成功或失败
+      // 收尾时再推进一次，让 reset 期间启动的 append 同样失效。
+      baselineVersion += 1;
+      try {
+        const data = await fetchThreadPage(0);
+        if (requestId !== resetSeq) return { stale: true };
+        baselineVersion += 1;
+        resetInFlight = 0;
+        serverRows = data.threads.length;
+        serverIds = new Set(data.threads.filter(thread => thread && thread.id).map(thread => thread.id));
+        const next = mergeLiveThreads(data.threads.filter(thread => thread && !archivedIds.has(thread.id)));
+        commitThreadList(next, data.total);
+        return { applied: true, total: chat.total, serverRows };
+      } catch (error) {
+        if (requestId !== resetSeq) return { stale: true, error };
+        baselineVersion += 1;
+        resetInFlight = 0;
+        return { applied: false, error };
+      }
+    }
+
+    if (appendInFlight) return { skipped: true, reason: "append-in-flight" };
+    const token = { version: baselineVersion, offset: serverRows };
+    appendInFlight = token;
     try {
-      const data = await fetch(`/api/chat/threads?limit=${chat.limit}&offset=${offset}`, { cache: "no-store" }).then(r => r.ok ? r.json() : null);
-      const list = data && Array.isArray(data.threads) ? data.threads : [];
-      if (data && Number.isFinite(Number(data.total))) chat.total = Number(data.total);
-      const next = reset ? list : threads.concat(list.filter(thread => !threads.some(item => item.id === thread.id)));
-      d.setChatThreads(next);
-      chat.threads = next;
-      renderChats();
-    } catch { /* 侧栏列表失败不阻塞对话 */ }
+      const data = await fetchThreadPage(token.offset);
+      // 响应前后都校验基线；reset 在途时也不接受任何 append。
+      if (token !== appendInFlight || token.version !== baselineVersion || resetInFlight) {
+        return { stale: true, offset: token.offset };
+      }
+      const current = d.getChatThreads();
+      const known = new Set(current.map(thread => thread.id));
+      const page = data.threads.filter(thread => thread && thread.id && !archivedIds.has(thread.id));
+      const additions = page.filter(thread => !known.has(thread.id));
+      serverRows += data.threads.length;
+      for (const thread of page) serverIds.add(thread.id);
+      const next = mergeLiveThreads(current.concat(additions));
+      commitThreadList(next, data.total);
+      return { applied: true, offset: token.offset, serverRows };
+    } catch (error) {
+      if (token !== appendInFlight || token.version !== baselineVersion || resetInFlight) {
+        return { stale: true, offset: token.offset, error };
+      }
+      return { applied: false, offset: token.offset, error };
+    } finally {
+      if (appendInFlight === token) appendInFlight = null;
+    }
   }
 
   function renderChats() {
@@ -28,9 +131,13 @@ export function createChatUI(deps) {
     const head = document.getElementById("chat-chats");
     if (head) head.innerHTML = d.chatSectionHtml(threads.length);
     const list = threads.filter(thread => !d.isChatPinned(thread.id));
+    // 只把服务端未加载行算作“还有 N 条”：本地流式占位不参与，
+    // pinned 行已包含在 serverRows 里。
+    const remaining = Math.max(0, (Number(chat.total) || 0) - serverRows);
     nav.innerHTML = d.chatRowsHtml(list, {
       activeId: chat.current ? chat.current.id : null,
       total: chat.total,
+      remaining,
       pinnedOf: d.isChatPinned,
     });
   }
@@ -55,10 +162,23 @@ export function createChatUI(deps) {
         const response = await fetch(`/api/chat/threads/${encodeURIComponent(threadId)}`, { method: "DELETE" });
         const data = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+        // 只有真正计入过 serverRows 的服务端行才扣减分页位置；纯本地
+        // 流式占位不在服务端列表里，扣减会让下一页跳过真实记录。
+        const loadedFromServer = serverIds.delete(threadId);
+        if (loadedFromServer) {
+          serverRows = Math.max(0, serverRows - 1);
+          chat.total = Math.max(0, chat.total - 1);
+        }
+        if (threadId) archivedIds.add(threadId);
+        // 归档改变了服务端列表：在途 reset/append 的基线全部失效，避免
+        // 旧响应把刚归档的线程重新带回。
+        baselineVersion += 1;
+        resetSeq += 1;
+        resetInFlight = 0;
+        appendInFlight = null;
         const next = d.getChatThreads().filter(thread => thread.id !== threadId);
         d.setChatThreads(next);
         chat.threads = next;
-        chat.total = Math.max(0, chat.total - 1);
         if (chat.current && chat.current.id === threadId) newChat();
         renderChats();
         d.toast("对话已从列表移除（事件链保留）");
@@ -66,9 +186,25 @@ export function createChatUI(deps) {
     })();
   }
 
-  function leaveChat() {
-    if (chat.abort) { try { chat.abort.abort(); } catch { /* settled */ } }
+  /* 离开视图只清理“投影”（绘制定时器与 DOM 状态），网络流仍归线程所有。 */
+  function clearVisiblePaint() {
+    const entry = streamFor(chat.current);
+    if (entry && entry.paintTimer) {
+      clearTimeout(entry.paintTimer);
+      entry.paintTimer = null;
+    }
     if (chat.paintTimer) { clearTimeout(chat.paintTimer); chat.paintTimer = null; }
+  }
+
+  function syncActiveStream() {
+    const entry = streamFor(chat.current);
+    chat.streaming = !!entry;
+    chat.abort = entry ? entry.controller : null;
+    paintSendState();
+  }
+
+  function leaveChat() {
+    clearVisiblePaint();
     const wasActive = chat.active, wasStreaming = chat.streaming;
     chat.active = false;
     chat.streaming = false;
@@ -111,8 +247,7 @@ export function createChatUI(deps) {
   }
 
   function detachChatChrome() {
-    if (chat.abort) { try { chat.abort.abort(); } catch { /* settled */ } }
-    if (chat.paintTimer) { clearTimeout(chat.paintTimer); chat.paintTimer = null; }
+    clearVisiblePaint();
     chat.active = false;
     chat.streaming = false;
     chat.abort = null;
@@ -125,6 +260,8 @@ export function createChatUI(deps) {
   }
 
   function openWorkHome() {
+    d.invalidateView();
+    openChatSeq += 1;
     detachChatChrome();
     if (d.intake.active) d.closeIntake(false);
     if (d.getSettingsOpen()) d.closeSettingsPage(false);
@@ -150,10 +287,11 @@ export function createChatUI(deps) {
   function switchToChat() {
     if (chat.current && (chat.current.messages || []).length) {
       chat.active = true;
-      chat.streaming = false;
       chat.editing = null;
       d.renderNav();
       renderChat({ forceBottom: true });
+      renderChatHead();
+      syncActiveStream();
       paintChatChrome(true);
       const ta = document.getElementById("composer-ta");
       if (ta) { ta.value = ""; d.autosize(ta); ta.placeholder = "给 FCode 发消息…"; }
@@ -162,6 +300,8 @@ export function createChatUI(deps) {
   }
 
   function setUiMode(mode) {
+    d.invalidateView();
+    openChatSeq += 1;
     if (d.getUiMode() !== mode) {
       d.setUiModeValue(mode);
       try { localStorage.setItem("fa.uiMode", mode); } catch { /* quota */ }
@@ -224,6 +364,8 @@ export function createChatUI(deps) {
   }
 
   function newChat() {
+    d.invalidateView();
+    openChatSeq += 1;
     leaveChat();
     resetForChat();
     d.renderMain(d.stageEmptyHtml("向 FCode 提问，或让 FCode 帮你整理思路", { chat: true }), { mode: "empty" });
@@ -239,15 +381,41 @@ export function createChatUI(deps) {
   }
 
   async function openChat(threadId) {
+    d.invalidateView();
+    const ticket = ++openChatSeq;
+    const epoch = d.getViewEpoch();
+    const stillCurrent = () => ticket === openChatSeq && epoch === d.getViewEpoch();
     leaveChat();
     resetForChat();
+
+    // 该线程仍在后台生成：直接投影线程缓存，不重新请求旧快照，也不重复发起回答。
+    const live = streams.getByThreadId(threadId);
+    if (live && live.thread) {
+      chat.current = live.thread;
+      chat.active = true;
+      paintChatChrome(true);
+      renderChatHead();
+      renderChat({ forceBottom: true });
+      syncActiveStream();
+      d.renderNav();
+      const ta = document.getElementById("composer-ta");
+      if (ta) { ta.value = ""; d.autosize(ta); ta.placeholder = "给 FCode 发消息…"; ta.focus(); }
+      paintSendState();
+      return;
+    }
+
     d.renderMain(`<div class="empty">加载对话…</div>`, { mode: "loading" });
     try {
       const response = await fetch(`/api/chat/threads/${encodeURIComponent(threadId)}`, { cache: "no-store" });
+      if (!stillCurrent()) return;
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      chat.current = await response.json();
+      const thread = await response.json();
+      if (!stillCurrent()) return;
+      chat.current = thread;
       await d.prepareCardRuns(chat.current);
+      if (!stillCurrent()) return;
     } catch (error) {
+      if (!stillCurrent()) return;
       d.toast("对话加载失败：" + error.message);
       newChat();
       return;
@@ -262,6 +430,8 @@ export function createChatUI(deps) {
   }
 
   function renderChat({ forceBottom = false } = {}) {
+    // 后台线程/镜像流不得把对话内容画到当前其他页面。
+    if (!chat.active) return;
     const thread = chat.current;
     if (!thread || !(thread.messages || []).length) {
       d.renderMain(`<div class="chat-empty">${d.aiAvatarHtml("idle", 64)}<div class="chat-empty-mark">FCode</div><p>开始一段对话。对话只回答，不执行工具；需要读写文件或运行命令时，用「委托运行」。</p></div>`, { mode: "chat" });
@@ -301,11 +471,13 @@ export function createChatUI(deps) {
       btn.disabled = false;
       btn.classList.add("stop");
       btn.title = "停止生成";
+      btn.setAttribute("aria-label", "停止生成");
       btn.innerHTML = `<span class="stop-glyph"></span>`;
       return;
     }
     btn.classList.remove("stop");
     btn.title = "发送消息";
+    btn.setAttribute("aria-label", "发送消息");
     btn.innerHTML = `<span data-doodle="arrow-up"></span>`;
     d.hydrateDoodles(btn);
     const ta = document.getElementById("composer-ta");
@@ -319,6 +491,7 @@ export function createChatUI(deps) {
     if (!btn) return;
     btn.classList.remove("stop");
     btn.title = "发送任务";
+    btn.setAttribute("aria-label", "发送任务");
     btn.innerHTML = `<span data-doodle="arrow-up"></span>`;
     d.hydrateDoodles(btn);
     const health = d.getHealth();
@@ -335,21 +508,25 @@ export function createChatUI(deps) {
   }
 
   function stopChat() {
-    if (!chat.streaming || !chat.abort) return;
-    try { chat.abort.abort(); } catch { /* settled */ }
+    const entry = streamFor(chat.current);
+    if (!entry) return;
+    try { entry.controller.abort(); } catch { /* settled */ }
   }
 
-  function scheduleChatPaint(assistant) {
-    chat.paintAssistant = assistant;
-    if (chat.paintTimer) return;
-    chat.paintTimer = setTimeout(() => {
-      chat.paintTimer = null;
-      paintStreamingAssistant(chat.paintAssistant);
+  function scheduleChatPaint(entry) {
+    if (!entry || !visible(entry.thread)) return;
+    entry.paintAssistant = entry.assistant;
+    if (entry.paintTimer) return;
+    entry.paintTimer = setTimeout(() => {
+      entry.paintTimer = null;
+      if (!visible(entry.thread)) return;
+      paintStreamingAssistant(entry.assistant);
     }, 70);
   }
 
   function paintStreamingAssistant(assistant) {
     if (!assistant || !chat.current) return;
+    if (!(chat.current.messages || []).some(message => message === assistant)) return;
     const node = document.querySelector(`.chat-msg[data-msg-id="${String(assistant.id)}"]`);
     if (!node) { renderChat(); return; }
     const stick = d.nearMainBottom();
@@ -370,12 +547,55 @@ export function createChatUI(deps) {
     if (stick) d.scrollMainBottom();
   }
 
+  /* 把服务端线程合并回仍在前台的同一个线程对象，而不是替换它。
+     已匹配 id 的消息以服务端为准；本地 optimistic 消息（尤其刚发出的下一条）
+     保留，服务端多出来的旧消息插在 optimistic 尾部之前。 */
+  function mergeServerThread(thread, server) {
+    if (!thread || !server) return;
+    if (Array.isArray(server.messages)) {
+      const used = new Set();
+      const byId = new Map(server.messages.filter(msg => msg && msg.id).map(msg => [msg.id, msg]));
+      const merged = [];
+      for (const local of thread.messages || []) {
+        const direct = local && local.id ? byId.get(local.id) : null;
+        if (direct && !used.has(direct.id)) {
+          merged.push(direct);
+          used.add(direct.id);
+          continue;
+        }
+        // 服务端可能给 pending 消息分配了新 id；同角色同文本视为同一条。
+        const pending = String((local && local.id) || "").startsWith("pending-");
+        const match = pending
+          ? server.messages.find(msg => msg && !used.has(msg.id)
+            && msg.role === local.role
+            && String(msg.text || "") === String(local.text || ""))
+          : null;
+        if (match) {
+          merged.push(match);
+          used.add(match.id);
+        } else {
+          merged.push(local);
+        }
+      }
+      const extras = server.messages.filter(msg => msg && !used.has(msg.id));
+      if (extras.length) {
+        const tail = merged.findIndex(msg => String((msg && msg.id) || "").startsWith("pending-"));
+        if (tail >= 0) merged.splice(tail, 0, ...extras);
+        else merged.push(...extras);
+      }
+      thread.messages = merged;
+    }
+    for (const key of ["id", "title", "model", "budget", "events", "chain_head", "created_at", "updated_at"]) {
+      if (server[key] !== undefined && server[key] !== null && server[key] !== "") thread[key] = server[key];
+    }
+  }
+
   function pushOptimisticAnswer() {
-    chat.current.messages.push({ id: "pending-assistant", role: "assistant", text: "", reasoning: "", status: "streaming", usage: {}, error: {} });
+    chat.current.messages.push({ id: pendingId("pending-assistant"), role: "assistant", text: "", reasoning: "", status: "streaming", usage: {}, error: {} });
   }
 
   async function sendChatFromComposer() {
-    if (chat.streaming) return;
+    if (chat.streaming || streamFor(chat.current)) return;
     const health = d.getHealth();
     if (!health || !health.live) { d.toast("回放模式：启动 server.py 后才能对话"); return; }
     const ta = document.getElementById("composer-ta");
@@ -390,7 +610,7 @@ export function createChatUI(deps) {
     const model = chatModelChoice.key || "mock";
     if (!chat.current) chat.current = { id: null, title: (text || attachments[0].name || "新对话").slice(0, 30), messages: [] };
     if (!chat.current.messages) chat.current.messages = [];
-    chat.current.messages.push({ id: "pending-user-" + Date.now(), role: "user", text, attachments: attachments.map(file => ({ name: file.name, bytes: file.text.length })), status: "ok" });
+    chat.current.messages.push({ id: pendingId("pending-user"), role: "user", text, attachments: attachments.map(file => ({ name: file.name, bytes: file.text.length })), status: "ok" });
     pushOptimisticAnswer();
     renderChatHead();
     renderChat({ forceBottom: true });
@@ -402,9 +622,10 @@ export function createChatUI(deps) {
     const threadRef = chat.current;
     const assistant = threadRef && threadRef.messages ? threadRef.messages[threadRef.messages.length - 1] : null;
     if (!assistant || assistant.role !== "assistant") { setChatStreaming(false); return; }
+    if (streamFor(threadRef)) return;
     const controller = new AbortController();
-    chat.abort = controller;
-    let aborted = false;
+    const entry = streams.begin(threadRef, { controller, assistant });
+    syncActiveStream();
     try {
       const response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload), signal: controller.signal });
       if (!response.ok) {
@@ -423,86 +644,66 @@ export function createChatUI(deps) {
           const frame = buffer.slice(0, boundary);
           buffer = buffer.slice(boundary + 2);
           const event = d.parseSseFrame(frame);
-          if (event && chat.current === threadRef) handleChatEvent(event, assistant, threadRef);
+          // 事件总是写入它所属的线程；是否绘制由 visible() 决定。
+          if (event) handleChatEvent(event, assistant, threadRef, entry);
         }
       }
     } catch (error) {
       if (error.name === "AbortError") {
-        aborted = true;
+        entry.aborted = true;
         assistant.status = "cancelled";
         if (!assistant.text) assistant.text = "";
       } else {
         assistant.status = "error";
         assistant.error = { code: "CHAT_FAILED", message: error.message };
-        d.toast("对话失败：" + error.message);
+        if (visible(threadRef)) d.toast("对话失败：" + error.message);
       }
     } finally {
-      const belongs = chat.active && chat.current === threadRef;
-      if (belongs) {
-        if (chat.paintTimer) { clearTimeout(chat.paintTimer); chat.paintTimer = null; }
-        setChatStreaming(false);
-        if (chat.abort === controller) chat.abort = null;
-        if (assistant.status === "streaming") {
-          assistant.status = "error";
-          assistant.error = { code: "CHAT_STREAM_ENDED", message: "连接在回答完成前结束" };
-        }
-        if (aborted) await new Promise(resolve => setTimeout(resolve, 250));
-        if (threadRef.id) {
-          try {
-            const response = await fetch(`/api/chat/threads/${encodeURIComponent(threadRef.id)}`, { cache: "no-store" });
-            if (response.ok) {
-              const thread = await response.json();
-              if (thread && Array.isArray(thread.messages) && chat.current === threadRef) chat.current = thread;
+      const wasVisible = visible(threadRef);
+      const generation = entry.generation;
+      // 回读属于发起它的那一代回答。同一线程只要开始了新流（例如 done 后
+      // 立刻发下一条），旧回读就放弃，不得覆盖新一轮的 optimistic 消息。
+      const sameGeneration = () => visible(threadRef)
+        && streams.generationFor(threadRef) === generation
+        && !streamFor(threadRef);
+      streams.end(entry);
+      if (assistant.status === "streaming") {
+        assistant.status = "error";
+        assistant.error = { code: "CHAT_STREAM_ENDED", message: "连接在回答完成前结束" };
+      }
+      if (wasVisible) syncActiveStream();
+      if (entry.aborted && wasVisible) await new Promise(resolve => setTimeout(resolve, 250));
+      // 后台回读不得覆盖当前会话；只有仍显示这个线程、且没有新一代流时才合并。
+      if (wasVisible && threadRef.id && sameGeneration()) {
+        try {
+          const response = await fetch(`/api/chat/threads/${encodeURIComponent(threadRef.id)}`, { cache: "no-store" });
+          if (response.ok) {
+            const thread = await response.json();
+            if (sameGeneration() && thread && Array.isArray(thread.messages)) {
+              mergeServerThread(threadRef, thread);
             }
-          } catch { /* 保留乐观视图 */ }
-        }
+          }
+        } catch { /* 保留乐观视图 */ }
+      }
+      if (visible(threadRef)) {
         renderChat();
         renderChatHead();
-      } else if (chat.abort === controller) chat.abort = null;
+      }
       await loadChatThreads();
     }
   }
 
-  function handleChatEvent(event, assistant, threadRef) {
-    if (!threadRef || chat.current !== threadRef) return;
-    switch (event.type) {
-      case "start":
-        if (event.thread_id) {
-          threadRef.id = event.thread_id;
-          if (event.thread_title) threadRef.title = event.thread_title;
-          if (event.user) {
-            const pending = [...threadRef.messages].reverse().find(message => message.role === "user" && String(message.id).startsWith("pending-user-"));
-            if (pending) Object.assign(pending, event.user);
-          }
-          if (event.assistant_id) assistant.id = event.assistant_id;
-          renderChatHead();
-          renderChat();
-        }
-        break;
-      case "wait": assistant.waiting = Number(event.seconds) || 0; scheduleChatPaint(assistant); break;
-      case "reasoning": assistant.reasoning = (assistant.reasoning || "") + String(event.text || ""); scheduleChatPaint(assistant); break;
-      case "delta": assistant.text = (assistant.text || "") + String(event.text || ""); scheduleChatPaint(assistant); break;
-      case "done":
-        if (event.message) {
-          assistant.id = event.message.id || assistant.id;
-          assistant.text = event.message.text || assistant.text;
-          assistant.reasoning = event.message.reasoning || assistant.reasoning;
-          assistant.usage = event.message.usage || {};
-          assistant.receipt_ref = event.message.receipt_ref || "";
-          assistant.status = "ok";
-        }
-        assistant.waiting = 0;
-        renderChat();
-        break;
-      case "error":
-        if (event.thread_id && !threadRef.id) threadRef.id = event.thread_id;
-        assistant.status = "error";
-        assistant.error = { code: event.code || "CHAT_FAILED", message: event.message || "对话失败" };
-        if (event.partial) assistant.text = event.partial;
-        renderChat();
-        break;
-      case "stopped": assistant.status = "cancelled"; renderChat(); break;
-      default: break;
+  function handleChatEvent(event, assistant, threadRef, entry) {
+    if (!threadRef) return;
+    const outcome = applyChatEvent(threadRef, assistant, event);
+    if (!visible(threadRef)) {
+      if (outcome.render) renderChats();
+      return;
+    }
+    if (outcome.paint) scheduleChatPaint(entry);
+    if (outcome.render) {
+      if (outcome.head) renderChatHead();
+      renderChat();
     }
   }
 
@@ -515,7 +716,7 @@ export function createChatUI(deps) {
   function cancelChatEdit() { chat.editing = null; renderChat(); }
 
   function saveChatEdit(messageId) {
-    if (!chat.current || !chat.current.id) return;
+    if (!chat.current || !chat.current.id || streamFor(chat.current)) return;
     const input = document.getElementById("chat-edit-input");
     const text = (input && input.value || "").trim();
     if (!text) { d.toast("消息不能为空"); return; }
@@ -523,7 +724,7 @@ export function createChatUI(deps) {
     if (index < 0) return;
     chat.editing = null;
     chat.current.messages = chat.current.messages.slice(0, index);
-    chat.current.messages.push({ id: "pending-user-" + Date.now(), role: "user", text, attachments: [], status: "ok" });
+    chat.current.messages.push({ id: pendingId("pending-user"), role: "user", text, attachments: [], status: "ok" });
     pushOptimisticAnswer();
     renderChat({ forceBottom: true });
     setChatStreaming(true);
@@ -531,7 +732,7 @@ export function createChatUI(deps) {
   }
 
   function regenerateChat(messageId) {
-    if (!chat.current || !chat.current.id) return;
+    if (!chat.current || !chat.current.id || streamFor(chat.current)) return;
     const index = chat.current.messages.findIndex(message => message.id === messageId);
     if (index < 0) return;
     chat.current.messages = chat.current.messages.slice(0, index);

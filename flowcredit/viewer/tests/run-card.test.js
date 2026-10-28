@@ -157,7 +157,9 @@ test("a run without rounds yet still renders, and its failure is shown", () => {
     mirrorFrom({ rounds: [], terminal: { status: "failed", failure: { code: "BUDGET_EXCEEDED", message: "轮次用尽" } } }, { finished: true }),
     { run: { id: "run-1" } },
   );
-  assert.ok(html.includes("等待 Runtime 的第一个轮次…"));
+  // A finished run with no rounds must not claim it is still waiting.
+  assert.ok(html.includes("这次运行没有留下可读的轮次"));
+  assert.ok(!html.includes("等待 Runtime 的第一个轮次…"));
   assert.ok(html.includes("BUDGET_EXCEEDED"));
   assert.ok(html.includes("轮次用尽"));
   assert.ok(html.includes("失败"));

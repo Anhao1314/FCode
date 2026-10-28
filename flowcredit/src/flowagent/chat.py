@@ -513,10 +513,14 @@ CREATE TABLE IF NOT EXISTS chat_thread_meta (
                     "provider": str(detail.get("provider") or ""),
                     "model": str(detail.get("model") or ""),
                     "error": dict(detail.get("error") or {}),
-                    "action": dict(detail.get("action") or {}),
                     "seq": seq,
                     "at": event["at"],
                 }
+                # Only a real proposal earns an action field: an empty projection
+                # ({}) is truthy in JavaScript and used to paint a blank card.
+                action = detail.get("action")
+                if isinstance(action, dict) and action:
+                    message["action"] = dict(action)
                 messages.append(message)
                 by_id[message["id"]] = message
             elif kind == "chat_run_started":

@@ -1,4 +1,12 @@
-/* FCode opening: Moonshot's visual signature, Kimi's calm task-first layout. */
+/* FCode opening — 开屏舞台视图层（第六加载，原样保留）
+   职责：#app.stage-mode 开屏舞台全套——打字机标题/轨道场景/光标、
+   #stage-dock 与 #stage-chips 槽位、reduce-motion 双层分支
+   （body.reduce-motion + @media prefers-reduced-motion）。
+   加载顺序（index.html <head>）：app.css → desktop.css → design.css →
+   chat.css → kimi.css → 本文件 → workspace.css。
+   本文件 :root 里的 --moonshot-mono/--moonshot-black 是舞台专属特征变量
+   （非全局令牌，不参与 app.css 的黑白灰令牌体系）。所有取值消费 app.css
+   令牌——本文件不改写任何全局令牌。 */
 :root {
   --moonshot-black: #0a0a0a;
   --moonshot-mono: ui-monospace, "SFMono-Regular", Menlo, Monaco, Consolas, monospace;

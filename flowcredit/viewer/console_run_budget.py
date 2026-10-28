@@ -1,5 +1,7 @@
 """Budget projection shared by run execution and human review."""
 
+from __future__ import annotations
+
 
 def budget_summary(trace: dict) -> dict | None:
     for round_ in reversed(trace.get("rounds") or []):

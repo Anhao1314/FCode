@@ -324,6 +324,10 @@ export function createReviewUI(deps) {
     return `HTTP ${status}`;
   }
 
+  function waitForReviewTraceRefresh(runId) {
+    return reviewTraceRefreshes.get(runId) || null;
+  }
+
   function refreshReviewedTrace(runId) {
     if (!runId) return Promise.resolve(null);
     const promise = fetch(runTraceUrl(runId), { cache: "no-store" })
@@ -406,5 +410,6 @@ export function createReviewUI(deps) {
   return {
     reviewRunId, loadReviewProfile, reviewPanelHtml, chooseReviewDecision,
     startAppendReview, applyReviewSuggestion, syncReviewDraft, submitReview,
+    waitForReviewTraceRefresh,
   };
 }

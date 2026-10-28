@@ -29,12 +29,37 @@ function approvalLabel(mode) {
   return APPROVAL_LABELS[mode] || APPROVAL_LABELS.consequential;
 }
 
+const ACTION_MODES = new Set(RUN_MODES.map(([key]) => key));
+
+/* A message carries a proposal only when the action is a real, non-empty
+ * object with the goal the server's parser would have required. An empty `{}`
+ * — what the replay used to project onto every assistant message — is not a
+ * proposal, and `!action` alone cannot tell the two apart (in JS `{}` is
+ * truthy). Being strict here is what keeps blank cards out of the thread. */
+export function isExecutionProposal(action) {
+  if (!action || typeof action !== "object" || Array.isArray(action)) return false;
+  const goal = action.goal;
+  if (typeof goal !== "string" || !goal.trim()) return false;
+  if (action.mode !== undefined && action.mode !== null && !ACTION_MODES.has(String(action.mode))) return false;
+  return true;
+}
+
+/* A run-anchored message stays a run mirror even when its proposal is gone
+ * from the projection: the anchor, not the action, is what the mirror needs. */
+export function messageHasProposal(message) {
+  return isExecutionProposal((message || {}).action);
+}
+
 function sourcesText(sources) {
   return (sources || []).filter(item => typeof item === "string" && item.trim()).join("\n");
 }
 
 /* ------------------------------------------------------------- the proposal */
 
+/** The in-thread proposal: one compact "next step" line, with the editable
+ *  goal/mode/sources behind a disclosure. Everything the confirmation
+ *  endpoint needs is still a real control in the DOM; the card no longer
+ *  interrupts the conversation with a full-width form. */
 export function actionCardHtml(message, card = {}) {
   const id = esc(message.id);
   const action = message.action || {};
@@ -48,41 +73,44 @@ export function actionCardHtml(message, card = {}) {
     ? `<div class="run-card-reason">模型理由：${esc(action.reason)}</div>`
     : "";
   const carried = Number((message.context || {}).messages || 0);
-  return `<div class="run-card proposal" data-card="${id}" data-run-card="${id}">
-    <div class="run-card-head">
-      <span class="run-card-title">执行提案</span>
+  const modeTitle = (RUN_MODES.find(([key]) => key === mode) || RUN_MODES[0])[1];
+  return `<div class="run-card proposal compact" data-card="${id}" data-run-card="${id}">
+    <div class="run-card-next">
+      <span class="run-card-next-mark">下一步</span>
+      <span class="run-card-next-goal">${esc(goal)}</span>
+      <span class="run-card-next-mode">${esc(modeTitle)}</span>
       <span class="grow"></span>
-      <span class="run-card-hint">确认后才会创建运行</span>
-    </div>
-    <label class="run-card-field">
-      <span class="run-card-key">目标</span>
-      <textarea class="run-card-input" rows="2" data-run-goal
-        placeholder="这次运行要达成什么"${disabled}>${esc(goal)}</textarea>
-    </label>
-    <div class="run-card-field">
-      <span class="run-card-key">方式</span>
-      <div class="run-card-modes" role="group" aria-label="执行方式">
-        ${RUN_MODES.map(([key, title, desc]) => `<button type="button"
-          class="run-card-mode${key === mode ? " active" : ""}" aria-pressed="${key === mode}"
-          data-run-mode="${esc(key)}" title="${esc(desc)}"${disabled}>${esc(title)}</button>`).join("")}
-      </div>
-    </div>
-    ${mode === "research" ? `<label class="run-card-field">
-      <span class="run-card-key">来源</span>
-      <textarea class="run-card-input" rows="3" data-run-sources
-        placeholder="每行一个 http(s) URL，最多 5 个"${disabled}>${esc(sources)}</textarea>
-    </label>` : ""}
-    ${reason}
-    <div class="run-card-facts">
-      <span class="k">审批</span><span class="v">${esc(approvalLabel(card.approval))}</span>
-      <span class="k">工作区</span><span class="v">本次运行独立目录</span>
-      ${carried ? `<span class="k">上下文</span><span class="v">携带本对话 ${num(carried)} 条</span>` : ""}
-    </div>
-    ${error}
-    <div class="run-card-actions">
-      <button type="button" class="a-btn ghost" data-run-cancel="${id}"${disabled}>取消</button>
+      <button type="button" class="a-btn ghost" data-run-cancel="${id}"${disabled}>忽略</button>
       <button type="button" class="a-btn primary" data-run-start="${id}"${disabled}>${busy ? "正在创建运行…" : "开始执行"}</button>
     </div>
+    ${error}
+    <details class="run-card-more">
+      <summary>调整目标与方式 · 确认后才会创建运行</summary>
+      <label class="run-card-field">
+        <span class="run-card-key">目标</span>
+        <textarea class="run-card-input" rows="2" data-run-goal
+          placeholder="这次运行要达成什么"${disabled}>${esc(goal)}</textarea>
+      </label>
+      <div class="run-card-field">
+        <span class="run-card-key">方式</span>
+        <div class="run-card-modes" role="group" aria-label="执行方式">
+          ${RUN_MODES.map(([key, title, desc]) => `<button type="button"
+            class="run-card-mode${key === mode ? " active" : ""}" aria-pressed="${key === mode}"
+            data-run-mode="${esc(key)}" title="${esc(desc)}"${disabled}>${esc(title)}</button>`).join("")}
+        </div>
+      </div>
+      ${mode === "research" ? `<label class="run-card-field">
+        <span class="run-card-key">来源</span>
+        <textarea class="run-card-input" rows="3" data-run-sources
+          placeholder="每行一个 http(s) URL，最多 5 个"${disabled}>${esc(sources)}</textarea>
+      </label>` : ""}
+      ${reason}
+      <div class="run-card-facts">
+        <span class="k">审批</span><span class="v">${esc(approvalLabel(card.approval))}</span>
+        <span class="k">工作区</span><span class="v">本次运行独立目录</span>
+        ${carried ? `<span class="k">上下文</span><span class="v">携带本对话 ${num(carried)} 条</span>` : ""}
+      </div>
+    </details>
   </div>`;
 }
 
@@ -203,7 +231,7 @@ export function runMirrorHtml(message, mirror = {}, anchors = {}) {
         <span class="grow"></span>
         <span class="verdict">${esc(row.verdict)}</span>
       </div>`).join("")}</div>`
-    : `<div class="run-card-rows waiting"><span class="run-card-hint">等待 Runtime 的第一个轮次…</span></div>`;
+    : `<div class="run-card-rows waiting"><span class="run-card-hint">${mirror.finished ? "这次运行没有留下可读的轮次" : "等待 Runtime 的第一个轮次…"}</span></div>`;
   const artifacts = (mirror.artifacts || []).length
     ? `<div class="run-card-artifacts">${mirror.artifacts.map(item =>
         `<div class="run-card-artifact"><span class="path">${esc(item.path || "")}</span>

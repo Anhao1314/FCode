@@ -193,6 +193,10 @@ class WorkspaceSandbox:
         if target.exists():
             before = _sha256(target.read_bytes())
         after = _sha256(content.encode("utf-8"))
+        # Preserve the same bounded, host-computed diff shown at approval time
+        # in the executed observation. The review thread can then render the
+        # actual before/after change rather than inferring one from metadata.
+        preview = self.diff_preview(relative, content)
         target.parent.mkdir(parents=True, exist_ok=True)
         # A predictable PID-only name let a pre-planted symlink redirect the
         # write before replace(). mkstemp creates a random file with O_EXCL in
@@ -225,6 +229,8 @@ class WorkspaceSandbox:
             "sha256_after": after,
             "commit": commit,
             "changed": changed,
+            "diff": preview["diff"],
+            "truncated": preview["truncated"],
         }
 
     # ------------------------------------------------------------------- edit

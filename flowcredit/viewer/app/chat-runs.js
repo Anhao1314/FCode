@@ -1,10 +1,13 @@
 "use strict";
 
+import { isExecutionProposal } from "../core/run-card.js";
+
 /* 对话内委托卡与运行镜像。对话消息仍由 app.js 管理，这里只处理提案到运行的边界。 */
 export function createChatRuns(deps) {
   const {
     esc, actionCardHtml, runMirrorHtml, mirrorFrom, stripTags, describe, chat, modelChoice,
     getApprovalMode, getRunHistory, renderChat, loadChatThreads, toast, applyDelta, setUiMode, openLive,
+    modelSupportsEffort,
   } = deps;
   const TERMINAL_STATUS = ["succeeded", "failed", "stopped"];
   const rowDescription = observation => stripTags((describe(observation) || [])[0] || "");
@@ -13,9 +16,11 @@ export function createChatRuns(deps) {
     : String(value).replace(/["\\]/g, "\\$&"));
 
   function chatCardHtml(message) {
-    if (!message.action) return "";
-    const state = chat.cards.get(message.id) || {};
+    // The run mirror is anchored by the server's chat_run_started projection,
+    // not by the proposal: keep it even when the action is absent.
     if (message.run) return runMirrorHtml(message, mirrorView(message), { run: message.run });
+    if (!isExecutionProposal(message.action)) return "";
+    const state = chat.cards.get(message.id) || {};
     if (state.dismissed) {
       return `<div class="run-card dismissed" data-card="${esc(message.id)}" data-run-card="${esc(message.id)}">
         <span class="run-card-hint">已忽略这个提案</span>
@@ -71,7 +76,7 @@ export function createChatRuns(deps) {
 
   async function startCardRun(messageId) {
     const message = chatMessageById(messageId);
-    if (!message || !message.action || message.run) return;
+    if (!message || !isExecutionProposal(message.action) || message.run) return;
     readCardDraft(messageId);
     const state = cardState(messageId);
     if (state.busy) return;
@@ -93,6 +98,12 @@ export function createChatRuns(deps) {
     state.busy = true;
     state.error = "";
     paintCard(messageId);
+    // The work-model preference is not the chat model: an effort level must not
+    // ride along for models that do not support it (the mock refuses "medium").
+    const chosenModel = modelChoice.key || "mock";
+    const effort = chosenModel === "mock"
+      ? ""
+      : (modelSupportsEffort ? (modelSupportsEffort(chosenModel) ? (modelChoice.effort || "") : "") : "");
     try {
       const response = await fetch(`/api/chat/threads/${encodeURIComponent(chat.current.id)}/confirm`, {
         method: "POST",
@@ -100,8 +111,8 @@ export function createChatRuns(deps) {
         body: JSON.stringify({
           messageId, goal, mode, sources,
           approval: getApprovalMode(),
-          model: modelChoice.key || "mock",
-          effort: modelChoice.effort || "",
+          model: chosenModel,
+          effort,
         }),
       });
       const payload = await response.json().catch(() => ({}));
@@ -153,24 +164,38 @@ export function createChatRuns(deps) {
     const anchored = (thread.messages || []).filter(message => message.run && message.run.id);
     await Promise.all(anchored.map(async message => {
       if (chat.mirrors.has(message.id)) return;
-      let run = null;
-      try {
-        const response = await fetch(`/api/runs/${encodeURIComponent(message.run.id)}`, { cache: "no-store" });
-        if (response.ok) run = await response.json();
-      } catch { /* 卡片保留锚点中的最少事实 */ }
+      const runId = message.run.id;
+      const [record, trace] = await Promise.all([
+        fetch(`/api/runs/${encodeURIComponent(runId)}`, { cache: "no-store" })
+          .then(response => response.ok ? response.json() : null).catch(() => null),
+        // The trace is what the mirror actually shows (rounds + terminal);
+        // the history record alone would leave it saying "waiting" forever.
+        fetch(`/api/runs/${encodeURIComponent(runId)}/trace`, { cache: "no-store" })
+          .then(response => response.ok ? response.json() : null).catch(() => null),
+      ]);
       if (chat.current !== thread) return;
-      seedMirror(message.id, run || { id: message.run.id });
+      const merged = Object.assign({ id: runId }, record || {}, trace && trace.terminal ? trace : {});
+      if (trace && Array.isArray(trace.rounds) && trace.rounds.length) {
+        merged.rounds = trace.rounds;
+        merged.events = trace.events || merged.events;
+        merged.terminal = trace.terminal || merged.terminal;
+      }
+      seedMirror(message.id, merged);
     }));
   }
 
   function seedMirror(messageId, run) {
     const entry = chat.mirrors.get(messageId) || { runId: run.id, trace: null, live: {}, es: null };
+    const terminal = run.terminal || {};
+    const status = run.status || terminal.status || "";
     entry.runId = run.id;
+    // A fetched trace is the mirror's own fact set; keep it for rendering.
+    if (!entry.trace && Array.isArray(run.rounds)) entry.trace = run;
     entry.live = Object.assign({}, entry.live, {
-      status: run.status || entry.live.status || "",
-      error: run.error || entry.live.error || "",
+      status: status || entry.live.status || "",
+      error: run.error || (terminal.failure || {}).message || entry.live.error || "",
       cost: run.cost || entry.live.cost || null,
-      finished: TERMINAL_STATUS.includes(run.status) || entry.live.finished,
+      finished: TERMINAL_STATUS.includes(status) || entry.live.finished,
     });
     chat.mirrors.set(messageId, entry);
     attachMirror(messageId, entry);

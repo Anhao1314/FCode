@@ -161,24 +161,33 @@ export function runRowsHtml(runs, options) {
 export function chatRowsHtml(threads, options) {
   const opts = options || {};
   const list = threads || [];
+  // 剩余数由调用方按服务端事实给出（total - 已加载服务端行数）；
+  // 没有该字段时才退回旧的 DOM 行数算法，兼容独立使用模板的调用方。
+  const hasRemaining = opts.remaining !== undefined
+    && opts.remaining !== null
+    && Number.isFinite(Number(opts.remaining));
+  const rest = hasRemaining
+    ? Math.max(0, Math.trunc(Number(opts.remaining)))
+    : Math.max(0, (opts.total || 0) - list.length);
+  const more = rest
+    ? '<button class="side-more" type="button" data-chat-more>显示全部 · 还有 ' + rest + " 条</button>"
+    : "";
   if (!list.length) {
-    return '<div class="section-empty">还没有对话——在上面输入框里说第一句</div>';
+    return '<div class="section-empty">还没有对话——在上面输入框里说第一句</div>' + more;
   }
   const pinnedOf = opts.pinnedOf || function () { return false; };
   const items = list.map(function (thread) {
     const active = opts.activeId && opts.activeId === thread.id ? " active" : "";
-    // 行内动作与 Kimi 的 history-item 一致：置顶 + 删除（悬停才显现）
+    // 行内动作与 Kimi 的 history-item 一致：置顶 + 删除（悬停才显现）。
+    // 可及名称不能依赖字形（☆/×），role=button 配 aria-label。
     const pin = '<span class="chat-pin" data-chat-pin="' + esc(thread.id) + '" role="button" title="'
+      + (pinnedOf(thread.id) ? "取消置顶" : "置顶") + '" aria-label="'
       + (pinnedOf(thread.id) ? "取消置顶" : "置顶") + '">' + (pinnedOf(thread.id) ? "★" : "☆") + "</span>";
     const del = opts.deletable === false ? ""
-      : '<span class="chat-del" data-chat-delete="' + esc(thread.id) + '" role="button" title="从列表移除（事件链保留）">×</span>';
+      : '<span class="chat-del" data-chat-delete="' + esc(thread.id) + '" role="button" title="从列表移除（事件链保留）" aria-label="从列表移除">×</span>';
     return '<button class="session chat-row' + active + '" data-chat-id="' + esc(thread.id) + '" title="' + esc(thread.title) + '">'
       + '<span class="slabel">' + esc(thread.title) + "</span>" + pin + del + "</button>";
   }).join("");
-  const rest = Math.max(0, (opts.total || 0) - list.length);
-  const more = rest
-    ? '<button class="side-more" type="button" data-chat-more>显示全部 · 还有 ' + rest + " 条</button>"
-    : "";
   return items + more;
 }
 

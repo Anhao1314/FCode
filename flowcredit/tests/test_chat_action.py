@@ -267,7 +267,10 @@ class ChatActionAnchorTests(unittest.TestCase):
             events = list(service.send(thread_id=None, text="随便聊聊", model="mock"))
             thread_id = events[0]["thread_id"]
             message = service.get_thread(thread_id)["messages"][-1]
-            self.assertEqual(message["action"], {})
+            # The old projection emitted {"action": {}} here; an empty object is
+            # truthy in the viewer and painted a blank proposal card. The field
+            # is now absent, and anchoring still fails closed.
+            self.assertNotIn("action", message)
             with self.assertRaises(AgentError) as caught:
                 service.link_run(thread_id, message["id"], "run-20260101-000000-abcd")
             self.assertEqual(caught.exception.code, "CHAT_ACTION_MISSING")

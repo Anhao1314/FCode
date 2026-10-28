@@ -1,10 +1,11 @@
 "use strict";
 
-/* 运行证据的纯展示层：事件、链、工具契约、轮次、计划与预算。
-   可变筛选状态通过 getter 读取，DOM data-* 与 trace 结构保持不变。 */
+/* 运行证据的纯展示层：事件、链、工具契约、工具结果与预算。
+   轮次/计划的主界面已迁到 app/task-thread.js；这里保留的渲染器
+   仍被统一线程（工具详情、预算明细）与证据面板复用。 */
 export function createRunEvidence(deps) {
   const {
-    esc, pct, pp, num, shortHash, stripTags, doodleSvg, isQuietRound, describe, lastBudget,
+    esc, pct, pp, num, shortHash, doodleSvg, lastBudget,
     EVENT_DOT, HUMAN_EVENTS, REVIEW_LABEL, ICON, FAILURE_REASONS, evExpanded,
     getRailFilter, getRailTab, getToolContracts,
   } = deps;
@@ -20,27 +21,6 @@ export function createRunEvidence(deps) {
     search_cases: "search", read_case: "file-text", query_facts: "database",
     ls_workspace: "layout-grid", read_file: "book-open", write_file: "report",
     edit_file: "tool", run_command: "gate", fetch_url: "link",
-  };
-  const TOOL_ICON = {
-    list_documents: ICON.folder, read_document: ICON.file,
-    normalize_units: '<svg class="i" viewBox="0 0 24 24"><path d="M4 8h12M4 8l3-3M4 8l3 3"/><path d="M20 16H8M20 16l-3-3M20 16l-3 3"/></svg>',
-    reconcile_basis: ICON.branch,
-    check_restatement: '<svg class="i" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.6"/><path d="M20 4v4h-4"/></svg>',
-    calculate_margin: '<svg class="i" viewBox="0 0 24 24"><path d="M19 5 5 19"/><circle cx="7.5" cy="7.5" r="2.5"/><circle cx="16.5" cy="16.5" r="2.5"/></svg>',
-    report_blocked: ICON.alert, ls_workspace: ICON.folder, read_file: ICON.file,
-    write_file: '<svg class="i" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/><path d="M9 13h6M9 16h4"/></svg>',
-    edit_file: '<svg class="i" viewBox="0 0 24 24"><path d="m4 20 4.5-1 10-10-3.5-3.5-10 10z"/><path d="M13.5 7 16 9.5"/></svg>',
-    run_command: ICON.term,
-    fetch_url: '<svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.4 2.3 3.6 5.1 3.6 8.5S14.4 18.2 12 20.5c-2.4-2.3-3.6-5.1-3.6-8.5S9.6 5.8 12 3.5z"/></svg>',
-  };
-  const TOOL_DOODLE = {
-    list_documents: `<svg class="i doodle-tool" viewBox="0 0 24 24" aria-hidden="true"><circle cx="7" cy="6.6" r="2.5"/><path d="M7 9.1v6.6M5 15.7h4"/><path class="dm-rock" d="M13.2 8.2h5.6v9.4h-5.6z"/><path class="dm-rock2" d="M14.6 6.4h5.6v9.4h-5.6z"/></svg>`,
-    read_document: `<svg class="i doodle-tool" viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="6.8" r="2.6"/><path d="M8 9.4v6.4M6 15.8h4"/><path class="dm-rock" d="M12.4 9.6l5.2-.8 1.2 7.6-5.2.8z"/></svg>`,
-    normalize_units: `<svg class="i doodle-tool" viewBox="0 0 24 24" aria-hidden="true"><circle cx="7" cy="7" r="2.6"/><path d="M7 9.6v6M5 15.6h4"/><path d="M13 7.4h6v4.6h-6z"/><path class="dm-flip" d="M14.2 14.2h6v4.6h-6z"/></svg>`,
-    reconcile_basis: `<svg class="i doodle-tool" viewBox="0 0 24 24" aria-hidden="true"><circle cx="6.4" cy="6.6" r="2.4"/><path d="M6.4 9v6.8M4.4 15.8h4"/><path d="M10.6 16h3M15.4 16h3"/><path class="dm-rock" d="M10.8 12.2h8.4"/></svg>`,
-    check_restatement: `<svg class="i doodle-tool" viewBox="0 0 24 24" aria-hidden="true"><circle cx="7.4" cy="6.4" r="2.4"/><path d="M7.4 8.8v6.4M5.4 15.2h4"/><path d="M11.6 9.2h6.4v8.2h-6.4z"/><g class="dm-scan"><circle cx="16.4" cy="11.6" r="2.2"/><path d="M18 13.2l1.6 2"/></g></svg>`,
-    calculate_margin: `<svg class="i doodle-tool" viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="6.6" r="2.5"/><path d="M8 9.1v6.5M6 15.6h4"/><path d="M12 10.4h6v6.4h-6z"/><path class="dm-crank" d="M18 12.4l2-1.3"/></svg>`,
-    report_blocked: `<svg class="i doodle-tool" viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="6.6" r="2.5"/><path d="M8 9.1v6.5M6 15.6h4"/><g class="dm-wave"><path d="M14 15.4V8"/><path d="M14 8h5v3.6h-5z"/></g></svg>`,
   };
 
   function setTabCount(name, value) {
@@ -207,20 +187,6 @@ export function createRunEvidence(deps) {
     if (e.type === "task_resumed") return `by ${esc(d.by || "operator")}${d.limits ? " · calls " + esc(d.limits.max_calls) : ""}`;
     if (e.type === "operator_message") return `第 ${esc(d.round)} 轮前 · ${esc(d.text || "")}`;
     return esc(JSON.stringify(d).slice(0, 120));
-  }
-
-  function renderPlan(plan, opts = {}) {
-    if (!plan || !plan.todos || !plan.todos.length) return "";
-    const done = plan.todos.filter(t => t.status === "done").length;
-    const glyph = { done: "✓", blocked: "✕", abandoned: "–", active: "◐", pending: "○" };
-    const editable = !!opts.editable;
-    const editing = editable && !!opts.editing;
-    return `<div class="card plan${editing ? " editing" : ""}"><div class="card-head"><span class="card-title">${doodleSvg("clipboard-list", opts.editable ? "draw" : false)} Plan</span><span class="grow"></span><span class="card-meta">revision ${esc(plan.revision)} · <span style="color:var(--green)">${done}/${plan.todos.length}</span> 已完成</span>${editable ? `<button class="p-edit${editing ? " active" : ""}" data-plan-edit>${editing ? "完成" : "调整"}</button>` : ""}</div><div class="card-rows">${plan.todos.map(t => `<div class="row ${esc(t.status)}"><span class="r-icon">${glyph[t.status] || "○"}</span><span class="r-text">${esc(t.text)}</span><span class="r-meta">${esc(t.tool)}</span>${editing && (t.status === "pending" || t.status === "active") ? planActions(t, opts.confirmId) : ""}</div>`).join("")}</div>${opts.queued ? `<div class="plan-foot">${esc(opts.queued)}</div>` : ""}</div>`;
-  }
-
-  function planActions(todo, confirmId) {
-    if (confirmId === todo.id) return `<span class="r-act confirm"><span class="q">跳过？</span><button data-plan-action="skip-confirm" data-todo="${esc(todo.id)}">是</button><button data-plan-action="cancel">否</button></span>`;
-    return `<span class="r-act"><button data-plan-action="promote" data-todo="${esc(todo.id)}" title="提前：下一轮先做这一步">↑</button><button data-plan-action="skip" data-todo="${esc(todo.id)}" title="跳过：不再执行（不可撤销）">–</button></span>`;
   }
 
   function tokenSplit(trace) {
@@ -410,76 +376,6 @@ export function createRunEvidence(deps) {
     return `<div class="t-detail block-removed"><div class="removed-line">该调用未产生可采信证据 · 结果弱化呈现</div>${reason ? `<div class="removed-why">${esc(String(reason))}</div>` : ""}</div>`;
   }
 
-  function planTodoBlock(round, prevRound) {
-    const plan = round.plan;
-    if (!plan || !prevRound) return "";
-    const before = prevRound.plan_after || prevRound.plan;
-    if (!before || Number(plan.revision || 1) <= Number(before.revision || 1)) return "";
-    const beforeMap = new Map((before.todos || []).map(t => [t.id, t]));
-    const glyph = { done: "✓", blocked: "✕", abandoned: "–", active: "◐", pending: "○" };
-    const rows = (plan.todos || []).map(t => {
-      const prev = beforeMap.get(t.id);
-      const changed = !prev || prev.status !== t.status || prev.text !== t.text;
-      return `<div class="todo-row ${esc(t.status)}${changed ? " changed" : ""}"><span class="todo-glyph">${glyph[t.status] || "○"}</span><span class="todo-text">${esc(t.text || t.id)}${t.reason ? ` · ${esc(t.reason)}` : ""}</span>${changed ? `<span class="todo-tag">${esc(prev ? "本轮修订" : "本轮新增")}</span>` : ""}</div>`;
-    }).join("");
-    return `<div class="block-todo"><div class="todo-head">计划变更 · rev ${esc(String(before.revision))} → ${esc(String(plan.revision))}</div>${rows}</div>`;
-  }
-
-  function outcomeText(round, ann) {
-    if (ann && ann.unknown) return "等待显式对账（未知结果不自动重发）";
-    const decision = round.decision || {};
-    if (decision.allowed === false) return (decision.code || "DENIED") + (decision.reason ? " · " + decision.reason : "");
-    if (!round.observation) {
-      const hasStep = round.proposal && round.proposal.steps && round.proposal.steps.length;
-      return hasStep ? "等待工具结果…" : `已进入第 ${round.index} 轮，等待提议…`;
-    }
-    return describe(round.observation).map(stripTags).join(" · ");
-  }
-
-  function turnBudgetDelta(round) {
-    const before = round.budget_before || {}, after = round.budget_after || {};
-    const delta = key => Number(after[key] ?? 0) - Number(before[key] ?? 0);
-    const parts = [];
-    const calls = delta("calls_used"), reads = delta("reads_used"), cost = delta("cost_used_microusd");
-    if (calls) parts.push(`calls +${calls}`);
-    if (reads) parts.push(`reads +${reads}`);
-    if (cost) parts.push(`${num(cost)} µUSD`);
-    return parts.join(" · ");
-  }
-
-  function renderRound(round, index, ann = {}, prevRound = null) {
-    const empty = !round.proposal && !round.decision && !round.observation && !round.receipt;
-    if (empty && ann.terminal) return `<article class="round turn terminal" data-quiet="0" data-open="false"><button class="turn-summary" type="button" data-toggle><span class="t-ic">${ICON.term}</span><span class="turn-no">第 ${round.index} 轮</span><span class="turn-tool dim">未完成的轮次</span><span class="turn-state pending"><i class="ev-dot info"></i>TERMINATED</span><span class="turn-budget"></span><span class="chev">▾</span></button><div class="turn-body"><div class="proposal-card muted"><div class="proposal-args">任务在此终结（${esc(ann.terminal)}）——没有提议落进签名链</div></div></div></article>`;
-    if (empty && !ann.unknown) return `<article class="round turn live" data-quiet="0" data-open="true"><button class="turn-summary" type="button" data-toggle><span class="t-ic">${ICON.term}</span><span class="turn-no">第 ${round.index} 轮</span><span class="turn-tool dim">等待提议…</span><span class="turn-state pending"><i class="ev-dot info"></i>运行中</span><span class="turn-budget"></span><span class="chev">▾</span></button><div class="turn-body"><div class="gate-line pending"><span class="ev-dot info"></span><span>等待模型返回</span></div></div></article>`;
-    if (empty) {
-      const cause = ann.unknown || "UNKNOWN";
-      return `<article class="round turn unknown" data-quiet="0" data-open="true"><button class="turn-summary" type="button" data-toggle><span class="t-ic">${ICON.term}</span><span class="turn-no">第 ${round.index} 轮</span><span class="turn-tool dim">模型调用</span><span class="turn-state warn"><i class="ev-dot warn"></i>${esc(cause)}</span><span class="turn-budget"></span><span class="chev">▾</span></button><div class="turn-body"><div class="proposal-card muted"><div class="proposal-args">未知不等于失败；不自动重发、不退费、不换供应商。</div></div><div class="gate-line pending"><span class="ev-dot warn"></span><span>等待匹配的签名收据显式对账</span></div></div></article>`;
-    }
-    const obs = round.observation || {}, decision = round.decision || {};
-    const denied = decision.allowed === false;
-    const step = (round.proposal && round.proposal.steps && round.proposal.steps[0]) || null;
-    const tool = obs.tool || decision.tool || (step && step.tool) || "—";
-    const argsObj = obs.arguments || (step && step.arguments) || {};
-    const args = Object.keys(argsObj).length ? Object.entries(argsObj).map(([k, v]) => `${esc(k)}=${esc(v)}`).join("  ") : "";
-    const icon = (!round.observation && !denied && TOOL_DOODLE[tool]) ? TOOL_DOODLE[tool] : (TOOL_ICON[tool] || ICON.term);
-    const gateClass = denied ? "denied" : round.observation ? "pass" : "pending";
-    const sealSvg = (name, anim) => {
-      const set = window.SEAL_ICONS && window.SEAL_ICONS.state;
-      const svg = set && set[name];
-      return svg ? svg.replace('class="s-icon"', `class="s-icon${anim ? " " + anim : ""}"`) : "";
-    };
-    const gateText = denied ? `主机门控 DENIED · ${decision.code || ""}${decision.reason ? " · " + decision.reason : ""}` : !round.observation ? "主机门控 · 等待执行" : `主机门控 PASS · ${decision.reason || "schema, scope and grant all agree"}`;
-    const hash = obs.result_hash || "";
-    const raw = { proposal: round.proposal, decision: round.decision, receipt: round.receipt, observation: round.observation };
-    const receiptMeta = [round.receipt && round.receipt.tokens !== undefined ? `tokens ${num(round.receipt.tokens)}` : "", round.receipt && round.receipt.cost_microusd !== undefined ? `${num(round.receipt.cost_microusd)} µUSD` : "", round.receipt && round.receipt.latency_ms !== undefined ? `${round.receipt.latency_ms} ms` : "", ann.reconciled ? `receipt ${esc(shortHash(ann.reconciled))}…` : ""].filter(Boolean).join(" · ");
-    const blockKind = resultBlockKind(round);
-    const removedBlock = denied ? `<div class="block-removed standalone"><div class="removed-line">提议被主机拒绝 · 未执行 · 不产生证据</div><div class="removed-why">${esc(decision.code || "DENIED")}${decision.reason ? " · " + esc(decision.reason) : ""}</div></div>` : "";
-    const gateShort = denied ? "DENIED" : round.observation ? "PASS" : "等待";
-    const dotClass = denied ? "bad" : round.observation ? "ok" : "info";
-    const quiet = isQuietRound(round, ann) ? "1" : "0";
-    return `<article class="round turn${!round.observation && !denied ? " live" : ""}" data-open="${denied ? "true" : "false"}" data-quiet="${quiet}"><button class="turn-summary" type="button" data-toggle><span class="t-ic">${icon}</span><span class="turn-no">第 ${round.index} 轮</span><span class="turn-tool">${esc(tool)}</span><span class="turn-state ${gateClass}"><i class="ev-dot ${dotClass}"></i>${gateShort}</span><span class="group-size" hidden></span><span class="chev">▾</span></button><div class="turn-body"><div class="turn-meta">${esc(turnBudgetDelta(round))}</div>${args ? `<div class="turn-args"><code>${args}</code></div>` : ""}<div class="gate-line ${gateClass}"><span class="ev-dot ${dotClass}"></span><span class="gate-ico">${sealSvg(denied ? "gate-denied" : "gate-stamp", "stamp-in")}</span><span>${esc(gateText)}</span></div>${round.observation ? `<div class="tool-result" data-block="${esc(blockKind)}"><div class="tool-result-head"><span class="tool-result-title">执行结果 · ${esc(tool)}</span><span class="tool-result-summary">${esc(outcomeText(round, ann)).slice(0, 160)}</span></div><div class="tool-result-body">${renderToolDetail(obs, blockKind)}<details class="raw"><summary>完整返回与收据</summary><pre>${esc(JSON.stringify(raw, null, 2))}</pre></details></div></div>` : removedBlock}${planTodoBlock(round, prevRound)}<footer class="turn-receipt"><code>${hash ? esc(hash) : "result hash pending"}</code><span class="receipt-meta">${esc(receiptMeta)}</span>${hash ? `<button class="copy-mini" type="button" data-copy="${esc(hash)}">复制</button>` : ""}</footer></div></article>`;
-  }
-
   function resultConclusion(result) {
     if (!result || result.change_bp === undefined) return "";
     if (result.comparable === false) return "两期数据口径不可比，不能给出变化结论。";
@@ -494,5 +390,8 @@ export function createRunEvidence(deps) {
     return `未能给出结论：${reason}。`;
   }
 
-  return { renderRail, renderPlan, renderMeters, tokenSplitHtml, renderRound, resultConclusion, failureConclusion };
+  return {
+    renderRail, renderMeters, tokenSplitHtml, renderToolDetail, resultBlockKind,
+    resultConclusion, failureConclusion,
+  };
 }

@@ -22,6 +22,13 @@ export function bindWorkspaceNavigation({ openPalette, setMobileNavigation }) {
   document.querySelector(".sidebar-scrim")?.addEventListener("click", () => setMobileNavigation(false));
 }
 
+/* Run and trace links open Work content, so the sidebar must not retain the
+ * persisted Chat mode while the main pane shows a run. */
+export function modeForDeepLink(search) {
+  const params = new URLSearchParams(String(search || ""));
+  return params.get("run") || params.get("trace") ? "work" : null;
+}
+
 export function bindLatestScroll() {
   const scroller = document.querySelector(".main");
   const button = document.getElementById("scroll-latest");

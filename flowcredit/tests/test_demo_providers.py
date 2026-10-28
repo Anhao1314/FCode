@@ -215,6 +215,31 @@ class TraceMetadataSurfaceTests(unittest.TestCase):
         self.assertNotIn("raw_content", metadata)
 
 
+class MockAuthoringTests(unittest.TestCase):
+    def test_open_markdown_deliverable_contains_authored_content(self) -> None:
+        proposal = MockProvider().propose({
+            "round": 1,
+            "plan": [{
+                "id": "out", "tool": "write_file", "status": "pending",
+                "arguments": {"path": "FCODE_RESULT.md"},
+            }],
+        })
+        step = proposal.plan["steps"][0]
+        self.assertEqual(step["tool"], "write_file")
+        self.assertIn("FCODE_RESULT.md", step["arguments"]["content"])
+        self.assertIn("Offline mock delivery", step["arguments"]["content"])
+
+    def test_existing_authored_content_is_never_replaced(self) -> None:
+        proposal = MockProvider().propose({
+            "round": 1,
+            "plan": [{
+                "id": "out", "tool": "write_file", "status": "pending",
+                "arguments": {"path": "FCODE_RESULT.md", "content": "operator task"},
+            }],
+        })
+        self.assertEqual(proposal.plan["steps"][0]["arguments"]["content"], "operator task")
+
+
 class BatchCostGuardTests(unittest.TestCase):
     def test_total_cost_guard_stops_after_completed_task(self) -> None:
         output = io.StringIO()
