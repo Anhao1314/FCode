@@ -27,18 +27,14 @@ FCode 是一个围绕**责任链**构建的 Agent 工作空间。模型负责理
 FCode 把“完成”拆成可验证的过程：读取了什么证据，调用了哪个工具，为什么获得授权，消耗了多少预算，结果是否通过独立验证，崩溃后从哪里继续。
 
 ```text
-                         ┌──────────────────────────┐
-                         │      Operator control    │
-                         │ approve · revise · resume│
-                         └─────────────┬────────────┘
-                                       │
-Objective → Plan → Proposal → Gate → Approval → Tool
-                       ↑                            │
-                       │                            ↓
-                       └────── Context ← Verify ← Observation
+Model proposal → Schema → Tool registry → Permissions / Budget / Approval
+                                                              │
+                                                              ↓
+SQLite events ← Independent verifier ← Receipt ← Tool execution
+      │                                                        │
+      └──────────── Crash recovery / read-only replay ─────────┘
 
-             Budget guards every action.
-             A hash-chained event log remembers every decision.
+The model proposes. The host gates, executes and verifies.
 ```
 
 ### 模型不掌权
@@ -118,13 +114,14 @@ python demo.py all                      # 顺序运行全部场景并自检轨�
 python -m unittest discover -s tests -q
 node --test viewer/tests/*.test.js
 python demo.py all
+PYTHONPATH=src python -m flowagent.benchmark --output work/runtime-benchmark/latest
 ```
 
-当前回归基线：**642 项 Python 测试、71 项前端测试、8 个端到端场景**。
+当前完整回归：**661 项 Python 测试、166 项前端测试、8 个端到端场景、19 个版本化 Runtime 任务**。
+
+19 个任务复用正式治理链并保存逐任务证据。离线实测：独立 verifier `18/19`（唯一失败是预置的错误交付）、崩溃恢复 `3/3`、未知结果安全处理 `3/3`、回放等价 `18/18`、篡改检测 `1/1`，越权与重复副作用均为 `0`。这些数字验证 Runtime 行为，不代表真实模型任务成功率；本轮在线评测为 `NOT_RUN`。
 
 覆盖权限与参数门控、预算、状态机、并发 CAS、事件篡改、收据伪造、独立重算、人工审批、崩溃恢复、Provider 纪律与真实 HTTP 服务边界。CI 使用 Ubuntu／macOS × Python 3.11／3.13 矩阵。
-
-这些数字说明回归覆盖范围，不代表真实通用任务成功率。
 
 ## 诚实的边界
 
@@ -133,7 +130,7 @@ python demo.py all
 - Chat 附件以文本注入为主，不等于完整多模态理解管线。
 - Chat 回答有事件链与收据，不代表每个回答都经过领域 verifier 验证。
 - 网页内容会被保留为证据，但 Runtime 不因此证明网页内容真实。
-- 通用任务仍受模型能力、工具覆盖、上下文质量与任务可验证性的共同限制。
+- 恢复覆盖当前工作区、事件与收据对账，不能恢复任意外部副作用；通用任务仍受模型能力与可验证性限制。
 
 知道何时不能完成，和完成工作同样重要。
 
@@ -143,6 +140,9 @@ python demo.py all
 | --- | --- |
 | 项目入口与完整使用说明 | [Runtime README](flowcredit/README.md) |
 | 系统架构 | [architecture](flowcredit/docs/architecture.md) |
+| 任务基准、指标与证据 | [runtime-benchmark](flowcredit/docs/runtime-benchmark.md) |
+| 演示与录屏脚本 | [demo-script](flowcredit/docs/demo-script.md) |
+| 环境配置示例 | [environment](flowcredit/docs/environment.md) |
 | 产品与判断哲学 | [philosophy](flowcredit/docs/philosophy.md) |
 | 通用 Agent 能力 | [general-capabilities](flowcredit/docs/general-capabilities.md) |
 | 上下文与记忆 | [context-management](flowcredit/docs/context-management.md) |

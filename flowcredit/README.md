@@ -50,18 +50,14 @@ FCode 更关心另一组问题：它读了哪些证据，调用了什么工具�
 | **工具 / Tools** | 封闭注册表、参数校验、权限门控、预算控制、签名收据 | 受限命令不是操作系统级沙箱 |
 
 ```text
-                         ┌──────────────────────────┐
-                         │      Operator control    │
-                         │ approve · revise · resume│
-                         └─────────────┬────────────┘
-                                       │
-Objective → Plan → Proposal → Gate → Approval → Tool
-                       ↑                            │
-                       │                            ↓
-                       └────── Context ← Verify ← Observation
+Model proposal → Schema → Tool registry → Permissions / Budget / Approval
+                                                              │
+                                                              ↓
+SQLite events ← Independent verifier ← Receipt ← Tool execution
+      │                                                        │
+      └──────────── Crash recovery / read-only replay ─────────┘
 
-             Budget guards every action.
-             A hash-chained event log remembers every decision.
+The model proposes. The host gates, executes and verifies.
 ```
 
 Runtime 不只记录“做了什么”，还记录“为什么允许做”。独立 verifier 可以重算领域结果；验证不通过，运行就不能被伪装成成功。
@@ -142,13 +138,14 @@ python demo.py all           # 顺序运行全部场景并自检轨迹
 python -m unittest discover -s tests -q
 node --test viewer/tests/*.test.js
 python demo.py all
+PYTHONPATH=src python -m flowagent.benchmark --output work/runtime-benchmark/latest
 ```
 
-当前回归基线：**650 项 Python 测试、166 项前端测试、8 个端到端场景**。原生桌面验收另覆盖真实项目交付、连续审批、工具 diff／命令输出，以及实时与历史线程一致性。
+当前完整回归：**661 项 Python 测试、166 项前端测试、8 个端到端场景、19 个版本化 Runtime 任务**。原生桌面验收另覆盖真实项目交付、连续审批、工具 diff／命令输出，以及实时与历史线程一致性。
 
-测试覆盖权限与参数门控、三维预算、状态机、并发 CAS、事件篡改、收据伪造、独立重算、审批与计划控制、崩溃恢复、Provider 纪律，以及真实 HTTP 服务边界。
+任务基准的离线实测为：独立 verifier `18/19`（保留一个预置错误交付）、崩溃恢复 `3/3`、未知结果安全处理 `3/3`、回放等价 `18/18`、篡改检测 `1/1`，越权与重复副作用均为 `0`。正常链和 SIGKILL 证据见 [任务基准](docs/runtime-benchmark.md)；这不是实际模型成功率，本轮 `ONLINE_MODEL=NOT_RUN`。
 
-CI 使用 Ubuntu／macOS × Python 3.11／3.13 矩阵。测试数量说明回归覆盖范围，不代表真实通用任务成功率。
+测试覆盖权限与参数门控、预算、状态机、并发 CAS、事件篡改、收据伪造、独立重算、审批与计划控制、崩溃恢复、Provider 纪律，以及真实 HTTP 服务边界。CI 使用 Ubuntu／macOS × Python 3.11／3.13 矩阵。
 
 ## 诚实的边界
 
@@ -156,7 +153,7 @@ CI 使用 Ubuntu／macOS × Python 3.11／3.13 矩阵。测试数量说明回归
 - 本地工具与命令有应用层约束，但不构成操作系统级安全沙箱。
 - Chat 附件目前以文本注入为主，不等于完整多模态理解管线。
 - Chat 回答拥有事件链与收据，不代表每个回答都经过领域 verifier 验证。
-- 通用任务仍受模型能力、工具覆盖、上下文质量与任务可验证性的共同限制。
+- 恢复只覆盖当前工作区、事件与收据对账，不能恢复任意外部副作用；通用任务仍受模型能力与可验证性限制。
 
 这些边界不是附注，而是产品设计的一部分：知道何时不能完成，和完成工作同样重要。
 
@@ -165,6 +162,9 @@ CI 使用 Ubuntu／macOS × Python 3.11／3.13 矩阵。测试数量说明回归
 | 文档 | 内容 |
 | --- | --- |
 | [架构](docs/architecture.md) | Runtime、状态、存储与执行链 |
+| [任务基准](docs/runtime-benchmark.md) | 19 项任务、独立 verifier、指标与证据路径 |
+| [演示脚本](docs/demo-script.md) | 正常链、审批拒绝、SIGKILL 与 verifier 拒绝 |
+| [环境配置](docs/environment.md) | 离线运行、可选 Provider 与命令白名单示例 |
 | [设计哲学](docs/philosophy.md) | 为什么把控制权交给主机与人 |
 | [通用能力](docs/general-capabilities.md) | 从金融示例到领域无关内核 |
 | [上下文管理](docs/context-management.md) | 记忆、压缩与事件重建 |
@@ -184,6 +184,7 @@ src/flowagent/
   tools/       工具注册表与金融示例工具
   trajectory/  轨迹记录、导出与独立重算
   demo/        CLI、终端渲染与八个可复现场景
+  benchmark/   版本化任务、独立 verifier、指标与真实运行证据
 viewer/        Work / Chat 控制台、SSE、Trace 回放
   core/        前端纯函数与交互状态
   tests/       前端回归测试

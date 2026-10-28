@@ -35,6 +35,9 @@ jobs:
       - name: Run all offline demos
         run: python demo.py all
 
+      - name: Run the versioned offline Runtime task benchmark
+        run: PYTHONPATH=src python -m flowagent.benchmark --output work/runtime-benchmark/ci
+
       - name: Smoke-test the zero-configuration entry point
         run: python demo.py --list
 
