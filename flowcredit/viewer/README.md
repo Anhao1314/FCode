@@ -19,12 +19,13 @@ flowcredit/viewer/
   workspace.css       ← 过渡视图层：壳观感定稿 + 响应式四段（待迁移）
   thread.css          ← 统一任务线程：Codex 式阅读列、工具行、审批、计划（最后加载）
   app.js              ← 页面逻辑（对话 / 委托 / 回放 / 运行管理）
+  app/
+    task-thread.js    运行 trace → 统一任务线程（纯投影 + 单条渲染，Node 可测）
   core/               ← 前端纯函数层（全部 Node 可测，无 DOM 依赖）
     format.js         canonical JSON、SHA-256、链验证、格式化
     chat-format.js    Markdown 渲染与 SSE 分帧
     chat-view.js      单条消息 DOM 渲染
     run-card.js       对话内执行提案（紧凑下一步）与运行镜像的投影
-    task-thread.js    运行 trace → 统一任务线程（纯投影 + 单条渲染，Node 可测）
     side-nav.js       两侧栏（工作 / 对话）的条目、置顶、Projects、任务与对话列表
     ai-avatar.js      对话 AI 的头像（Q 版印豆 · 圆框 · 黑白，状态由事实推导）
   report.js           ← 自包含审计报告生成器
@@ -33,7 +34,7 @@ flowcredit/viewer/
   console_common.py   ← 路径、静态拒绝、模型目录与预算换算
   console_runtime.py  ← runtime 导入、单次运行、观察者与崩溃检查
   console_manager.py  ← 运行历史、创建、控制、续跑与持久化
-  tests/              ← 前端纯函数测试（node --test，164 项）
+  tests/              ← 前端纯函数测试（node --test，166 项）
   runs/               ← 运行产物（task.sqlite / trace.json / meta.json，不入库）
   chat.sqlite         ← 对话事件库（不入库）
   docs/console-live.png  ← 看板 · 账本（换肤后重拍；另有 desktop-home / -chat / -run）
