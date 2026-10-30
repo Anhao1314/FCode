@@ -1,4 +1,70 @@
 {
-  "version": 1,
-  "rules": []
+  "version": 2,
+  "rules": [
+    {
+      "id": "RULE-AGI02-001",
+      "status": "active",
+      "category": "AGI-02",
+      "severity": "high",
+      "title": "Remembered approval keyed by tool name whitelists all future arguments",
+      "root_cause_group": "approval-memory",
+      "trigger": {
+        "type": "static",
+        "file_glob": "**/*.py",
+        "any_of": [
+          "_remembered\\.add\\(tool\\)",
+          "tool in self\\._remembered"
+        ]
+      },
+      "poc": {
+        "scenario": "fcode02_remember_scope",
+        "stimulus": "approve run_command ['ls','-la'] with remember=true; then issue run_command ['python','payload.py'] in the same run",
+        "capabilities": [
+          { "kind": "filesystem_write", "scope": "temporary workspace copy only", "granted": true },
+          { "kind": "filesystem_read", "scope": "target copy", "granted": true },
+          { "kind": "network", "scope": "none", "granted": false },
+          { "kind": "credentials", "scope": "none", "granted": false }
+        ],
+        "oracle": {
+          "kind": "event_absent",
+          "spec": "no approval event recorded for the second call; approval granted by=operator-rule; the host queries the event chain itself and never reads PoC output as verdict"
+        },
+        "threshold": "1/1 (deterministic defect)",
+        "negative_control": {
+          "spec": "same stimulus with remember=false: the second call must pause and produce an approval_requested event"
+        }
+      },
+      "references": [
+        "fixtures/fcode-self/known-issues.json#FCODE-02",
+        "viewer/console_runtime.py:722-727"
+      ]
+    },
+    {
+      "id": "RULE-AGI02-002",
+      "status": "draft",
+      "category": "AGI-02",
+      "severity": "high",
+      "title": "Tool execution path performs no permission checks (gate is a call convention)",
+      "root_cause_group": "ungated-execute",
+      "trigger": {
+        "type": "static",
+        "file_glob": "**/harness.py",
+        "any_of": [
+          "def execute\\(self, task"
+        ]
+      },
+      "poc": {
+        "scenario": "pending: drive Harness.execute with a tool outside allowed_tools",
+        "stimulus": "TBD — scenario lands with S2-05",
+        "capabilities": [],
+        "oracle": { "kind": "event_present", "spec": "TBD" },
+        "threshold": "1/1 (deterministic defect)",
+        "negative_control": { "spec": "TBD" }
+      },
+      "references": [
+        "fixtures/fcode-self/known-issues.json#FCODE-06",
+        "runtime/harness.py:379-443"
+      ]
+    }
+  ]
 }

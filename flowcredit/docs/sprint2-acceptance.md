@@ -5,30 +5,32 @@
 > 原则:规则只碰 dev 集(FCODE-01/02/06);盲测集(FCODE-04/07)不进任何
 > 规则、提示词与示例;P0 未全绿不得进入 P1。
 
+> **进度(2026-10-31 开工日)**:P0 已完成 9/12 —— 契约(S2-02/03)、审计器威胁模型(S2-01)、RULE-AGI02-001 端到端(S2-04)、引擎 draft 排除(S2-07)、受限重放器(S2-08)、宿主 oracle(S2-09)、四值结果(S2-10)、CLI 批处理入口(S2-17)。674→679 项测试全绿;RULE-AGI02-002 按设计保持 draft。
+
 ## 契约与威胁模型
 
 | id | 验收要求 | 完成证据 | 层 | 优先级 |
 | --- | --- | --- | --- | --- |
-| S2-01 | 审计器自身威胁模型成文:目标可控字节 → 流入 Analyst 的通道 → PoC 生成 → 重放器权限,逐环节列缓解 | threat-model §3.1 扩充 + 评审记录引用 | 文档 | P0 |
-| S2-02 | PoC 证据 Schema(fcode.poc-evidence/v1)+ stdlib 校验器;两份示例合规;8 类篡改全部被拒 | `python -m unittest tests.test_audit_contracts` 全绿 | 代码+测试 | P0 ✅ |
-| S2-03 | 审计包 manifest Schema(fcode.audit-bundle/v1)+ 导出器;导出的真实数据过 schema 校验 | 契约测试扩展 + 导出器单测 | 代码+测试 | P0 |
+| S2-01 | 审计器自身威胁模型成文:目标可控字节 → 流入 Analyst 的通道 → PoC 生成 → 重放器权限,逐环节列缓解 ✅ | threat-model §3.1 扩充 + 评审记录引用 | 文档 | P0 |
+| S2-02 | PoC 证据 Schema(fcode.poc-evidence/v1)+ stdlib 校验器;两份示例合规;8 类篡改全部被拒 ✅ | `python -m unittest tests.test_audit_contracts` 全绿 | 代码+测试 | P0 ✅ |
+| S2-03 | 审计包 manifest Schema(fcode.audit-bundle/v1)+ 导出器;导出的真实数据过 schema 校验 ✅ | 契约测试扩展 + 导出器单测 | 代码+测试 | P0 |
 
 ## 规则(dev 集限定)
 
 | id | 验收要求 | 完成证据 | 层 | 优先级 |
 | --- | --- | --- | --- | --- |
-| S2-04 | RULE-AGI02-001(FCODE-02 审批记忆参数无关):规则 JSON + 引擎触发 + PoC 重放产出 finding | 对 dev 副本运行,产出合规 poc-evidence 记录 | 代码+测试 | P0 |
+| S2-04 | RULE-AGI02-001(FCODE-02 审批记忆参数无关):规则 JSON + 引擎触发 + PoC 重放产出 finding ✅ | 对 dev 副本运行,产出合规 poc-evidence 记录 | 代码+测试 | P0 |
 | S2-05 | RULE-AGI02-002(FCODE-06 执行绕过咽喉点):同上 | 同上 | 代码+测试 | P0 |
 | S2-06 | RULE-AGI07-001(FCODE-01 无 token 写保护绕过):同上 | 同上 | 代码+测试 | P1 |
-| S2-07 | 规则引擎加载 `audit-rules/*.json`;`draft` 状态规则不参与检测与计分 | 引擎单测:draft 规则注入后检出数不变 | 代码+测试 | P0 |
+| S2-07 | 规则引擎加载 `audit-rules/*.json`;`draft` 状态规则不参与检测与计分 ✅ | 引擎单测:draft 规则注入后检出数不变 | 代码+测试 | P0 |
 
 ## 重放器(安全边界)
 
 | id | 验收要求 | 完成证据 | 层 | 优先级 |
 | --- | --- | --- | --- | --- |
-| S2-08 | 重放环境四要素强制:无真实凭据(schema `const:true` 钉死)/默认禁网/临时文件系统/目标独立副本;能力清单执行前后校验,越界即中止并记录 | 重放器单测:环境断言 + 越界中止用例 | 代码+测试 | P0 |
-| S2-09 | oracle 宿主执行:判定读事件链,不读 PoC 输出;PoC 自报 PASS 无效 | 对抗用例:自报 PASS 的 PoC 被拒 | 代码+测试 | P0 |
-| S2-10 | 四值结果由宿主计算:`finding`/`not_reproduced`/`invalid_poc`/`not_vulnerable_under_scope`;负对照违反 → 一律 `invalid_poc` | 状态机单测覆盖四值迁移 | 代码+测试 | P0 |
+| S2-08 | 重放环境四要素强制:无真实凭据(schema `const:true` 钉死)/默认禁网/临时文件系统/目标独立副本;能力清单执行前后校验,越界即中止并记录 ✅ | 重放器单测:环境断言 + 越界中止用例 | 代码+测试 | P0 |
+| S2-09 | oracle 宿主执行:判定读事件链,不读 PoC 输出;PoC 自报 PASS 无效 ✅ | 对抗用例:自报 PASS 的 PoC 被拒 | 代码+测试 | P0 |
+| S2-10 | 四值结果由宿主计算:`finding`/`not_reproduced`/`invalid_poc`/`not_vulnerable_under_scope`;负对照违反 → 一律 `invalid_poc` ✅ | 状态机单测覆盖四值迁移 | 代码+测试 | P0 |
 
 ## 靶子与盲测
 
@@ -50,7 +52,7 @@
 
 | id | 验收要求 | 完成证据 | 层 | 优先级 |
 | --- | --- | --- | --- | --- |
-| S2-17 | 批处理入口 `python -m flowaudit.cli audit <target> --profile static`:产出符合 audit-bundle schema 的 JSON;退出码 0=完成 / 2=用法错误;无 API key 时静态规则仍可运行 | CLI 集成测试(零网络) | 代码+测试 | P0 |
+| S2-17 | 批处理入口 `python -m flowaudit.cli audit <target> --profile static`:产出符合 audit-bundle schema 的 JSON;退出码 0=完成 / 2=用法错误;无 API key 时静态规则仍可运行 ✅ | CLI 集成测试(零网络) | 代码+测试 | P0 |
 | S2-18 | `target.md` 约定:目标档案文件经工具通道读入、标记为不可信数据、内容入 blob 不入 prompt 持久层 | 单测 + 方法论文档 | 代码+文档 | P1 |
 | S2-19 | 会话拆分:static 与 dynamic 为独立会话,共享 audit_id 与不可变目标清单;阶段间仅传带哈希工件 | 会话编排单测 | 代码+测试 | P1 |
 

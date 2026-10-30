@@ -15,7 +15,7 @@
     "schema_version": { "const": "fcode.poc-evidence/v1" },
     "record_kind": { "enum": ["poc", "negative_control"] },
     "audit_id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9.-]{2,63}$" },
-    "poc_id": { "type": "string", "pattern": "^POC-[0-9]{4,}$" },
+    "poc_id": { "type": "string", "pattern": "^POC-[0-9]{4,}(-c)?$" },
     "rule_id": { "type": "string", "pattern": "^RULE-AGI[0-9]{2}-[0-9]{3}$" },
     "category": {
       "enum": ["AGI-01", "AGI-02", "AGI-03", "AGI-04", "AGI-05",
