@@ -107,9 +107,9 @@ PYTHONPATH=src python -m flowagent.benchmark --output work/runtime-benchmark/lat
 
 ## 审计产品状态（诚实版）
 
-- **已交付**：AGI 分类法 v1（9 类，每类锚定真实样本）、审计方法论、规则契约、`flowaudit` 包骨架、模块方向守卫、规则库与靶子库。
-- **Ground truth 已就位**：`flowcredit/fixtures/fcode-self/` 记录 FCode 自身经 2026-10-30 全面评估确认的 7 个问题（含 file:line 证据）。**用自己当第一个靶子是刻意的。**
-- **引擎验收线**：独立检出 ≥3 个已知问题、每条发现一条命令可重放——Sprint 2 关闭前必须达到。
+- **已交付**：AGI 分类法 v1（9 类，每类锚定真实样本）、审计方法论、规则契约、`flowaudit` 包骨架、模块方向守卫、规则库与靶子库；2026-10-31 外部对抗性设计评审已逐条裁决并合入契约（`flowcredit/docs/design-reviews/`），Sprint 2 范围据此收窄为"可信证据闭环"。
+- **Ground truth 已就位**：`flowcredit/fixtures/fcode-self/` 记录 FCode 自身经 2026-10-30 全面评估确认的 7 个问题（含 file:line 证据），已划分为 dev 集（01/02/06）与盲测集（04/07）。**用自己当第一个靶子是刻意的。**
+- **引擎验收线**：dev 集回归检出 + 盲测集检出 + 负对照零误报；每条发现一条命令可重放；最终标准——**第三方仅依据审计包即可重放结论，并且目标无法借 PoC 获得审计器权限**。
 - **尚未实现**：规则引擎、PoC 重放、目标适配器、审计控制台。这些是下一阶段的工作，本文档不会提前声称它们存在。
 
 ## 诚实的边界
