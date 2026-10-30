@@ -1,7 +1,31 @@
 # 审计方法论
 
-> 状态:**v1**。本文定义一次审计的执行流程、证据纪律与产出契约。
-> 分类依据见 [threat-model](threat-model.md),规则写法见 [rule-authoring](rule-authoring.md)。
+> 状态:**v2**(2026-10-31 增补交互模型与 Codex 对齐)。本文定义一次审计的
+> 执行流程、证据纪律与产出契约。分类依据见 [threat-model](threat-model.md),
+> 规则写法见 [rule-authoring](rule-authoring.md),逐项验收见
+> [sprint2-acceptance](sprint2-acceptance.md)。
+
+## 〇、交互模型:CLI 优先,三面投影
+
+本项目自身是 agent 应用,交互结构对齐 Codex/Claude Code 一代的范式,
+但裁决纪律比它们更硬:
+
+- **会话是脊柱**:审计是用户与审计 agent 的会话(Analyst 主导,工具流每步
+  过门控、入链、带收据);账本、审批门、审计包都是**同一条事件链的投影**,
+  不是独立应用。
+- **CLI 一等入口**:`python -m flowaudit.cli audit <target>` 提供批处理模式
+  (CI/audit-as-code 基础,零网络可跑静态规则);交互式对话面随后,桌面/Web
+  与 CLI 共享同一会话内核。
+- **`target.md` 约定**:目标目录可放置审计档案(范围、已知面、联系点)。
+  它经工具通道读入、标记为不可信数据——**对 target.md 本身的注入尝试就是
+  AGI-01 样本**。
+- **operator 对话规则:自由发言,硬编码裁决。** operator 在会话中的一切
+  输入以 `actor=operator` 入链:可以否决发现(`false_positive_disputed`)、
+  接受风险(`accepted_risk`)、暂停、扩缩范围与预算;**不能晋升发现**——
+  晋升只有重放一条路,不因对话中的任何措辞改变。
+- **权限模式会话级可切**:static-auto(静态自动)/ dynamic-approval(动态
+  逐探针审批)/ read-only,映射到内核既有门控档位;不提供 full-access 档——
+  治理产品不给自己留裸奔模式。
 
 ## 一、审计循环
 
